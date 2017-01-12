@@ -1,3 +1,5 @@
+#![feature(pattern)]
+
 #[macro_use]
 extern crate peresil;
 
@@ -11,6 +13,7 @@ type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 // define an error type - emphasis on errors. Need to implement Recoverable (more to discuss.
 #[derive(Debug)]
 enum Error {
+    IdentNotFound,
     X(()),
 }
 
@@ -32,16 +35,19 @@ fn parse_file(file: &str) {
     let mut pm = Master::new();
 
     loop {
+        let next_pt;
+
         let top_level = pm.alternate()
             .one(|pm| comment(pm, pt))
             .one(|pm| function(pm, pt))
+            .one(|pm| p_trait(pm, pt))
             .one(|pm| whitespace(pm, pt))
             .finish();
 
         match top_level.status {
             peresil::Status::Success(s) => {
                 println!("Ok {:#?}", s);
-                pt = top_level.point;
+                next_pt = top_level.point;
             },
             peresil::Status::Failure(e) => {
                 println!("Err {:?}", e);
@@ -49,6 +55,9 @@ fn parse_file(file: &str) {
                 break;
             },
         }
+
+        assert!(next_pt.offset > pt.offset);
+        pt = next_pt;
 
         if pt.s.is_empty() { break }
     }
@@ -62,6 +71,7 @@ type Extent = (usize, usize);
 enum TopLevel {
     Comment(Extent),
     Function(Function),
+    Trait(Trait),
     Whitespace(Extent),
 }
 
@@ -69,7 +79,25 @@ enum TopLevel {
 struct Function {
     extent: Extent,
     name: Extent,
+    generics: Vec<Generic>,
+    arguments: Vec<Argument>,
+    wheres: Vec<Where>,
     body: FunctionBody,
+}
+
+//#[derive(Debug)]
+type Generic = Extent;
+
+#[derive(Debug)]
+struct Argument {
+    name: Extent,
+    typ: Extent,
+}
+
+#[derive(Debug)]
+struct Where {
+    name: Extent,
+    bounds: Extent,
 }
 
 #[derive(Debug)]
@@ -89,9 +117,17 @@ enum ExpressionKind {
     MacroCall { name: Extent, args: Extent },
 }
 
+#[derive(Debug)]
+struct Trait {
+    extent: Extent,
+    name: Extent,
+}
+
 // extract fn to library?
-fn parse_until<'s>(pt: Point<'s>, s: &str) -> (Point<'s>, Extent) {
-    let end = pt.s.find(s).unwrap_or(pt.s.len());
+fn parse_until<'s, P>(pt: Point<'s>, p: P) -> (Point<'s>, Extent)
+    where P: std::str::pattern::Pattern<'s>
+{
+    let end = pt.s.find(p).unwrap_or(pt.s.len());
     let k = &pt.s[end..];
     (Point { s: k, offset: pt.offset + end }, (pt.offset, pt.offset + end))
 }
@@ -105,34 +141,86 @@ fn comment<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 
 fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let spt = pt;
-    let (pt, _) = try_parse!(pt.consume_literal("fn"));
-    let (pt, _) = try_parse!(pt.consume_literal(" "));
-    let (pt, name) = try_parse!(ident(pm, pt));
-    let (pt, _) = try_parse!(function_arglist(pm, pt));
-    let (pt, _) = try_parse!(pt.consume_literal(" ")); // optional?
-    let (pt, body) = try_parse!(function_body(pm, pt));
+
+    let (pt, _)        = try_parse!(pt.consume_literal("fn"));
+    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, name)     = try_parse!(ident(pm, pt));
+    let (pt, generics) = try_parse!(function_generic_declarations(pm, pt));
+    let (pt, args)     = try_parse!(function_arglist(pm, pt));
+    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, wheres)   = try_parse!(function_where_clause(pm, pt));
+    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, body)     = try_parse!(function_body(pm, pt));
+
     let function = Function {
         extent: (spt.offset, pt.offset),
         name: name,
+        generics: generics,
+        arguments: args,
+        wheres: wheres,
         body: body
     };
     Progress::success(pt, TopLevel::Function(function))
 }
 
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let (pt, ex) = parse_until(pt, "(");
-    Progress::success(pt, ex)
+    let spt = pt;
+    let (pt, ex) = parse_until(pt, |c| {
+        ['(', ')', ' ', '<', '>', ':', ','].contains(&c)
+    });
+    if pt.offset <= spt.offset {
+        Progress::failure(pt, Error::IdentNotFound)
+    } else {
+        Progress::success(pt, ex)
+    }
 }
 
-fn function_arglist<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let (pt, _) = try_parse!(pt.consume_literal("()"));
-    Progress::success(pt, (0, 0))
+fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Generic>> {
+    let (pt, _) = try_parse!(pt.consume_literal("<"));
+    let (pt, decls) = try_parse!(pm.zero_or_more(pt, generic_declaration));
+    let (pt, _) = try_parse!(pt.consume_literal(">"));
+    Progress::success(pt, decls)
+}
+
+fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
+    ident(pm, pt)
+}
+
+fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
+    let (pt, _) = try_parse!(pt.consume_literal("("));
+    let (pt, args) = try_parse!(pm.zero_or_more(pt, function_argument));
+    let (pt, _) = try_parse!(pt.consume_literal(")"));
+    Progress::success(pt, args)
+}
+
+fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
+    let (pt, name) = try_parse!(ident(pm, pt));
+    let (pt, _) = try_parse!(pt.consume_literal(":"));
+    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+    let (pt, typ) = try_parse!(ident(pm, pt));
+    let (pt, _) = try_parse!(pm.optional(pt, |_, pt| pt.consume_literal(",").map_err(Error::X)));
+    Progress::success(pt, Argument { name: name, typ: typ })
+}
+
+fn function_where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Where>> {
+    let (pt, _) = try_parse!(pt.consume_literal("where"));
+    let (pt, _) = try_parse!(whitespace(pm, pt));
+    pm.zero_or_more(pt, function_where)
+}
+
+fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
+    let (pt, name) = try_parse!(ident(pm, pt));
+    let (pt, _) = try_parse!(pt.consume_literal(":"));
+    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+    let (pt, bounds) = try_parse!(ident(pm, pt));
+    let (pt, _) = try_parse!(pm.optional(pt, |_, pt| pt.consume_literal(",").map_err(Error::X)));
+    Progress::success(pt, Where { name: name, bounds: bounds })
 }
 
 fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionBody> {
     let spt = pt;
-    let (pt, _) = try_parse!(spt.consume_literal("{"));
-    let (pt, exprs) = try_parse!(pm.zero_or_more(pt, |pm, pt| expression(pm, pt)));
+    let (pt, _) = try_parse!(pt.consume_literal("{"));
+    let (pt, exprs) = try_parse!(pm.zero_or_more(pt, expression));
     let (pt, _) = try_parse!(pt.consume_literal("}"));
     let body =  FunctionBody {
         extent: (spt.offset, pt.offset),
@@ -142,12 +230,12 @@ fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Functio
 }
 
 fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
-    let (pt, _) = try_parse!(pm.optional(pt, |pm, pt| whitespace(pm, pt)));
+    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
     let spt = pt;
-    let (pt, kind) = try_parse!(macro_call(pm, pt));//parse_until(pt, ";");
+    let (pt, kind) = try_parse!(macro_call(pm, pt));
     let ept = pt;
     let (pt, _) = try_parse!(pt.consume_literal(";"));
-    let (pt, _) = try_parse!(pm.optional(pt, |pm, pt| whitespace(pm, pt)));
+    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
     Progress::success(pt, Expression { extent: (spt.offset, ept.offset), kind: kind })
 }
 
@@ -158,6 +246,20 @@ fn macro_call<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expressio
     let (pt, args) = parse_until(pt, ")");
     let (pt, _) = try_parse!(pt.consume_literal(")"));
     Progress::success(pt, ExpressionKind::MacroCall { name: name, args: args })
+}
+
+fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+    let spt = pt;
+    let (pt, _) = try_parse!(pt.consume_literal("trait"));
+    let (pt, _) = try_parse!(whitespace(pm, pt));
+    let (pt, name) = try_parse!(ident(pm, pt));
+    let (pt, _) = try_parse!(whitespace(pm, pt));
+    let (pt, _) = try_parse!(pt.consume_literal("{}"));
+    let t = Trait {
+        extent: (spt.offset, pt.offset),
+        name: name,
+    };
+    Progress::success(pt, TopLevel::Trait(t))
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -177,7 +279,8 @@ fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
 }
 
 fn main() {
-    parse_file(include_str!("data/hello_world.rs"));
+    //parse_file(include_str!("data/hello_world.rs"));
+    parse_file(include_str!("data/basic_generic.rs"));
 }
 
 // Goal:
