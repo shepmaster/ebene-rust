@@ -1,0 +1,7 @@
+[package]
+authors = ["Jake Goulding <jake.goulding@gmail.com>"]
+name = "strata_rs"
+version = "0.1.0"
+
+[dependencies]
+peresil = { path = "../sxd/peresil" }#""0.3.0"
