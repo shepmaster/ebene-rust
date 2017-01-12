@@ -81,19 +81,26 @@ struct FunctionBody {
 #[derive(Debug)]
 struct Expression {
     extent: Extent,
+    kind: ExpressionKind,
+}
+
+#[derive(Debug)]
+enum ExpressionKind {
+    MacroCall { name: Extent, args: Extent },
 }
 
 // extract fn to library?
-fn parse_until<'s>(pt: Point<'s>, s: &str) -> Point<'s> {
+fn parse_until<'s>(pt: Point<'s>, s: &str) -> (Point<'s>, Extent) {
     let end = pt.s.find(s).unwrap_or(pt.s.len());
     let k = &pt.s[end..];
-    Point { s: k, offset: pt.offset + end }
+    (Point { s: k, offset: pt.offset + end }, (pt.offset, pt.offset + end))
 }
 
 fn comment<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let (pt, _) = try_parse!(pt.consume_literal("//"));
-    let ept = parse_until(pt, "\n");
-    Progress::success(ept, TopLevel::Comment((pt.offset, ept.offset)))
+    let spt = pt;
+    let (pt, _) = parse_until(pt, "\n");
+    Progress::success(pt, TopLevel::Comment((spt.offset, pt.offset)))
 }
 
 fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -113,8 +120,8 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 }
 
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let ept = parse_until(pt, "(");
-    Progress::success(ept, (pt.offset, ept.offset))
+    let (pt, ex) = parse_until(pt, "(");
+    Progress::success(pt, ex)
 }
 
 fn function_arglist<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -137,11 +144,20 @@ fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Functio
 fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     let (pt, _) = try_parse!(pm.optional(pt, |pm, pt| whitespace(pm, pt)));
     let spt = pt;
-    let pt = parse_until(pt, ";");
+    let (pt, kind) = try_parse!(macro_call(pm, pt));//parse_until(pt, ";");
     let ept = pt;
     let (pt, _) = try_parse!(pt.consume_literal(";"));
     let (pt, _) = try_parse!(pm.optional(pt, |pm, pt| whitespace(pm, pt)));
-    Progress::success(pt, Expression { extent: (spt.offset, ept.offset) })
+    Progress::success(pt, Expression { extent: (spt.offset, ept.offset), kind: kind })
+}
+
+fn macro_call<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let (pt, name) = parse_until(pt, "!");
+    let (pt, _) = try_parse!(pt.consume_literal("!"));
+    let (pt, _) = try_parse!(pt.consume_literal("("));
+    let (pt, args) = parse_until(pt, ")");
+    let (pt, _) = try_parse!(pt.consume_literal(")"));
+    Progress::success(pt, ExpressionKind::MacroCall { name: name, args: args })
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
