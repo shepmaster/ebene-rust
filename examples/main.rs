@@ -32,17 +32,16 @@ fn parse_file(file: &str) {
     let mut pm = Master::new();
 
     loop {
-        let function = pm.alternate()
+        let top_level = pm.alternate()
             .one(|pm| comment(pm, pt))
             .one(|pm| function(pm, pt))
             .one(|pm| whitespace(pm, pt))
             .finish();
 
-        match function.status {
+        match top_level.status {
             peresil::Status::Success(s) => {
-                println!("Ok {:?}", s);
-                println!("[{}]", &file[s.0..s.1]);
-                pt = function.point;
+                println!("Ok {:#?}", s);
+                pt = top_level.point;
             },
             peresil::Status::Failure(e) => {
                 println!("Err {:?}", e);
@@ -60,14 +59,29 @@ fn parse_file(file: &str) {
 type Extent = (usize, usize);
 
 #[derive(Debug)]
-struct Function {
-    name: Extent,
-    body: Extent,
+enum TopLevel {
+    Comment(Extent),
+    Function(Function),
+    Whitespace(Extent),
 }
 
-// struct Zoo<'s> {
-//     pm: Master<'s>,
-// }
+#[derive(Debug)]
+struct Function {
+    extent: Extent,
+    name: Extent,
+    body: FunctionBody,
+}
+
+#[derive(Debug)]
+struct FunctionBody {
+    extent: Extent,
+    expressions: Vec<Expression>,
+}
+
+#[derive(Debug)]
+struct Expression {
+    extent: Extent,
+}
 
 // extract fn to library?
 fn parse_until<'s>(pt: Point<'s>, s: &str) -> Point<'s> {
@@ -76,23 +90,26 @@ fn parse_until<'s>(pt: Point<'s>, s: &str) -> Point<'s> {
     Point { s: k, offset: pt.offset + end }
 }
 
-//impl<'s> Zoo<'s> {
-
-fn comment<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn comment<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let (pt, _) = try_parse!(pt.consume_literal("//"));
     let ept = parse_until(pt, "\n");
-    Progress::success(ept, (pt.offset, ept.offset))
+    Progress::success(ept, TopLevel::Comment((pt.offset, ept.offset)))
 }
 
-fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+    let spt = pt;
     let (pt, _) = try_parse!(pt.consume_literal("fn"));
     let (pt, _) = try_parse!(pt.consume_literal(" "));
     let (pt, name) = try_parse!(ident(pm, pt));
     let (pt, _) = try_parse!(function_arglist(pm, pt));
     let (pt, _) = try_parse!(pt.consume_literal(" ")); // optional?
     let (pt, body) = try_parse!(function_body(pm, pt));
-    println!("{:?}", Function { name: name, body: body });
-    Progress::success(pt, (0, 0))
+    let function = Function {
+        extent: (spt.offset, pt.offset),
+        name: name,
+        body: body
+    };
+    Progress::success(pt, TopLevel::Function(function))
 }
 
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -105,18 +122,47 @@ fn function_arglist<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ext
     Progress::success(pt, (0, 0))
 }
 
-fn function_body<'s>(_pm: &mut Master<'s>, spt: Point<'s>) -> Progress<'s, Extent> {
+fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionBody> {
+    let spt = pt;
     let (pt, _) = try_parse!(spt.consume_literal("{"));
-    let pt = parse_until(pt, "}");
-    let (ept, _) = try_parse!(pt.consume_literal("}"));
-    Progress::success(ept, (spt.offset, ept.offset))
+    let (pt, exprs) = try_parse!(pm.zero_or_more(pt, |pm, pt| expression(pm, pt)));
+    let (pt, _) = try_parse!(pt.consume_literal("}"));
+    let body =  FunctionBody {
+        extent: (spt.offset, pt.offset),
+        expressions: exprs,
+    };
+    Progress::success(pt, body)
 }
 
-fn whitespace<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let (ept, _) = try_parse!(pt.consume_literal("\n"));
-    Progress::success(ept, (pt.offset, ept.offset))
+fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+    let (pt, _) = try_parse!(pm.optional(pt, |pm, pt| whitespace(pm, pt)));
+    let spt = pt;
+    let pt = parse_until(pt, ";");
+    let ept = pt;
+    let (pt, _) = try_parse!(pt.consume_literal(";"));
+    let (pt, _) = try_parse!(pm.optional(pt, |pm, pt| whitespace(pm, pt)));
+    Progress::success(pt, Expression { extent: (spt.offset, ept.offset) })
+}
+
+fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+    let spt = pt;
+
+    let (pt, _) = try_parse!(pm.zero_or_more(pt, |pm, pt| {
+        pm.alternate()
+            .one(|_| pt.consume_literal(" ").map_err(Error::X))
+            .one(|_| pt.consume_literal("\t").map_err(Error::X))
+            .one(|_| pt.consume_literal("\r").map_err(Error::X))
+            .one(|_| pt.consume_literal("\n").map_err(Error::X))
+            .finish()
+
+    }));
+
+    Progress::success(pt, TopLevel::Whitespace((spt.offset, pt.offset)))
 }
 
 fn main() {
     parse_file(include_str!("data/hello_world.rs"));
 }
+
+// Goal:
+// What methods take a generic argument that implements a trait `Foo`
