@@ -151,10 +151,18 @@ struct Expression {
 enum ExpressionKind {
     MacroCall { name: Extent, args: Extent },
     Let { pattern: Pattern, value: Option<Box<Expression>> },
+    Tuple { members: Vec<Expression> },
     Value { extent: Extent },
     FunctionCall { name: Extent, args: Vec<Expression> },
-    Loop { body: Box<FunctionBody>},
+    Loop { body: Box<FunctionBody> },
+    Match { head: Box<Expression>, arms: Vec<MatchArm> },
     True,
+}
+
+#[derive(Debug)]
+struct MatchArm {
+    pattern: Pattern,
+    body: Expression,
 }
 
 type Pattern = Extent;
@@ -429,6 +437,8 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(expr_let)
             .one(expr_function_call)
             .one(expr_loop)
+            .one(expr_match)
+            .one(expr_tuple)
             .one(expr_value)
             .one(expr_true)
             .finish()
@@ -479,6 +489,47 @@ fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionK
 
     Progress::success(pt, ExpressionKind::Loop {
         body: Box::new(body),
+    })
+}
+
+fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let (pt, _)    = try_parse!(literal("match")(pm, pt));
+    let (pt, _)    = try_parse!(whitespace(pm, pt));
+    let (pt, head) = try_parse!(expression(pm, pt));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, _)    = try_parse!(literal("{")(pm, pt));
+    let (pt, arms) = try_parse!(zero_or_more(match_arm)(pm, pt));
+    let (pt, _)    = try_parse!(literal("}")(pm, pt));
+
+    Progress::success(pt, ExpressionKind::Match {
+        head: Box::new(head),
+        arms: arms,
+    })
+}
+
+fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
+    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, pattern) = try_parse!(pattern(pm, pt));
+    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, _)       = try_parse!(literal("=>")(pm, pt));
+    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, body)    = try_parse!(expression(pm, pt));
+    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, _)       = try_parse!(optional(literal(","))(pm, pt));
+    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
+
+    Progress::success(pt, MatchArm {
+        pattern: pattern, body: body
+    })
+}
+
+fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let (pt, _) = try_parse!(literal("(")(pm, pt));
+    let (pt, v) = try_parse!(zero_or_more(comma_tail(expression))(pm, pt));
+    let (pt, _) = try_parse!(literal(")")(pm, pt));
+
+    Progress::success(pt, ExpressionKind::Tuple {
+        members: v,
     })
 }
 
@@ -808,6 +859,18 @@ mod test {
     fn expr_loop() {
         let p = qp(expression, "loop {}");
         assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn expr_match() {
+        let p = qp(expression, "match foo { _ => () }");
+        assert_eq!(unwrap_progress(p).extent, (0, 21))
+    }
+
+    #[test]
+    fn expr_tuple() {
+        let p = qp(expression, "(1, 2)");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
