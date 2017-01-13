@@ -166,7 +166,10 @@ struct MatchArm {
     body: Expression,
 }
 
-type Pattern = Extent;
+#[derive(Debug)]
+struct Pattern {
+    extent: Extent,
+}
 
 #[derive(Debug)]
 struct Trait {
@@ -545,28 +548,16 @@ fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    let spt = pt;
-    let (pt, _) = try_parse!(path(pm, pt));
-    let (pt, _) = try_parse!(ident(pm, pt));
-
-    Progress::success(pt, ExpressionKind::Value {
-        extent: ex(spt, pt),
-    })
+    pathed_ident(pm, pt).map(|extent| ExpressionKind::Value { extent })
 }
 
 fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    let spt = pt;
-    let (pt, _) = try_parse!(path(pm, pt));
-    let (pt, _) = try_parse!(ident(pm, pt));
-    let mpt = pt;
-    let (pt, _) = try_parse!(literal("(")(pm, pt));
-    let (pt, args) = try_parse!(zero_or_more(comma_tail(expression))(pm, pt));
-    let (pt, _) = try_parse!(literal(")")(pm, pt));
-
-    Progress::success(pt, ExpressionKind::FunctionCall {
-        name: ex(spt, mpt),
-        args,
-    })
+    sequence!(pm, pt, {
+        name = pathed_ident;
+        _x   = literal("(");
+        args = zero_or_more(comma_tail(expression));
+        _x   = literal(")");
+    }, |_, _| ExpressionKind::FunctionCall { name, args })
 }
 
 fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -575,10 +566,18 @@ fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionK
     Progress::success(pt, ExpressionKind::True)
 }
 
+fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = path;
+        _x = ident;
+    }, |_, pt| ex(spt, pt))
+}
+
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     let (pt, _) = try_parse!(optional(literal("mut"))(pm, pt));
     let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
-    ident(pm, pt)
+    pathed_ident(pm, pt).map(|extent| Pattern { extent })
 }
 
 fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -732,8 +731,7 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let (pt, _) = try_parse!(optional(literal("&"))(pm, pt));
     let (pt, _) = try_parse!(optional(lifetime)(pm, pt));
     let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, _) = try_parse!(path(pm, pt));
-    let (pt, _) = try_parse!(ident(pm, pt));
+    let (pt, _) = try_parse!(pathed_ident(pm, pt));
     let (pt, _) = try_parse!(optional(typ_generics)(pm, pt));
 
     Progress::success(pt, ex(spt, pt))
@@ -882,6 +880,12 @@ mod test {
     fn expr_tuple() {
         let p = qp(expression, "(1, 2)");
         assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn pattern_with_path() {
+        let p = qp(pattern, "foo::Bar::Baz");
+        assert_eq!(unwrap_progress(p).extent, (0, 13))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
