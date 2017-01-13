@@ -133,8 +133,12 @@ struct Where {
 #[derive(Debug)]
 struct FunctionBody {
     extent: Extent,
-    expressions: Vec<Expression>,
+    statements: Vec<Statement>,
+    expression: Option<Expression>,
 }
+
+#[derive(Debug)]
+struct Statement(Expression);
 
 #[derive(Debug)]
 struct Expression {
@@ -145,6 +149,7 @@ struct Expression {
 #[derive(Debug)]
 enum ExpressionKind {
     MacroCall { name: Extent, args: Extent },
+    True,
 }
 
 #[derive(Debug)]
@@ -363,24 +368,35 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionBody> {
     let spt = pt;
     let (pt, _)     = try_parse!(literal("{")(pm, pt));
-    let (pt, exprs) = try_parse!(pm.zero_or_more(pt, expression));
+    let (pt, stmts) = try_parse!(pm.zero_or_more(pt, statement));
+    let (pt, expr)  = try_parse!(pm.optional(pt, expression));
     let (pt, _)     = try_parse!(literal("}")(pm, pt));
 
     Progress::success(pt, FunctionBody {
         extent: (spt.offset, pt.offset),
-        expressions: exprs,
+        statements: stmts,
+        expression: expr,
     })
 }
 
-fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
-    let spt        = pt;
-    let (pt, kind) = try_parse!(macro_call(pm, pt));
-    let ept        = pt;
+fn statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
+    let (pt, expr) = try_parse!(expression(pm, pt));
     let (pt, _)    = try_parse!(literal(";")(pm, pt));
     let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
 
-    Progress::success(pt, Expression { extent: (spt.offset, ept.offset), kind: kind })
+    Progress::success(pt, Statement(expr))
+}
+
+fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+    let spt        = pt;
+    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, kind) = try_parse!(pm.alternate(pt).one(macro_call).one(expr_true).finish());
+    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+
+    Progress::success(pt, Expression {
+        extent: ex(spt, pt),
+        kind: kind,
+    })
 }
 
 fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -391,6 +407,12 @@ fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     let (pt, _)    = try_parse!(literal(")")(pm, pt));
 
     Progress::success(pt, ExpressionKind::MacroCall { name: name, args: args })
+}
+
+fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let (pt, _)    = try_parse!(literal("true")(pm, pt));
+
+    Progress::success(pt, ExpressionKind::True)
 }
 
 fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -608,12 +630,14 @@ fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
 mod test {
     use super::*;
 
-    fn qp<'s, F, T>(f: F, s: &'s str) -> Progress<'s, T>
+    fn qp<'s, F, T>(f: F, s: &'s str) -> peresil::Progress<Point<'s>, T, Vec<Error>>
         where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
     {
+        // TODO: Master::once()?
         let mut pm = Master::new();
         let pt = Point::new(s);
-        f(&mut pm, pt)
+        let r = f(&mut pm, pt);
+        pm.finish(r)
     }
 
     #[test]
@@ -634,10 +658,21 @@ mod test {
         assert_eq!(unwrap_progress(p).extent, (0, 16))
     }
 
-    fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T {
+    #[test]
+    fn expr_true() {
+        let p = qp(expression, "true");
+        assert_eq!(unwrap_progress(p).extent, (0, 4))
+    }
+
+    fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
+        where P: std::fmt::Debug,
+              E: std::fmt::Debug,
+    {
         match p {
             peresil::Progress { status: peresil::Status::Success(v), .. } => v,
-            _ => panic!("Not a successful parse"),
+            peresil::Progress { status: peresil::Status::Failure(e), point } => {
+                panic!("Failed parsing at {:?}: {:?}", point, e)
+            }
         }
     }
 }
