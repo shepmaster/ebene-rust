@@ -150,8 +150,13 @@ struct Expression {
 #[derive(Debug)]
 enum ExpressionKind {
     MacroCall { name: Extent, args: Extent },
+    Let { pattern: Pattern, value: Box<Expression> },
+    Value { extent: Extent },
+    FunctionCall { name: Extent, args: Vec<Expression> },
     True,
 }
+
+type Pattern = Extent;
 
 #[derive(Debug)]
 struct Trait {
@@ -408,7 +413,15 @@ fn statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> 
 fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     let spt        = pt;
     let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, kind) = try_parse!(pm.alternate(pt).one(macro_call).one(expr_true).finish());
+    let (pt, kind) = try_parse!({
+        pm.alternate(pt)
+            .one(macro_call)
+            .one(expr_let)
+            .one(expr_function_call)
+            .one(expr_value)
+            .one(expr_true)
+            .finish()
+    });
     let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
 
     Progress::success(pt, Expression {
@@ -427,10 +440,56 @@ fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     Progress::success(pt, ExpressionKind::MacroCall { name: name, args: args })
 }
 
+fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let (pt, _)       = try_parse!(literal("let")(pm, pt));
+    let (pt, _)       = try_parse!(whitespace(pm, pt));
+    let (pt, pattern) = try_parse!(pattern(pm, pt));
+    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, _)       = try_parse!(literal("=")(pm, pt));
+    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, value)   = try_parse!(expression(pm, pt));
+
+    Progress::success(pt, ExpressionKind::Let {
+        pattern: pattern,
+        value: Box::new(value),
+    })
+}
+
+fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let spt = pt;
+    let (pt, _) = try_parse!(path(pm, pt));
+    let (pt, _) = try_parse!(ident(pm, pt));
+
+    Progress::success(pt, ExpressionKind::Value {
+        extent: ex(spt, pt),
+    })
+}
+
+fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let spt = pt;
+    let (pt, _) = try_parse!(path(pm, pt));
+    let (pt, _) = try_parse!(ident(pm, pt));
+    let mpt = pt;
+    let (pt, _) = try_parse!(literal("(")(pm, pt));
+    let (pt, args) = try_parse!(zero_or_more(comma_tail(expression))(pm, pt));
+    let (pt, _) = try_parse!(literal(")")(pm, pt));
+
+    Progress::success(pt, ExpressionKind::FunctionCall {
+        name: ex(spt, mpt),
+        args: args,
+    })
+}
+
 fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    let (pt, _)    = try_parse!(literal("true")(pm, pt));
+    let (pt, _) = try_parse!(literal("true")(pm, pt));
 
     Progress::success(pt, ExpressionKind::True)
+}
+
+fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+    let (pt, _) = try_parse!(optional(literal("mut"))(pm, pt));
+    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
+    ident(pm, pt)
 }
 
 fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -686,6 +745,30 @@ mod test {
     fn expr_true() {
         let p = qp(expression, "true");
         assert_eq!(unwrap_progress(p).extent, (0, 4))
+    }
+
+    #[test]
+    fn expr_let_mut() {
+        let p = qp(expression, "let mut pm = Master::new()");
+        assert_eq!(unwrap_progress(p).extent, (0, 26))
+    }
+
+    #[test]
+    fn expr_value_with_path() {
+        let p = qp(expression, "Master::new()");
+        assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn expr_function_call() {
+        let p = qp(expression, "foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
+    }
+
+    #[test]
+    fn expr_function_call_with_args() {
+        let p = qp(expression, "foo(true)");
+        assert_eq!(unwrap_progress(p).extent, (0, 9))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
