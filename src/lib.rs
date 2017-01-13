@@ -84,6 +84,7 @@ struct Function {
 #[derive(Debug)]
 struct FunctionHeader {
     extent: Extent,
+    visibility: Option<Extent>,
     name: Extent,
     generics: Vec<Generic>,
     arguments: Vec<Argument>,
@@ -263,6 +264,9 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
     let spt = pt;
+    let (pt, visib)    = try_parse!(pm.optional(pt, literal("pub")));
+    let ept = pt;
+    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
     let (pt, _)        = try_parse!(literal("fn")(pm, pt));
     let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
     let (pt, name)     = try_parse!(ident(pm, pt));
@@ -274,7 +278,8 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
     let (pt, wheres)   = try_parse!(pm.optional(pt, function_where_clause));
 
     Progress::success(pt, FunctionHeader {
-        extent: (spt.offset, pt.offset),
+        extent: ex(spt, pt),
+        visibility: visib.map(|_| ex(spt, ept)),
         name: name,
         generics: generics.unwrap_or_else(Vec::new),
         arguments: args,
@@ -644,6 +649,12 @@ mod test {
     fn enum_with_trailing_stuff() {
         let p = qp(p_enum_inner, "enum A {} impl Foo for Bar {}");
         assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn fn_with_public_modifier() {
+        let p = qp(function_header, "pub fn foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 12))
     }
 
     #[test]
