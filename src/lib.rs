@@ -99,7 +99,7 @@ type Type = Extent;
 
 fn ex(start: Point, end: Point) -> Extent {
     let ex = (start.offset, end.offset);
-    assert!(ex.1 > ex.0);
+    assert!(ex.1 > ex.0, "{} does not come before {}", ex.1, ex.0);
     ex
 }
 
@@ -265,7 +265,7 @@ fn comment<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let spt = pt;
     let (pt, _) = parse_until(pt, "\n");
 
-    Progress::success(pt, TopLevel::Comment((spt.offset, pt.offset)))
+    Progress::success(pt, TopLevel::Comment(ex(spt, pt)))
 }
 
 fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -281,10 +281,19 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     }))
 }
 
+fn ext<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        let spt = pt;
+        let (pt, _) = try_parse!(f(pm, pt));
+        Progress::success(pt, ex(spt, pt))
+    }
+}
+
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
     let spt = pt;
-    let (pt, visib)    = try_parse!(optional(literal("pub"))(pm, pt));
-    let ept = pt;
+    let (pt, visib)    = try_parse!(optional(ext(literal("pub")))(pm, pt));
     let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)        = try_parse!(literal("fn")(pm, pt));
     let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
@@ -298,7 +307,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
 
     Progress::success(pt, FunctionHeader {
         extent: ex(spt, pt),
-        visibility: visib.map(|_| ex(spt, ept)),
+        visibility: visib,
         name: name,
         generics: generics.unwrap_or_else(Vec::new),
         arguments: args,
@@ -366,8 +375,8 @@ fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Arg
 
 fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     let (pt, _) = try_parse!(literal("->")(pm, pt));
-    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, t)    = try_parse!(typ(pm, pt));
+    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, t) = try_parse!(typ(pm, pt));
 
     Progress::success(pt, t)
 }
@@ -397,7 +406,7 @@ fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Functio
     let (pt, _)     = try_parse!(literal("}")(pm, pt));
 
     Progress::success(pt, FunctionBody {
-        extent: (spt.offset, pt.offset),
+        extent: ex(spt, pt),
         statements: stmts,
         expression: expr,
     })
@@ -563,7 +572,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let (pt, _)    = try_parse!(literal("{}")(pm, pt));
 
     Progress::success(pt, TopLevel::Trait(Trait {
-        extent: (spt.offset, pt.offset),
+        extent: ex(spt, pt),
         name: name,
     }))
 }
@@ -618,7 +627,7 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let (pt, _) = parse_until(pt, "]");
     let (pt, _) = try_parse!(literal("]")(pm, pt));
 
-    Progress::success(pt, TopLevel::Attribute((spt.offset, pt.offset)))
+    Progress::success(pt, TopLevel::Attribute(ex(spt, pt)))
 }
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -632,7 +641,7 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel
     let (pt, _)    = try_parse!(literal(";")(pm, pt));
 
     Progress::success(pt, TopLevel::ExternCrate(Crate {
-        extent: (spt.offset, pt.offset),
+        extent: ex(spt, pt),
         name: name,
     }))
 }
@@ -650,7 +659,7 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
     let (pt, _)    = try_parse!(literal(";")(pm, pt));
 
     Progress::success(pt, TopLevel::TypeAlias(TypeAlias {
-        extent: (spt.offset, pt.offset),
+        extent: ex(spt, pt),
         name: name,
         defn: defn,
     }))
@@ -665,7 +674,7 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let (pt, _) = try_parse!(ident(pm, pt));
     let (pt, _) = try_parse!(optional(typ_generics)(pm, pt));
 
-    Progress::success(pt, (spt.offset, spt.offset))
+    Progress::success(pt, ex(spt, pt))
 }
 
 fn path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Extent>> {
@@ -677,7 +686,7 @@ fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent
     let (pt, _) = try_parse!(ident(pm, pt));
     let (pt, _) = try_parse!(literal("::")(pm, pt));
 
-    Progress::success(pt, (spt.offset, pt.offset))
+    Progress::success(pt, ex(spt, pt))
 }
 
 fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -688,7 +697,7 @@ fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> 
     let (pt, _) = try_parse!(optional(type_generic_types)(pm, pt));
     let (pt, _) = try_parse!(literal(">")(pm, pt));
 
-    Progress::success(pt, (spt.offset, spt.offset))
+    Progress::success(pt, ex(spt, pt))
 }
 
 fn typ_generic_lifetimes<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Extent>> {
@@ -718,7 +727,7 @@ fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
 
     }));
 
-    Progress::success(pt, TopLevel::Whitespace((spt.offset, pt.offset)))
+    Progress::success(pt, TopLevel::Whitespace(ex(spt, pt)))
 }
 
 #[cfg(test)]
