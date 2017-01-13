@@ -1,3 +1,4 @@
+#![feature(field_init_shorthand)]
 #![feature(conservative_impl_trait)]
 #![feature(pattern)]
 
@@ -294,8 +295,8 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         body   = function_body;
     }, |_, pt| TopLevel::Function(Function {
         extent: ex(spt, pt),
-        header: header,
-        body: body,
+        header,
+        body,
     }))
 }
 
@@ -312,24 +313,24 @@ fn ext<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Ex
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
     let spt = pt;
     sequence!(pm, pt, {
-        visib    = optional(ext(literal("pub")));
-        _x       = optional(whitespace);
-        _x       = literal("fn");
-        _x       = optional(whitespace);
-        name     = ident;
-        generics = optional(function_generic_declarations);
-        args     = function_arglist;
-        _x       = optional(whitespace);
-        ret      = optional(function_return_type);
-        _x       = optional(whitespace);
-        wheres   = optional(function_where_clause);
+        visibility  = optional(ext(literal("pub")));
+        _x          = optional(whitespace);
+        _x          = literal("fn");
+        _x          = optional(whitespace);
+        name        = ident;
+        generics    = optional(function_generic_declarations);
+        arguments   = function_arglist;
+        _x          = optional(whitespace);
+        return_type = optional(function_return_type);
+        _x          = optional(whitespace);
+        wheres      = optional(function_where_clause);
     }, |_, pt| FunctionHeader {
         extent: ex(spt, pt),
-        visibility: visib,
-        name: name,
+        visibility,
+        name,
         generics: generics.unwrap_or_else(Vec::new),
-        arguments: args,
-        return_type: ret,
+        arguments,
+        return_type,
         wheres: wheres.unwrap_or_else(Vec::new),
     })
 }
@@ -388,7 +389,7 @@ fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Arg
     let (pt, typ)  = try_parse!(ident(pm, pt));
     let (pt, _)    = try_parse!(optional(literal(","))(pm, pt));
 
-    Progress::success(pt, Argument::Named { name: name, typ: typ })
+    Progress::success(pt, Argument::Named { name, typ })
 }
 
 fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
@@ -413,7 +414,7 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
     let (pt, bounds) = try_parse!(ident(pm, pt));
     let (pt, _)      = try_parse!(optional(literal(","))(pm, pt));
 
-    Progress::success(pt, Where { name: name, bounds: bounds })
+    Progress::success(pt, Where { name, bounds })
 }
 
 fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionBody> {
@@ -457,7 +458,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
 
     Progress::success(pt, Expression {
         extent: ex(spt, pt),
-        kind: kind,
+        kind,
     })
 }
 
@@ -468,7 +469,7 @@ fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     let (pt, args) = parse_until(pt, ")");
     let (pt, _)    = try_parse!(literal(")")(pm, pt));
 
-    Progress::success(pt, ExpressionKind::MacroCall { name: name, args: args })
+    Progress::success(pt, ExpressionKind::MacroCall { name, args })
 }
 
 fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -479,7 +480,7 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKi
     let (pt, value)   = try_parse!(optional(expr_let_rhs)(pm, pt));
 
     Progress::success(pt, ExpressionKind::Let {
-        pattern: pattern,
+        pattern,
         value: value.map(Box::new),
     })
 }
@@ -513,7 +514,7 @@ fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
 
     Progress::success(pt, ExpressionKind::Match {
         head: Box::new(head),
-        arms: arms,
+        arms,
     })
 }
 
@@ -529,7 +530,7 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
     let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
 
     Progress::success(pt, MatchArm {
-        pattern: pattern, body: body
+        pattern, body
     })
 }
 
@@ -564,7 +565,7 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ex
 
     Progress::success(pt, ExpressionKind::FunctionCall {
         name: ex(spt, mpt),
-        args: args,
+        args,
     })
 }
 
@@ -598,8 +599,8 @@ fn p_enum_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         _x       = literal("}");
     }, |_, pt| Enum {
         extent: ex(spt, pt),
-        name: name,
-        variants: variants,
+        name,
+        variants,
     })
 }
 
@@ -611,7 +612,7 @@ fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVari
 
     Progress::success(pt,  EnumVariant {
         extent: ex(spt, pt),
-        name: name,
+        name,
         body: body.unwrap_or_else(Vec::new),
     })
 }
@@ -634,7 +635,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 
     Progress::success(pt, TopLevel::Trait(Trait {
         extent: ex(spt, pt),
-        name: name,
+        name,
     }))
 }
 
@@ -660,9 +661,9 @@ fn p_impl_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
 
     Progress::success(pt, Impl {
         extent: ex(spt, pt),
-        trait_name: trait_name,
-        type_name: type_name,
-        body: body,
+        trait_name,
+        type_name,
+        body,
     })
 }
 
@@ -673,8 +674,8 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
 
     Progress::success(pt, ImplFunction {
         extent: ex(spt, pt),
-        header: header,
-        body: body,
+        header,
+        body,
     })
 }
 
@@ -703,7 +704,7 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel
 
     Progress::success(pt, TopLevel::ExternCrate(Crate {
         extent: ex(spt, pt),
-        name: name,
+        name,
     }))
 }
 
@@ -721,8 +722,8 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
 
     Progress::success(pt, TopLevel::TypeAlias(TypeAlias {
         extent: ex(spt, pt),
-        name: name,
-        defn: defn,
+        name,
+        defn,
     }))
 }
 
