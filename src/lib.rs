@@ -67,6 +67,7 @@ enum TopLevel {
     Function(Function),
     Enum(Enum),
     Trait(Trait),
+    Impl(Impl),
     Attribute(Extent),
     ExternCrate(Crate),
     TypeAlias(TypeAlias),
@@ -76,11 +77,18 @@ enum TopLevel {
 #[derive(Debug)]
 struct Function {
     extent: Extent,
+    header: FunctionHeader,
+    body: FunctionBody,
+}
+
+#[derive(Debug)]
+struct FunctionHeader {
+    extent: Extent,
     name: Extent,
     generics: Vec<Generic>,
     arguments: Vec<Argument>,
+    return_type: Option<Type>,
     wheres: Vec<Where>,
-    body: FunctionBody,
 }
 
 //#[derive(Debug)]
@@ -111,9 +119,9 @@ struct EnumVariant {
 type EnumVariantBody = Extent;
 
 #[derive(Debug)]
-struct Argument {
-    name: Extent,
-    typ: Type,
+enum Argument {
+    SelfArgument,
+    Named { name: Extent, typ: Type }
 }
 
 #[derive(Debug)]
@@ -143,6 +151,21 @@ enum ExpressionKind {
 struct Trait {
     extent: Extent,
     name: Extent,
+}
+
+#[derive(Debug)]
+struct Impl {
+    extent: Extent,
+    trait_name: Type,
+    type_name: Type,
+    body: Vec<ImplFunction>,
+}
+
+#[derive(Debug)]
+struct ImplFunction {
+    extent: Extent,
+    header: FunctionHeader,
+    body: Option<FunctionBody>,
 }
 
 #[derive(Debug)]
@@ -200,6 +223,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(function)
         .one(p_enum)
         .one(p_trait)
+        .one(p_impl)
         .one(attribute)
         .one(extern_crate)
         .one(type_alias)
@@ -220,26 +244,38 @@ fn comment<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 }
 
 fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
-    let spt = pt;
+    let spt          = pt;
+    let (pt, header) = try_parse!(function_header(pm, pt));
+    let (pt, _)      = try_parse!(pm.optional(pt, whitespace));
+    let (pt, body)   = try_parse!(function_body(pm, pt));
 
+    Progress::success(pt, TopLevel::Function(Function {
+        extent: ex(spt, pt),
+        header: header,
+        body: body,
+    }))
+}
+
+fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
+    let spt = pt;
     let (pt, _)        = try_parse!(literal("fn")(pm, pt));
     let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
     let (pt, name)     = try_parse!(ident(pm, pt));
     let (pt, generics) = try_parse!(pm.optional(pt, function_generic_declarations));
     let (pt, args)     = try_parse!(function_arglist(pm, pt));
     let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
-    let (pt, wheres)   = try_parse!(pm.optional(pt, function_where_clause));
+    let (pt, ret)      = try_parse!(pm.optional(pt, function_return_type));
     let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
-    let (pt, body)     = try_parse!(function_body(pm, pt));
+    let (pt, wheres)   = try_parse!(pm.optional(pt, function_where_clause));
 
-    Progress::success(pt, TopLevel::Function(Function {
+    Progress::success(pt, FunctionHeader {
         extent: (spt.offset, pt.offset),
         name: name,
         generics: generics.unwrap_or_else(Vec::new),
         arguments: args,
+        return_type: ret,
         wheres: wheres.unwrap_or_else(Vec::new),
-        body: body
-    }))
+    })
 }
 
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -267,11 +303,26 @@ fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, G
 }
 
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
-    let (pt, _)    = try_parse!(literal("(")(pm, pt));
-    let (pt, args) = try_parse!(pm.zero_or_more(pt, function_argument));
-    let (pt, _)    = try_parse!(literal(")")(pm, pt));
+    let (pt, _)        = try_parse!(literal("(")(pm, pt));
+    let (pt, self_arg) = try_parse!(pm.optional(pt, self_argument));
+    let (pt, mut args) = try_parse!(pm.zero_or_more(pt, function_argument));
+    let (pt, _)        = try_parse!(literal(")")(pm, pt));
 
+    if let Some(arg) = self_arg {
+        args.insert(0, arg);
+    }
     Progress::success(pt, args)
+}
+
+fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
+    let (pt, _) = try_parse!(pm.optional(pt, literal("&")));
+    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _) = try_parse!(pm.optional(pt, literal("mut")));
+    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _) = try_parse!(literal("self")(pm, pt));
+    let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
+
+    Progress::success(pt, Argument::SelfArgument)
 }
 
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
@@ -281,7 +332,15 @@ fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Arg
     let (pt, typ)  = try_parse!(ident(pm, pt));
     let (pt, _)    = try_parse!(pm.optional(pt, literal(",")));
 
-    Progress::success(pt, Argument { name: name, typ: typ })
+    Progress::success(pt, Argument::Named { name: name, typ: typ })
+}
+
+fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+    let (pt, _) = try_parse!(literal("->")(pm, pt));
+    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, t)    = try_parse!(typ(pm, pt));
+
+    Progress::success(pt, t)
 }
 
 fn function_where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Where>> {
@@ -392,6 +451,46 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     }))
 }
 
+fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+    p_impl_inner(pm, pt).map(TopLevel::Impl)
+}
+
+fn p_impl_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
+    let spt              = pt;
+    let (pt, _)          = try_parse!(literal("impl")(pm, pt));
+    let (pt, _)          = try_parse!(whitespace(pm, pt));
+    let (pt, trait_name) = try_parse!(typ(pm, pt));
+    let (pt, _)          = try_parse!(whitespace(pm, pt));
+    let (pt, _)          = try_parse!(literal("for")(pm, pt));
+    let (pt, _)          = try_parse!(whitespace(pm, pt));
+    let (pt, type_name)  = try_parse!(typ(pm, pt));
+    let (pt, _)          = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)          = try_parse!(literal("{")(pm, pt));
+    let (pt, _)          = try_parse!(pm.optional(pt, whitespace));
+    let (pt, body)       = try_parse!(pm.zero_or_more(pt, impl_function));
+    let (pt, _)          = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)          = try_parse!(literal("}")(pm, pt));
+
+    Progress::success(pt, Impl {
+        extent: ex(spt, pt),
+        trait_name: trait_name,
+        type_name: type_name,
+        body: body,
+    })
+}
+
+fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFunction> {
+    let spt = pt;
+    let (pt, header) = try_parse!(function_header(pm, pt));
+    let (pt, body)   = try_parse!(pm.optional(pt, function_body));
+
+    Progress::success(pt, ImplFunction {
+        extent: ex(spt, pt),
+        header: header,
+        body: body,
+    })
+}
+
 // TODO: optional could take E that is `into`, or just a different one
 
 fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -476,7 +575,7 @@ fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> 
 }
 
 fn typ_generic_lifetimes<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Extent>> {
-    one_or_more(pm, pt, typ_generic_lifetime)
+    one_or_more(pm, pt, comma_tail(lifetime))
 }
 
 fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -485,30 +584,8 @@ fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     ident(pm, pt)
 }
 
-fn typ_generic_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
-    // comma
-    let (pt, _) = try_parse!(lifetime(pm, pt));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-    let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-
-    Progress::success(pt, (spt.offset, pt.offset))
-}
-
 fn type_generic_types<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Extent>> {
-    one_or_more(pm, pt, typ_generic_type)
-}
-
-fn typ_generic_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
-    // comma
-    let (pt, _) = try_parse!(typ(pm, pt));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-    let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-
-    Progress::success(pt, (spt.offset, pt.offset))
+    one_or_more(pm, pt, comma_tail(typ))
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -543,6 +620,18 @@ mod test {
     fn enum_with_trailing_stuff() {
         let p = qp(p_enum_inner, "enum A {} impl Foo for Bar {}");
         assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn fn_with_self_type() {
+        let p = qp(function_header, "fn foo(&self)");
+        assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_return_type() {
+        let p = qp(function_header, "fn foo() -> bool");
+        assert_eq!(unwrap_progress(p).extent, (0, 16))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T {
