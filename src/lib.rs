@@ -33,6 +33,7 @@ pub fn parse_rust_file(file: &str) {
         let next_pt;
 
         let top_level = top_level(&mut pm, pt);
+        let top_level = pm.finish(top_level);
 
         match top_level.status {
             peresil::Status::Success(s) => {
@@ -41,7 +42,7 @@ pub fn parse_rust_file(file: &str) {
             },
             peresil::Status::Failure(e) => {
                 println!("Err {:?}", e);
-                println!(">>{}<<", &file[pt.offset..]);
+                println!(">>{}<<", &file[top_level.point.offset..]);
                 break;
             },
         }
@@ -64,6 +65,7 @@ type Extent = (usize, usize);
 enum TopLevel {
     Comment(Extent),
     Function(Function),
+    Enum(Enum),
     Trait(Trait),
     Attribute(Extent),
     ExternCrate(Crate),
@@ -85,6 +87,28 @@ struct Function {
 type Generic = Extent;
 
 type Type = Extent;
+
+fn ex(start: Point, end: Point) -> Extent {
+    let ex = (start.offset, end.offset);
+    assert!(ex.1 > ex.0);
+    ex
+}
+
+#[derive(Debug)]
+struct Enum {
+    extent: Extent,
+    name: Extent,
+    variants: Vec<EnumVariant>,
+}
+
+#[derive(Debug)]
+struct EnumVariant {
+    extent: Extent,
+    name: Extent,
+    body: Vec<EnumVariantBody>,
+}
+
+type EnumVariantBody = Extent;
 
 #[derive(Debug)]
 struct Argument {
@@ -154,12 +178,27 @@ fn one_or_more<'s, F, T>(pm: &mut Master<'s>, pt: Point<'s>, mut f: F) -> Progre
     Progress::success(pt, tail)
 }
 
+// TODO: promote?
+fn comma_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        let (pt, v) = try_parse!(f(pm, pt));
+        let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+        let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
+        let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+
+        Progress::success(pt, v)
+    }
+}
+
 // TODO: consider passing in `pt` to alternate to pass it back to
 // closure allow for nice composition
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     pm.alternate(pt)
         .one(comment)
         .one(function)
+        .one(p_enum)
         .one(p_trait)
         .one(attribute)
         .one(extern_crate)
@@ -206,7 +245,7 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, ex) = parse_until(pt, |c| {
-        ['!', '(', ')', ' ', '<', '>', ':', ',', ';', '/'].contains(&c)
+        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/'].contains(&c)
     });
     if pt.offset <= spt.offset {
         Progress::failure(pt, Error::IdentNotFound)
@@ -295,6 +334,50 @@ fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     Progress::success(pt, ExpressionKind::MacroCall { name: name, args: args })
 }
 
+fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+    p_enum_inner(pm, pt).map(TopLevel::Enum)
+}
+
+fn p_enum_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
+    let spt            = pt;
+    let (pt, _)        = try_parse!(literal("enum")(pm, pt));
+    let (pt, _)        = try_parse!(whitespace(pm, pt));
+    let (pt, name)     = try_parse!(ident(pm, pt));
+    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)        = try_parse!(literal("{")(pm, pt));
+    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, variants) = try_parse!(pm.zero_or_more(pt, comma_tail(enum_variant)));
+    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)        = try_parse!(literal("}")(pm, pt));
+
+    Progress::success(pt, Enum {
+        extent: ex(spt, pt),
+        name: name,
+        variants: variants,
+    })
+}
+
+fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariant> {
+    let spt        = pt;
+    let (pt, name) = try_parse!(ident(pm, pt));
+    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, body) = try_parse!(pm.optional(pt, enum_variant_body));
+
+    Progress::success(pt,  EnumVariant {
+        extent: ex(spt, pt),
+        name: name,
+        body: body.unwrap_or_else(Vec::new),
+    })
+}
+
+fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<EnumVariantBody>> {
+    let (pt, _)     = try_parse!(literal("(")(pm, pt));
+    let (pt, types) = try_parse!(pm.zero_or_more(pt, comma_tail(typ)));
+    let (pt, _)     = try_parse!(literal(")")(pm, pt));
+
+    Progress::success(pt, types)
+}
+
 fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let spt        = pt;
     let (pt, _)    = try_parse!(literal("trait")(pm, pt));
@@ -359,6 +442,9 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
+    let (pt, _) = try_parse!(pm.optional(pt, literal("&")));
+    let (pt, _) = try_parse!(pm.optional(pt, lifetime));
+    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
     let (pt, _) = try_parse!(path(pm, pt));
     let (pt, _) = try_parse!(ident(pm, pt));
     let (pt, _) = try_parse!(pm.optional(pt, typ_generics));
@@ -393,11 +479,16 @@ fn typ_generic_lifetimes<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
     one_or_more(pm, pt, typ_generic_lifetime)
 }
 
-fn typ_generic_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
+fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let (pt, _) = try_parse!(literal("'")(pm, pt));
     let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-    let (pt, _) = try_parse!(ident(pm, pt));
+    ident(pm, pt)
+}
+
+fn typ_generic_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    // comma
+    let (pt, _) = try_parse!(lifetime(pm, pt));
     let (pt, _) = try_parse!(pm.optional(pt, whitespace));
     let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
     let (pt, _) = try_parse!(pm.optional(pt, whitespace));
@@ -411,6 +502,7 @@ fn type_generic_types<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ve
 
 fn typ_generic_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
+    // comma
     let (pt, _) = try_parse!(typ(pm, pt));
     let (pt, _) = try_parse!(pm.optional(pt, whitespace));
     let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
@@ -433,4 +525,30 @@ fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
     }));
 
     Progress::success(pt, TopLevel::Whitespace((spt.offset, pt.offset)))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn qp<'s, F, T>(f: F, s: &'s str) -> Progress<'s, T>
+        where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    {
+        let mut pm = Master::new();
+        let pt = Point::new(s);
+        f(&mut pm, pt)
+    }
+
+    #[test]
+    fn enum_with_trailing_stuff() {
+        let p = qp(p_enum_inner, "enum A {} impl Foo for Bar {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T {
+        match p {
+            peresil::Progress { status: peresil::Status::Success(v), .. } => v,
+            _ => panic!("Not a successful parse"),
+        }
+    }
 }
