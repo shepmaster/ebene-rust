@@ -221,17 +221,27 @@ fn one_or_more<'s, F, T>(pm: &mut Master<'s>, pt: Point<'s>, mut f: F) -> Progre
     Progress::success(pt, tail)
 }
 
+macro_rules! sequence {
+    ($pm:expr, $pt:expr, {$x:ident = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
+        let (pt, $x) = try_parse!($parser($pm, $pt));
+        sequence!($pm, pt, {$($rest)*}, $creator)
+    }};
+    ($pm:expr, $pt:expr, {}, $creator:expr) => {
+        Progress::success($pt, $creator($pm, $pt))
+    };
+}
+
 // TODO: promote?
 fn comma_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| {
-        let (pt, v) = try_parse!(f(pm, pt));
-        let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
-        let (pt, _) = try_parse!(optional(literal(","))(pm, pt));
-        let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
-
-        Progress::success(pt, v)
+        sequence!(pm, pt, {
+            v  = f;
+            _x = optional(whitespace);
+            _x = optional(literal(","));
+            _x = optional(whitespace);
+        }, |_, _| v)
     }
 }
 
@@ -278,11 +288,11 @@ fn comment<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 
 fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let spt          = pt;
-    let (pt, header) = try_parse!(function_header(pm, pt));
-    let (pt, _)      = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, body)   = try_parse!(function_body(pm, pt));
-
-    Progress::success(pt, TopLevel::Function(Function {
+    sequence!(pm, pt, {
+        header = function_header;
+        _x     = optional(whitespace);
+        body   = function_body;
+    }, |_, pt| TopLevel::Function(Function {
         extent: ex(spt, pt),
         header: header,
         body: body,
@@ -301,19 +311,19 @@ fn ext<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Ex
 
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
     let spt = pt;
-    let (pt, visib)    = try_parse!(optional(ext(literal("pub")))(pm, pt));
-    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, _)        = try_parse!(literal("fn")(pm, pt));
-    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, name)     = try_parse!(ident(pm, pt));
-    let (pt, generics) = try_parse!(optional(function_generic_declarations)(pm, pt));
-    let (pt, args)     = try_parse!(function_arglist(pm, pt));
-    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, ret)      = try_parse!(optional(function_return_type)(pm, pt));
-    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, wheres)   = try_parse!(optional(function_where_clause)(pm, pt));
-
-    Progress::success(pt, FunctionHeader {
+    sequence!(pm, pt, {
+        visib    = optional(ext(literal("pub")));
+        _x       = optional(whitespace);
+        _x       = literal("fn");
+        _x       = optional(whitespace);
+        name     = ident;
+        generics = optional(function_generic_declarations);
+        args     = function_arglist;
+        _x       = optional(whitespace);
+        ret      = optional(function_return_type);
+        _x       = optional(whitespace);
+        wheres   = optional(function_where_clause);
+    }, |_, pt| FunctionHeader {
         extent: ex(spt, pt),
         visibility: visib,
         name: name,
@@ -575,18 +585,18 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 }
 
 fn p_enum_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
-    let spt            = pt;
-    let (pt, _)        = try_parse!(literal("enum")(pm, pt));
-    let (pt, _)        = try_parse!(whitespace(pm, pt));
-    let (pt, name)     = try_parse!(ident(pm, pt));
-    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, _)        = try_parse!(literal("{")(pm, pt));
-    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, variants) = try_parse!(zero_or_more(comma_tail(enum_variant))(pm, pt));
-    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, _)        = try_parse!(literal("}")(pm, pt));
-
-    Progress::success(pt, Enum {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x       = literal("enum");
+        _x       = whitespace;
+        name     = ident;
+        _x       = optional(whitespace);
+        _x       = literal("{");
+        _x       = optional(whitespace);
+        variants = zero_or_more(comma_tail(enum_variant));
+        _x       = optional(whitespace);
+        _x       = literal("}");
+    }, |_, pt| Enum {
         extent: ex(spt, pt),
         name: name,
         variants: variants,
