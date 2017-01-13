@@ -150,7 +150,7 @@ struct Expression {
 #[derive(Debug)]
 enum ExpressionKind {
     MacroCall { name: Extent, args: Extent },
-    Let { pattern: Pattern, value: Box<Expression> },
+    Let { pattern: Pattern, value: Option<Box<Expression>> },
     Value { extent: Extent },
     FunctionCall { name: Extent, args: Vec<Expression> },
     Loop { body: Box<FunctionBody>},
@@ -447,14 +447,20 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKi
     let (pt, _)       = try_parse!(whitespace(pm, pt));
     let (pt, pattern) = try_parse!(pattern(pm, pt));
     let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, _)       = try_parse!(literal("=")(pm, pt));
-    let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, value)   = try_parse!(expression(pm, pt));
+    let (pt, value)   = try_parse!(optional(expr_let_rhs)(pm, pt));
 
     Progress::success(pt, ExpressionKind::Let {
         pattern: pattern,
-        value: Box::new(value),
+        value: value.map(Box::new),
     })
+}
+
+fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+    let (pt, _)     = try_parse!(literal("=")(pm, pt));
+    let (pt, _)     = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, value) = try_parse!(expression(pm, pt));
+
+    Progress::success(pt, value)
 }
 
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -763,6 +769,12 @@ mod test {
     fn expr_let_mut() {
         let p = qp(expression, "let mut pm = Master::new()");
         assert_eq!(unwrap_progress(p).extent, (0, 26))
+    }
+
+    #[test]
+    fn expr_let_no_value() {
+        let p = qp(expression, "let pm");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
     }
 
     #[test]
