@@ -153,6 +153,7 @@ enum ExpressionKind {
     Let { pattern: Pattern, value: Box<Expression> },
     Value { extent: Extent },
     FunctionCall { name: Extent, args: Vec<Expression> },
+    Loop { body: Box<FunctionBody>},
     True,
 }
 
@@ -418,6 +419,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(macro_call)
             .one(expr_let)
             .one(expr_function_call)
+            .one(expr_loop)
             .one(expr_value)
             .one(expr_true)
             .finish()
@@ -452,6 +454,16 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKi
     Progress::success(pt, ExpressionKind::Let {
         pattern: pattern,
         value: Box::new(value),
+    })
+}
+
+fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    let (pt, _)    = try_parse!(literal("loop")(pm, pt));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, body) = try_parse!(function_body(pm, pt));
+
+    Progress::success(pt, ExpressionKind::Loop {
+        body: Box::new(body),
     })
 }
 
@@ -769,6 +781,12 @@ mod test {
     fn expr_function_call_with_args() {
         let p = qp(expression, "foo(true)");
         assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn expr_loop() {
+        let p = qp(expression, "loop {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
