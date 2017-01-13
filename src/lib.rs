@@ -213,16 +213,29 @@ fn comma_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress
 {
     move |pm, pt| {
         let (pt, v) = try_parse!(f(pm, pt));
-        let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-        let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
-        let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+        let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
+        let (pt, _) = try_parse!(optional(literal(","))(pm, pt));
+        let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
 
         Progress::success(pt, v)
     }
 }
 
-// TODO: consider passing in `pt` to alternate to pass it back to
-// closure allow for nice composition
+// TODO: promote?
+fn optional<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Option<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| pm.optional(pt, &f) // what why ref?
+}
+
+// TODO: promote?
+fn zero_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| pm.zero_or_more(pt, &f) // what why ref?
+}
+
+// TODO: can we transofrm this to (pm, pt)?
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     pm.alternate(pt)
         .one(comment)
@@ -252,7 +265,7 @@ fn comment<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let spt          = pt;
     let (pt, header) = try_parse!(function_header(pm, pt));
-    let (pt, _)      = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)      = try_parse!(optional(whitespace)(pm, pt));
     let (pt, body)   = try_parse!(function_body(pm, pt));
 
     Progress::success(pt, TopLevel::Function(Function {
@@ -264,18 +277,18 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
 
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
     let spt = pt;
-    let (pt, visib)    = try_parse!(pm.optional(pt, literal("pub")));
+    let (pt, visib)    = try_parse!(optional(literal("pub"))(pm, pt));
     let ept = pt;
-    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)        = try_parse!(literal("fn")(pm, pt));
-    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
     let (pt, name)     = try_parse!(ident(pm, pt));
-    let (pt, generics) = try_parse!(pm.optional(pt, function_generic_declarations));
+    let (pt, generics) = try_parse!(optional(function_generic_declarations)(pm, pt));
     let (pt, args)     = try_parse!(function_arglist(pm, pt));
-    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
-    let (pt, ret)      = try_parse!(pm.optional(pt, function_return_type));
-    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
-    let (pt, wheres)   = try_parse!(pm.optional(pt, function_where_clause));
+    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, ret)      = try_parse!(optional(function_return_type)(pm, pt));
+    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, wheres)   = try_parse!(optional(function_where_clause)(pm, pt));
 
     Progress::success(pt, FunctionHeader {
         extent: ex(spt, pt),
@@ -314,8 +327,8 @@ fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, G
 
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
     let (pt, _)        = try_parse!(literal("(")(pm, pt));
-    let (pt, self_arg) = try_parse!(pm.optional(pt, self_argument));
-    let (pt, mut args) = try_parse!(pm.zero_or_more(pt, function_argument));
+    let (pt, self_arg) = try_parse!(optional(self_argument)(pm, pt));
+    let (pt, mut args) = try_parse!(zero_or_more(function_argument)(pm, pt));
     let (pt, _)        = try_parse!(literal(")")(pm, pt));
 
     if let Some(arg) = self_arg {
@@ -325,12 +338,12 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
 }
 
 fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
-    let (pt, _) = try_parse!(pm.optional(pt, literal("&")));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-    let (pt, _) = try_parse!(pm.optional(pt, literal("mut")));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _) = try_parse!(optional(literal("&"))(pm, pt));
+    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, _) = try_parse!(optional(literal("mut"))(pm, pt));
+    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _) = try_parse!(literal("self")(pm, pt));
-    let (pt, _) = try_parse!(pm.optional(pt, literal(",")));
+    let (pt, _) = try_parse!(optional(literal(","))(pm, pt));
 
     Progress::success(pt, Argument::SelfArgument)
 }
@@ -338,16 +351,16 @@ fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argumen
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
     let (pt, name) = try_parse!(ident(pm, pt));
     let (pt, _)    = try_parse!(literal(":")(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, typ)  = try_parse!(ident(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, literal(",")));
+    let (pt, _)    = try_parse!(optional(literal(","))(pm, pt));
 
     Progress::success(pt, Argument::Named { name: name, typ: typ })
 }
 
 fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     let (pt, _) = try_parse!(literal("->")(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, t)    = try_parse!(typ(pm, pt));
 
     Progress::success(pt, t)
@@ -363,9 +376,9 @@ fn function_where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
     let (pt, name)   = try_parse!(ident(pm, pt));
     let (pt, _)      = try_parse!(literal(":")(pm, pt));
-    let (pt, _)      = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)      = try_parse!(optional(whitespace)(pm, pt));
     let (pt, bounds) = try_parse!(ident(pm, pt));
-    let (pt, _)      = try_parse!(pm.optional(pt, literal(",")));
+    let (pt, _)      = try_parse!(optional(literal(","))(pm, pt));
 
     Progress::success(pt, Where { name: name, bounds: bounds })
 }
@@ -373,8 +386,8 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionBody> {
     let spt = pt;
     let (pt, _)     = try_parse!(literal("{")(pm, pt));
-    let (pt, stmts) = try_parse!(pm.zero_or_more(pt, statement));
-    let (pt, expr)  = try_parse!(pm.optional(pt, expression));
+    let (pt, stmts) = try_parse!(zero_or_more(statement)(pm, pt));
+    let (pt, expr)  = try_parse!(optional(expression)(pm, pt));
     let (pt, _)     = try_parse!(literal("}")(pm, pt));
 
     Progress::success(pt, FunctionBody {
@@ -387,16 +400,16 @@ fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Functio
 fn statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
     let (pt, expr) = try_parse!(expression(pm, pt));
     let (pt, _)    = try_parse!(literal(";")(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
 
     Progress::success(pt, Statement(expr))
 }
 
 fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     let spt        = pt;
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, kind) = try_parse!(pm.alternate(pt).one(macro_call).one(expr_true).finish());
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
 
     Progress::success(pt, Expression {
         extent: ex(spt, pt),
@@ -429,11 +442,11 @@ fn p_enum_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
     let (pt, _)        = try_parse!(literal("enum")(pm, pt));
     let (pt, _)        = try_parse!(whitespace(pm, pt));
     let (pt, name)     = try_parse!(ident(pm, pt));
-    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)        = try_parse!(literal("{")(pm, pt));
-    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
-    let (pt, variants) = try_parse!(pm.zero_or_more(pt, comma_tail(enum_variant)));
-    let (pt, _)        = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, variants) = try_parse!(zero_or_more(comma_tail(enum_variant))(pm, pt));
+    let (pt, _)        = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)        = try_parse!(literal("}")(pm, pt));
 
     Progress::success(pt, Enum {
@@ -446,8 +459,8 @@ fn p_enum_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
 fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariant> {
     let spt        = pt;
     let (pt, name) = try_parse!(ident(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
-    let (pt, body) = try_parse!(pm.optional(pt, enum_variant_body));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, body) = try_parse!(optional(enum_variant_body)(pm, pt));
 
     Progress::success(pt,  EnumVariant {
         extent: ex(spt, pt),
@@ -458,7 +471,7 @@ fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVari
 
 fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<EnumVariantBody>> {
     let (pt, _)     = try_parse!(literal("(")(pm, pt));
-    let (pt, types) = try_parse!(pm.zero_or_more(pt, comma_tail(typ)));
+    let (pt, types) = try_parse!(zero_or_more(comma_tail(typ))(pm, pt));
     let (pt, _)     = try_parse!(literal(")")(pm, pt));
 
     Progress::success(pt, types)
@@ -491,11 +504,11 @@ fn p_impl_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     let (pt, _)          = try_parse!(literal("for")(pm, pt));
     let (pt, _)          = try_parse!(whitespace(pm, pt));
     let (pt, type_name)  = try_parse!(typ(pm, pt));
-    let (pt, _)          = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)          = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)          = try_parse!(literal("{")(pm, pt));
-    let (pt, _)          = try_parse!(pm.optional(pt, whitespace));
-    let (pt, body)       = try_parse!(pm.zero_or_more(pt, impl_function));
-    let (pt, _)          = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)          = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, body)       = try_parse!(zero_or_more(impl_function)(pm, pt));
+    let (pt, _)          = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)          = try_parse!(literal("}")(pm, pt));
 
     Progress::success(pt, Impl {
@@ -509,7 +522,7 @@ fn p_impl_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
 fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFunction> {
     let spt = pt;
     let (pt, header) = try_parse!(function_header(pm, pt));
-    let (pt, body)   = try_parse!(pm.optional(pt, function_body));
+    let (pt, body)   = try_parse!(optional(function_body)(pm, pt));
 
     Progress::success(pt, ImplFunction {
         extent: ex(spt, pt),
@@ -523,7 +536,7 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
 fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let spt = pt;
     let (pt, _) = try_parse!(literal("#")(pm, pt));
-    let (pt, _) = try_parse!(pm.optional(pt, literal("!")));
+    let (pt, _) = try_parse!(optional(literal("!"))(pm, pt));
     let (pt, _) = try_parse!(literal("[")(pm, pt));
     let (pt, _) = parse_until(pt, "]");
     let (pt, _) = try_parse!(literal("]")(pm, pt));
@@ -538,7 +551,7 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel
     let (pt, _)    = try_parse!(literal("crate")(pm, pt));
     let (pt, _)    = try_parse!(whitespace(pm, pt));
     let (pt, name) = try_parse!(ident(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)    = try_parse!(literal(";")(pm, pt));
 
     Progress::success(pt, TopLevel::ExternCrate(Crate {
@@ -552,11 +565,11 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
     let (pt, _)    = try_parse!(literal("type")(pm, pt));
     let (pt, _)    = try_parse!(whitespace(pm, pt));
     let (pt, name) = try_parse!(typ(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)    = try_parse!(literal("=")(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, defn) = try_parse!(typ(pm, pt));
-    let (pt, _)    = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _)    = try_parse!(literal(";")(pm, pt));
 
     Progress::success(pt, TopLevel::TypeAlias(TypeAlias {
@@ -568,18 +581,18 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
-    let (pt, _) = try_parse!(pm.optional(pt, literal("&")));
-    let (pt, _) = try_parse!(pm.optional(pt, lifetime));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _) = try_parse!(optional(literal("&"))(pm, pt));
+    let (pt, _) = try_parse!(optional(lifetime)(pm, pt));
+    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
     let (pt, _) = try_parse!(path(pm, pt));
     let (pt, _) = try_parse!(ident(pm, pt));
-    let (pt, _) = try_parse!(pm.optional(pt, typ_generics));
+    let (pt, _) = try_parse!(optional(typ_generics)(pm, pt));
 
     Progress::success(pt, (spt.offset, spt.offset))
 }
 
 fn path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Extent>> {
-    pm.zero_or_more(pt, path_component)
+    zero_or_more(path_component)(pm, pt)
 }
 
 fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -593,9 +606,9 @@ fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent
 fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, _) = try_parse!(literal("<")(pm, pt));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
-    let (pt, _) = try_parse!(pm.optional(pt, typ_generic_lifetimes));
-    let (pt, _) = try_parse!(pm.optional(pt, type_generic_types));
+    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
+    let (pt, _) = try_parse!(optional(typ_generic_lifetimes)(pm, pt));
+    let (pt, _) = try_parse!(optional(type_generic_types)(pm, pt));
     let (pt, _) = try_parse!(literal(">")(pm, pt));
 
     Progress::success(pt, (spt.offset, spt.offset))
@@ -607,7 +620,7 @@ fn typ_generic_lifetimes<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 
 fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let (pt, _) = try_parse!(literal("'")(pm, pt));
-    let (pt, _) = try_parse!(pm.optional(pt, whitespace));
+    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
     ident(pm, pt)
 }
 
