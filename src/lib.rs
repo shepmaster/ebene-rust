@@ -60,6 +60,8 @@ pub fn parse_rust_file(file: &str) {
     // TODO: add `expect` to progress?
 }
 
+// TODO: enum variants track whole extent, enum delegates
+
 type Extent = (usize, usize);
 
 #[derive(Debug)]
@@ -71,8 +73,15 @@ enum TopLevel {
     Impl(Impl),
     Attribute(Extent),
     ExternCrate(Crate),
+    Use(Use),
     TypeAlias(TypeAlias),
     Whitespace(Extent),
+}
+
+#[derive(Debug)]
+struct Use {
+    extent: Extent,
+    name: Extent,
 }
 
 #[derive(Debug)]
@@ -329,6 +338,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(p_impl)
         .one(attribute)
         .one(extern_crate)
+        .one(p_use)
         .one(type_alias)
         .one(whitespace)
         .finish()
@@ -900,6 +910,23 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel
     }))
 }
 
+fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+    p_use_inner(pm, pt).map(TopLevel::Use)
+}
+
+fn p_use_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x   = literal("use");
+        _x   = whitespace;
+        name = pathed_ident;
+        _x   = literal(";");
+    }, |_, pt| Use {
+        extent: ex(spt, pt),
+        name
+    })
+}
+
 fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     let spt = pt;
     let (pt, _)    = try_parse!(literal("type")(pm, pt));
@@ -995,6 +1022,12 @@ mod test {
         let pt = Point::new(s);
         let r = f(&mut pm, pt);
         pm.finish(r)
+    }
+
+    #[test]
+    fn top_level_use() {
+        let p = qp(p_use_inner, "use foo::Bar;");
+        assert_eq!(unwrap_progress(p).extent, (0, 13))
     }
 
     #[test]
