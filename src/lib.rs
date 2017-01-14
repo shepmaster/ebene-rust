@@ -152,6 +152,7 @@ struct Expression {
 enum ExpressionKind {
     MacroCall { name: Extent, args: Extent },
     Let { pattern: Pattern, value: Option<Box<Expression>> },
+    Assign { name: Extent, value: Box<Expression> },
     Tuple { members: Vec<Expression> },
     Value { extent: Extent },
     Block(Box<FunctionBody>),
@@ -457,6 +458,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
         pm.alternate(pt)
             .one(macro_call)
             .one(expr_let)
+            .one(expr_assign)
             .one(expr_function_call)
             .one(expr_loop)
             .one(expr_match)
@@ -503,6 +505,16 @@ fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expressi
     let (pt, value) = try_parse!(expression(pm, pt));
 
     Progress::success(pt, value)
+}
+
+fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    sequence!(pm, pt, {
+        name  = ident;
+        _x    = optional(whitespace);
+        _x    = literal("=");
+        _x    = optional(whitespace);
+        value = expression;
+    }, |_, _| ExpressionKind::Assign { name, value: Box::new(value) })
 }
 
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -887,6 +899,12 @@ mod test {
     fn expr_let_no_value() {
         let p = qp(expression, "let pm");
         assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn expr_assign() {
+        let p = qp(expression, "a = b");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
     }
 
     #[test]
