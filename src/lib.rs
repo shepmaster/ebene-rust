@@ -279,6 +279,20 @@ fn one_or_more<'s, F, T>(pm: &mut Master<'s>, pt: Point<'s>, mut f: F) -> Progre
     Progress::success(pt, tail)
 }
 
+// TODO: extract to peresil
+fn one_or_more2<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
+{
+    move |pm, pt| {
+        let (pt, head) = try_parse!(f(pm, pt));
+        let (pt, mut tail) = try_parse!(pm.zero_or_more(pt, &f));// what why ref
+
+        tail.insert(0, head);
+        Progress::success(pt, tail)
+    }
+}
+
+// TODO: extract to peresil
 macro_rules! sequence {
     ($pm:expr, $pt:expr, {$x:ident = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
         let (pt, $x) = try_parse!($parser($pm, $pt));
@@ -742,9 +756,27 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x = path;
+        _x = ident;
+        _x = zero_or_more(path_component);
+        _x = optional(turbofish);
+    }, |_, pt| ex(spt, pt))
+}
+
+fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("::");
         _x = ident;
     }, |_, pt| ex(spt, pt))
+}
+
+fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        _x    = literal("::<");
+        types = ext(one_or_more2(comma_tail(typ)));
+        _x = inspect(|pt| println!("{:?}, {:?}", pt, types));
+        _x    = literal(">");
+    }, |_, _| types)
 }
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
@@ -957,18 +989,6 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     Progress::success(pt, ex(spt, pt))
 }
 
-fn path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Extent>> {
-    zero_or_more(path_component)(pm, pt)
-}
-
-fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
-    let (pt, _) = try_parse!(ident(pm, pt));
-    let (pt, _) = try_parse!(literal("::")(pm, pt));
-
-    Progress::success(pt, ex(spt, pt))
-}
-
 fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, _) = try_parse!(literal("<")(pm, pt));
@@ -1004,7 +1024,6 @@ fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
             .one(literal("\r"))
             .one(literal("\n"))
             .finish()
-
     }));
 
     Progress::success(pt, TopLevel::Whitespace(ex(spt, pt)))
@@ -1102,6 +1121,12 @@ mod test {
     fn expr_function_call() {
         let p = qp(expression, "foo()");
         assert_eq!(unwrap_progress(p).extent, (0, 5))
+    }
+
+    #[test]
+    fn pathed_ident_with_turbofish() {
+        let p = qp(pathed_ident, "foo::<Vec<u8>>");
+        assert_eq!(unwrap_progress(p), (0, 14))
     }
 
     #[test]
