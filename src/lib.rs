@@ -194,6 +194,7 @@ enum ExpressionKind {
     Value { extent: Extent },
     Block(Box<FunctionBody>),
     FunctionCall { name: Extent, args: Vec<Expression> },
+    MethodCall { receiver: Extent, name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
     Loop { body: Box<FunctionBody> },
     Binary { op: Extent, lhs: Box<Expression>, rhs: Box<Expression> },
     If { condition: Box<Expression>, body: Box<FunctionBody> },
@@ -421,7 +422,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, ex) = parse_until(pt, |c| {
-        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/'].contains(&c)
+        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.'].contains(&c)
     });
     if pt.offset <= spt.offset {
         Progress::failure(pt, Error::IdentNotFound)
@@ -570,6 +571,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(macro_call)
             .one(expr_let)
             .one(expr_assign)
+            .one(expr_method_call)
             .one(expr_function_call)
             .one(expr_tuple)
             .one(expr_value)
@@ -716,6 +718,18 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ex
         args = zero_or_more(comma_tail(expression));
         _x   = literal(")");
     }, |_, _| ExpressionKind::FunctionCall { name, args })
+}
+
+fn expr_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    sequence!(pm, pt, {
+        receiver  = pathed_ident;
+        _x        = literal(".");
+        name      = ident;
+        turbofish = optional(turbofish);
+        _x        = literal("(");
+        args      = zero_or_more(comma_tail(expression));
+        _x        = literal(")");
+    }, |_, _| ExpressionKind::MethodCall { receiver, name, turbofish, args })
 }
 
 fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -1133,6 +1147,18 @@ mod test {
     fn expr_function_call_with_args() {
         let p = qp(expression, "foo(true)");
         assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn expr_method_call() {
+        let p = qp(expression, "foo.bar()");
+        assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn expr_method_call_with_turbofish() {
+        let p = qp(expression, "foo.bar::<u8>()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
