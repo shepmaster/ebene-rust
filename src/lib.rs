@@ -154,6 +154,7 @@ enum ExpressionKind {
     Let { pattern: Pattern, value: Option<Box<Expression>> },
     Tuple { members: Vec<Expression> },
     Value { extent: Extent },
+    Block(Box<FunctionBody>),
     FunctionCall { name: Extent, args: Vec<Expression> },
     Loop { body: Box<FunctionBody> },
     Match { head: Box<Expression>, arms: Vec<MatchArm> },
@@ -169,6 +170,13 @@ struct MatchArm {
 #[derive(Debug)]
 struct Pattern {
     extent: Extent,
+    kind: PatternKind,
+}
+
+#[derive(Debug)]
+enum PatternKind {
+    Ident { ident: Extent, tuple: Vec<Pattern> },
+    Tuple(Vec<Pattern>),
 }
 
 #[derive(Debug)]
@@ -453,6 +461,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(expr_loop)
             .one(expr_match)
             .one(expr_tuple)
+            .one(expr_block)
             .one(expr_value)
             .one(expr_true)
             .finish()
@@ -547,6 +556,10 @@ fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     })
 }
 
+fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    function_body(pm, pt).map(|block| ExpressionKind::Block(Box::new(block)))
+}
+
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
     pathed_ident(pm, pt).map(|extent| ExpressionKind::Value { extent })
 }
@@ -575,9 +588,39 @@ fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> 
 }
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
-    let (pt, _) = try_parse!(optional(literal("mut"))(pm, pt));
-    let (pt, _) = try_parse!(optional(whitespace)(pm, pt));
-    pathed_ident(pm, pt).map(|extent| Pattern { extent })
+    let spt = pt;
+    let (pt, kind) = try_parse!({
+        pm.alternate(pt)
+            .one(pattern_ident)
+            .one(pattern_tuple)
+            .finish()
+    });
+
+    Progress::success(pt, Pattern {
+        extent: ex(spt, pt),
+        kind
+    })
+}
+
+fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternKind> {
+    sequence!(pm, pt, {
+        _x    = optional(literal("mut"));
+        _x    = optional(whitespace);
+        ident = pathed_ident;
+        tuple = optional(pattern_tuple_inner);
+    }, |_, _| PatternKind::Ident { ident, tuple: tuple.unwrap_or_else(Vec::new) })
+}
+
+fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternKind> {
+    pattern_tuple_inner(pm, pt).map(PatternKind::Tuple)
+}
+
+fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
+    sequence!(pm, pt, {
+        _x           = literal("(");
+        sub_patterns = zero_or_more(comma_tail(pattern));
+        _x           = literal(")");
+    }, |_, _| sub_patterns)
 }
 
 fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -883,9 +926,27 @@ mod test {
     }
 
     #[test]
+    fn expr_block() {
+        let p = qp(expression, "{}");
+        assert_eq!(unwrap_progress(p).extent, (0, 2))
+    }
+
+    #[test]
     fn pattern_with_path() {
         let p = qp(pattern, "foo::Bar::Baz");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn pattern_with_tuple() {
+        let p = qp(pattern, "(a, b)");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn pattern_with_enum_tuple() {
+        let p = qp(pattern, "Baz(a)");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
