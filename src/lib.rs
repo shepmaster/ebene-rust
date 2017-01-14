@@ -140,7 +140,35 @@ struct FunctionBody {
 }
 
 #[derive(Debug)]
-struct Statement(Expression);
+enum Statement {
+    Explicit(Expression),
+    Implicit(Expression),
+}
+
+impl Statement {
+    #[allow(dead_code)]
+    fn explicit(self) -> Option<Expression> {
+        match self {
+            Statement::Explicit(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn implicit(self) -> Option<Expression> {
+        match self {
+            Statement::Implicit(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    fn is_implicit(&self) -> bool {
+        match *self {
+            Statement::Implicit(..) => true,
+            _ => false
+        }
+    }
+}
 
 #[derive(Debug)]
 struct Expression {
@@ -158,9 +186,16 @@ enum ExpressionKind {
     Block(Box<FunctionBody>),
     FunctionCall { name: Extent, args: Vec<Expression> },
     Loop { body: Box<FunctionBody> },
+    Binary { op: Extent, lhs: Box<Expression>, rhs: Box<Expression> },
     If { condition: Box<Expression>, body: Box<FunctionBody> },
     Match { head: Box<Expression>, arms: Vec<MatchArm> },
     True,
+}
+
+#[derive(Debug)]
+struct BinaryTail {
+    op: Extent,
+    rhs: Box<Expression>,
 }
 
 #[derive(Debug)]
@@ -271,6 +306,17 @@ fn zero_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progre
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| pm.zero_or_more(pt, &f) // what why ref?
+}
+
+// todo: promote?
+#[allow(dead_code)]
+fn inspect<'s, F>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, ()>
+    where F: Fn(Point<'s>)
+{
+    move |_, pt| {
+        f(pt);
+        Progress::success(pt, ())
+    }
 }
 
 // TODO: can we transofrm this to (pm, pt)?
@@ -437,6 +483,13 @@ fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Functio
     let (pt, expr)  = try_parse!(optional(expression)(pm, pt));
     let (pt, _)     = try_parse!(literal("}")(pm, pt));
 
+    let mut stmts = stmts;
+    let mut expr = expr;
+
+    if expr.is_none() && stmts.last().map_or(false, Statement::is_implicit) {
+        expr = stmts.pop().and_then(Statement::implicit);
+    }
+
     Progress::success(pt, FunctionBody {
         extent: ex(spt, pt),
         statements: stmts,
@@ -445,11 +498,43 @@ fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Functio
 }
 
 fn statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
-    let (pt, expr) = try_parse!(expression(pm, pt));
-    let (pt, _)    = try_parse!(literal(";")(pm, pt));
-    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
+    sequence!(pm, pt, {
+        _x   = optional(whitespace);
+        expr = statement_inner;
+        _x   = optional(whitespace);
+    }, |_, _| expr)
+}
 
-    Progress::success(pt, Statement(expr))
+fn statement_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
+    pm.alternate(pt)
+        .one(explicit_statement)
+        .one(implicit_statement)
+        .finish()
+}
+
+fn explicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
+    sequence!(pm, pt, {
+        expr = expression;
+        _x = literal(";");
+    }, |_, _| Statement::Explicit(expr))
+}
+
+// idea: trait w/associated types to avoid redefin fn types?
+
+fn implicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
+    let spt = pt;
+    let (pt, kind) = try_parse!(expression_ending_in_brace(pm, pt));
+
+    Progress::success(pt, Statement::Implicit(Expression { extent: ex(spt, pt), kind: kind }))
+}
+
+fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    pm.alternate(pt)
+        .one(expr_if)
+        .one(expr_loop)
+        .one(expr_match)
+        .one(expr_block)
+        .finish()
 }
 
 fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
@@ -457,25 +542,37 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, kind) = try_parse!({
         pm.alternate(pt)
+            .one(expression_ending_in_brace)
             .one(macro_call)
             .one(expr_let)
             .one(expr_assign)
             .one(expr_function_call)
-            .one(expr_if)
-            .one(expr_loop)
-            .one(expr_match)
             .one(expr_tuple)
-            .one(expr_block)
             .one(expr_value)
             .one(expr_true)
             .finish()
     });
+    let mpt = pt;
+    let (pt, bin_op_tail) = try_parse!(optional(expr_binary_tail)(pm, pt));
     let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
 
-    Progress::success(pt, Expression {
-        extent: ex(spt, pt),
+    let mut expression = Expression {
+        extent: ex(spt, mpt),
         kind,
-    })
+    };
+
+    if let Some(tail) = bin_op_tail {
+        expression = Expression {
+            extent: ex(spt, pt),
+            kind: ExpressionKind::Binary {
+                op: tail.op,
+                lhs: Box::new(expression),
+                rhs: tail.rhs,
+            }
+        };
+    }
+
+    Progress::success(pt, expression)
 }
 
 fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -601,6 +698,35 @@ fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionK
     let (pt, _) = try_parse!(literal("true")(pm, pt));
 
     Progress::success(pt, ExpressionKind::True)
+}
+
+fn expr_binary_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryTail> {
+    sequence!(pm, pt, {
+        _x  = optional(whitespace);
+        op  = binary_op;
+        _x  = optional(whitespace);
+        rhs = expression;
+    }, |_, _| BinaryTail { op, rhs: Box::new(rhs) })
+}
+
+fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    // Two characters before one to avoid matching += as +
+    pm.alternate(pt)
+        .one(ext(literal("+=")))
+        .one(ext(literal("-=")))
+        .one(ext(literal("*=")))
+        .one(ext(literal("/=")))
+        .one(ext(literal("%=")))
+        .one(ext(literal("<=")))
+        .one(ext(literal(">=")))
+        .one(ext(literal("+")))
+        .one(ext(literal("-")))
+        .one(ext(literal("*")))
+        .one(ext(literal("/")))
+        .one(ext(literal("%")))
+        .one(ext(literal("<")))
+        .one(ext(literal(">")))
+        .finish()
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -896,6 +1022,20 @@ mod test {
     }
 
     #[test]
+    fn block_promotes_implicit_statement_to_expression() {
+        let p = qp(function_body, "{ if a {} }");
+        let p = unwrap_progress(p);
+        assert!(p.statements.is_empty());
+        assert_eq!(p.expression.unwrap().extent, (2, 9));
+    }
+
+    #[test]
+    fn statement_match_no_semicolon() {
+        let p = qp(statement, "match a { _ => () }");
+        assert_eq!(unwrap_progress(p).implicit().unwrap().extent, (0, 19))
+    }
+
+    #[test]
     fn expr_true() {
         let p = qp(expression, "true");
         assert_eq!(unwrap_progress(p).extent, (0, 4))
@@ -965,6 +1105,18 @@ mod test {
     fn expr_if() {
         let p = qp(expression, "if true {}");
         assert_eq!(unwrap_progress(p).extent, (0, 10))
+    }
+
+    #[test]
+    fn expr_binary_op() {
+        let p = qp(expression, "a < b");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
+    }
+
+    #[test]
+    fn expr_binary_op_two_char() {
+        let p = qp(expression, "a >= b");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
     }
 
     #[test]
