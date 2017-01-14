@@ -158,6 +158,7 @@ enum ExpressionKind {
     Block(Box<FunctionBody>),
     FunctionCall { name: Extent, args: Vec<Expression> },
     Loop { body: Box<FunctionBody> },
+    If { condition: Box<Expression>, body: Box<FunctionBody> },
     Match { head: Box<Expression>, arms: Vec<MatchArm> },
     True,
 }
@@ -460,6 +461,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(expr_let)
             .one(expr_assign)
             .one(expr_function_call)
+            .one(expr_if)
             .one(expr_loop)
             .one(expr_match)
             .one(expr_tuple)
@@ -515,6 +517,16 @@ fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expressio
         _x    = optional(whitespace);
         value = expression;
     }, |_, _| ExpressionKind::Assign { name, value: Box::new(value) })
+}
+
+fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+    sequence!(pm, pt, {
+        _x        = literal("if");
+        _x        = whitespace;
+        condition = expression;
+        _x        = optional(whitespace);
+        body      = function_body;
+    }, |_, _| ExpressionKind::If { condition: Box::new(condition), body: Box::new(body) })
 }
 
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -947,6 +959,12 @@ mod test {
     fn expr_block() {
         let p = qp(expression, "{}");
         assert_eq!(unwrap_progress(p).extent, (0, 2))
+    }
+
+    #[test]
+    fn expr_if() {
+        let p = qp(expression, "if true {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 10))
     }
 
     #[test]
