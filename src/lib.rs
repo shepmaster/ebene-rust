@@ -345,7 +345,7 @@ struct Trait {
 #[derive(Debug)]
 struct Impl {
     extent: Extent,
-    trait_name: Type,
+    trait_name: Option<Type>,
     type_name: Type,
     body: Vec<ImplFunction>,
 }
@@ -497,7 +497,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(map(p_struct, TopLevel::Struct))
         .one(map(p_enum, TopLevel::Enum))
         .one(p_trait)
-        .one(p_impl)
+        .one(map(p_impl, TopLevel::Impl))
         .one(attribute)
         .one(extern_crate)
         .one(p_use)
@@ -1095,19 +1095,12 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     }))
 }
 
-fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
-    p_impl_inner(pm, pt).map(TopLevel::Impl)
-}
-
-fn p_impl_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
-    let spt              = pt;
+fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
+    let spt = pt;
     sequence!(pm, pt, {
         _x         = literal("impl");
         _x         = whitespace;
-        trait_name = typ;
-        _x         = whitespace;
-        _x         = literal("for");
-        _x         = whitespace;
+        trait_name = optional(p_impl_of_trait);
         type_name  = typ;
         _x         = optional(whitespace);
         _x         = literal("{");
@@ -1121,6 +1114,15 @@ fn p_impl_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         type_name,
         body,
     })
+}
+
+fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+    sequence!(pm, pt, {
+        trait_name = typ;
+        _x         = whitespace;
+        _x         = literal("for");
+        _x         = whitespace;
+    }, |_, _| trait_name)
 }
 
 fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFunction> {
@@ -1295,6 +1297,18 @@ mod test {
     fn top_level_use() {
         let p = qp(p_use_inner, "use foo::Bar;");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn impl_without_trait() {
+        let p = qp(p_impl, "impl Bar {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn impl_with_trait() {
+        let p = qp(p_impl, "impl Foo for Bar {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 19))
     }
 
     #[test]
