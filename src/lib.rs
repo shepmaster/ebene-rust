@@ -68,7 +68,7 @@ type Extent = (usize, usize);
 
 #[derive(Debug)]
 enum TopLevel {
-    Comment(Extent),
+    Comment(Comment),
     Function(Function),
     Enum(Enum),
     Trait(Trait),
@@ -78,6 +78,12 @@ enum TopLevel {
     Use(Use),
     TypeAlias(TypeAlias),
     Whitespace(Extent),
+}
+
+#[derive(Debug)]
+struct Comment {
+    extent: Extent,
+    text: Extent,
 }
 
 #[derive(Debug)]
@@ -350,6 +356,20 @@ fn parse_until<'s, P>(pt: Point<'s>, p: P) -> (Point<'s>, Extent)
 }
 
 // TODO: extract to peresil?
+fn parse_until2<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
+    where P: std::str::pattern::Pattern<'s> + Clone // TODO: eww clone
+{
+    move |_, pt| {
+        let spt = pt;
+        let end = pt.s.find(p.clone()).unwrap_or(pt.s.len());
+        let k = &pt.s[end..];
+        let pt = Point { s: k, offset: pt.offset + end };
+
+        Progress::success(pt, ex(spt, pt))
+    }
+}
+
+// TODO: extract to peresil?
 fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent> {
     move |_, pt| {
         let mut depth: usize = 0;
@@ -449,7 +469,7 @@ fn inspect<'s, F>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, (
 // TODO: can we transofrm this to (pm, pt)?
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     pm.alternate(pt)
-        .one(comment)
+        .one(map(comment, TopLevel::Comment))
         .one(function)
         .one(p_enum)
         .one(p_trait)
@@ -466,12 +486,12 @@ fn literal<'s>(expected: &'static str) -> impl Fn(&mut Master<'s>, Point<'s>) ->
     move |_pm, pt| pt.consume_literal(expected).map_err(|_| Error::Literal(expected))
 }
 
-fn comment<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
-    let (pt, _) = try_parse!(literal("//")(pm, pt));
+fn comment<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Comment> {
     let spt = pt;
-    let (pt, _) = parse_until(pt, "\n");
-
-    Progress::success(pt, TopLevel::Comment(ex(spt, pt)))
+    sequence!(pm, pt, {
+        _x   = literal("//");
+        text = parse_until2("\n");
+    }, |_, pt| Comment { extent: ex(spt, pt), text })
 }
 
 fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
