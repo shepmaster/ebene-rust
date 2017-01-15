@@ -1309,7 +1309,7 @@ mod test {
     }
 
     #[test]
-    fn expr_method_call_with_turbofish_2() {
+    fn expr_method_call_with_turbofish_nested() {
         let p = qp(expression, "e.into_iter().collect::<BTreeSet<_>>()");
         assert_eq!(unwrap_progress(p).extent, (0, 38))
     }
