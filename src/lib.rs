@@ -615,10 +615,10 @@ fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argumen
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
     sequence!(pm, pt, {
         name = ident;
-        _x    = literal(":");
-        _x    = optional(whitespace);
-        typ  = ident;
-        _x    = optional(literal(","));
+        _x   = literal(":");
+        _x   = optional(whitespace);
+        typ  = typ;
+        _x   = optional(literal(","));
     }, |_, _| Argument::Named { name, typ })
 }
 
@@ -1311,6 +1311,18 @@ mod test {
     fn fn_with_self_type() {
         let p = qp(function_header, "fn foo(&self)");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_argument() {
+        let p = qp(function_header, "fn foo(a: u8)");
+        assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_argument_with_generic() {
+        let p = qp(function_header, "fn foo(a: Vec<u8>)");
+        assert_eq!(unwrap_progress(p).extent, (0, 18))
     }
 
     #[test]
