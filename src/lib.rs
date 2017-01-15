@@ -152,10 +152,14 @@ struct Enum {
 struct EnumVariant {
     extent: Extent,
     name: Extent,
-    body: Vec<EnumVariantBody>,
+    body: Option<EnumVariantBody>,
 }
 
-type EnumVariantBody = Extent;
+#[derive(Debug)]
+enum EnumVariantBody {
+    Tuple(Extent),
+    Struct(Extent),
+}
 
 #[derive(Debug)]
 enum Argument {
@@ -1060,16 +1064,35 @@ fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVari
     }, |_, pt| EnumVariant {
         extent: ex(spt, pt),
         name,
-        body: body.unwrap_or_else(Vec::new),
+        body: body
     })
 }
 
-fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<EnumVariantBody>> {
+fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
+    pm.alternate(pt)
+        .one(enum_variant_body_tuple)
+        .one(enum_variant_body_struct)
+        .finish()
+}
+
+fn enum_variant_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
+    let spt = pt;
     sequence!(pm, pt, {
-        _x    = literal("(");
-        types = zero_or_more(comma_tail(typ));
-        _x    = literal(")");
-    }, |_, _| types)
+        _x = literal("(");
+        _x = zero_or_more(comma_tail(typ));
+        _x = literal(")");
+    }, |_, pt| EnumVariantBody::Tuple(ex(spt, pt)))
+}
+
+fn enum_variant_body_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("{");
+        _x = optional(whitespace);
+        _x = zero_or_more(comma_tail(struct_field));
+        _x = optional(whitespace);
+        _x = literal("}");
+    }, |_, pt| EnumVariantBody::Struct(ex(spt, pt)))
 }
 
 fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -1298,6 +1321,12 @@ mod test {
     fn enum_with_generic_types() {
         let p = qp(p_enum, "enum A { Foo(Vec<u8>) }");
         assert_eq!(unwrap_progress(p).extent, (0, 23))
+    }
+
+    #[test]
+    fn enum_with_struct_variant() {
+        let p = qp(p_enum, "enum A { Foo { a: u8 } }");
+        assert_eq!(unwrap_progress(p).extent, (0, 24))
     }
 
     #[test]
