@@ -90,7 +90,7 @@ struct Use {
 struct Function {
     extent: Extent,
     header: FunctionHeader,
-    body: FunctionBody,
+    body: Block,
 }
 
 #[derive(Debug)]
@@ -144,7 +144,7 @@ struct Where {
 }
 
 #[derive(Debug)]
-struct FunctionBody {
+struct Block {
     extent: Extent,
     statements: Vec<Statement>,
     expression: Option<Expression>,
@@ -195,12 +195,12 @@ enum ExpressionKind {
     Tuple { members: Vec<Expression> },
     FieldAccess { value: Box<Expression>, field: Extent },
     Value { extent: Extent },
-    Block(Box<FunctionBody>),
+    Block(Box<Block>),
     FunctionCall { name: Extent, args: Vec<Expression> },
     MethodCall { receiver: Box<Expression>, name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
-    Loop { body: Box<FunctionBody> },
+    Loop { body: Box<Block> },
     Binary { op: Extent, lhs: Box<Expression>, rhs: Box<Expression> },
-    If { condition: Box<Expression>, body: Box<FunctionBody> },
+    If { condition: Box<Expression>, body: Box<Block> },
     Match { head: Box<Expression>, arms: Vec<MatchArm> },
     True,
 }
@@ -248,7 +248,7 @@ struct Impl {
 struct ImplFunction {
     extent: Extent,
     header: FunctionHeader,
-    body: Option<FunctionBody>,
+    body: Option<Block>,
 }
 
 #[derive(Debug)]
@@ -414,7 +414,7 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     sequence!(pm, pt, {
         header = function_header;
         _x     = optional(whitespace);
-        body   = function_body;
+        body   = block;
     }, |_, pt| TopLevel::Function(Function {
         extent: ex(spt, pt),
         header,
@@ -539,7 +539,7 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
     Progress::success(pt, Where { name, bounds })
 }
 
-fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionBody> {
+fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
     let spt = pt;
     sequence!(pm, pt, {
         _x    = literal("{");
@@ -556,7 +556,7 @@ fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Functio
             expr = stmts.pop().and_then(Statement::implicit);
         }
 
-        FunctionBody {
+        Block {
             extent: ex(spt, pt),
             statements: stmts,
             expression: expr,
@@ -720,14 +720,14 @@ fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKin
         _x        = whitespace;
         condition = expression;
         _x        = optional(whitespace);
-        body      = function_body;
+        body      = block;
     }, |_, _| ExpressionKind::If { condition: Box::new(condition), body: Box::new(body) })
 }
 
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
     let (pt, _)    = try_parse!(literal("loop")(pm, pt));
     let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, body) = try_parse!(function_body(pm, pt));
+    let (pt, body) = try_parse!(block(pm, pt));
 
     Progress::success(pt, ExpressionKind::Loop {
         body: Box::new(body),
@@ -776,7 +776,7 @@ fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    function_body(pm, pt).map(|block| ExpressionKind::Block(Box::new(block)))
+    block(pm, pt).map(|block| ExpressionKind::Block(Box::new(block)))
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -1003,7 +1003,7 @@ fn p_impl_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
 fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFunction> {
     let spt = pt;
     let (pt, header) = try_parse!(function_header(pm, pt));
-    let (pt, body)   = try_parse!(optional(function_body)(pm, pt));
+    let (pt, body)   = try_parse!(optional(block)(pm, pt));
 
     Progress::success(pt, ImplFunction {
         extent: ex(spt, pt),
@@ -1174,7 +1174,7 @@ mod test {
 
     #[test]
     fn block_promotes_implicit_statement_to_expression() {
-        let p = qp(function_body, "{ if a {} }");
+        let p = qp(block, "{ if a {} }");
         let p = unwrap_progress(p);
         assert!(p.statements.is_empty());
         assert_eq!(p.expression.unwrap().extent, (2, 9));
