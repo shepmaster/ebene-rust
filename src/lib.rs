@@ -1014,11 +1014,7 @@ fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
         _x     = whitespace;
         name   = ident;
         _x     = optional(whitespace);
-        _x     = literal("{");
-        _x     = optional(whitespace);
-        fields = zero_or_more(comma_tail(struct_field));
-        _x     = optional(whitespace);
-        _x     = literal("}");
+        fields = struct_defn_body;
     }, |_, pt| Struct {
         extent: ex(spt, pt),
         name,
@@ -1026,7 +1022,17 @@ fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
     })
 }
 
-fn struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
+fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructField>> {
+    sequence!(pm, pt, {
+        _x = literal("{");
+        _x = optional(whitespace);
+        fields = zero_or_more(comma_tail(struct_defn_field));
+        _x = optional(whitespace);
+        _x = literal("}");
+    }, |_, _| fields)
+}
+
+fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
     let spt = pt;
     sequence!(pm, pt, {
         name = ident;
@@ -1070,29 +1076,9 @@ fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVari
 
 fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
     pm.alternate(pt)
-        .one(enum_variant_body_tuple)
-        .one(enum_variant_body_struct)
+        .one(map(tuple_defn_body, EnumVariantBody::Tuple))
+        .one(map(ext(struct_defn_body), EnumVariantBody::Struct))
         .finish()
-}
-
-fn enum_variant_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
-    let spt = pt;
-    sequence!(pm, pt, {
-        _x = literal("(");
-        _x = zero_or_more(comma_tail(typ));
-        _x = literal(")");
-    }, |_, pt| EnumVariantBody::Tuple(ex(spt, pt)))
-}
-
-fn enum_variant_body_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
-    let spt = pt;
-    sequence!(pm, pt, {
-        _x = literal("{");
-        _x = optional(whitespace);
-        _x = zero_or_more(comma_tail(struct_field));
-        _x = optional(whitespace);
-        _x = literal("}");
-    }, |_, pt| EnumVariantBody::Struct(ex(spt, pt)))
 }
 
 fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -1227,11 +1213,11 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     pm.alternate(pt)
         .one(typ_core)
-        .one(typ_tuple)
+        .one(tuple_defn_body)
         .finish()
 }
 
-fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     sequence!(pm, pt, {
         _x = literal("(");
