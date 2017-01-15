@@ -590,7 +590,7 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
     sequence!(pm, pt, {
         _x       = literal("(");
         self_arg = optional(self_argument);
-        args     = zero_or_more(function_argument);
+        args     = zero_or_more(comma_tail(function_argument));
         _x       = literal(")");
     }, move |_, _| {
         let mut args = args;
@@ -618,7 +618,6 @@ fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Arg
         _x   = literal(":");
         _x   = optional(whitespace);
         typ  = typ;
-        _x   = optional(literal(","));
     }, |_, _| Argument::Named { name, typ })
 }
 
@@ -1323,6 +1322,12 @@ mod test {
     fn fn_with_argument_with_generic() {
         let p = qp(function_header, "fn foo(a: Vec<u8>)");
         assert_eq!(unwrap_progress(p).extent, (0, 18))
+    }
+
+    #[test]
+    fn fn_with_arguments() {
+        let p = qp(function_header, "fn foo(a: u8, b: u8)");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
