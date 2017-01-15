@@ -5,6 +5,8 @@
 #[macro_use]
 extern crate peresil;
 
+use std::collections::BTreeSet;
+
 // define what you want to parse; likely a string
 // create an error type
 // definte type aliases
@@ -13,7 +15,7 @@ type Master<'s> = peresil::ParseMaster<Point<'s>, Error>;
 type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 
 // define an error type - emphasis on errors. Need to implement Recoverable (more to discuss.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Error {
     Literal(&'static str),
     IdentNotFound,
@@ -42,7 +44,7 @@ pub fn parse_rust_file(file: &str) {
                 next_pt = top_level.point;
             },
             peresil::Status::Failure(e) => {
-                println!("Err {:?}", e);
+                println!("Err @ {}: {:?}", top_level.point.offset, e.into_iter().collect::<BTreeSet<_>>());
                 println!(">>{}<<", &file[top_level.point.offset..]);
                 break;
             },
@@ -191,10 +193,11 @@ enum ExpressionKind {
     Let { pattern: Pattern, value: Option<Box<Expression>> },
     Assign { name: Extent, value: Box<Expression> },
     Tuple { members: Vec<Expression> },
+    FieldAccess { value: Box<Expression>, field: Extent },
     Value { extent: Extent },
     Block(Box<FunctionBody>),
     FunctionCall { name: Extent, args: Vec<Expression> },
-    MethodCall { receiver: Extent, name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
+    MethodCall { receiver: Box<Expression>, name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
     Loop { body: Box<FunctionBody> },
     Binary { op: Extent, lhs: Box<Expression>, rhs: Box<Expression> },
     If { condition: Box<Expression>, body: Box<FunctionBody> },
@@ -203,9 +206,10 @@ enum ExpressionKind {
 }
 
 #[derive(Debug)]
-struct BinaryTail {
-    op: Extent,
-    rhs: Box<Expression>,
+enum ExpressionTail {
+    Binary { op: Extent, rhs: Box<Expression> },
+    FieldAccess { field: Extent },
+    MethodCall { name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
 }
 
 #[derive(Debug)]
@@ -269,6 +273,30 @@ fn parse_until<'s, P>(pt: Point<'s>, p: P) -> (Point<'s>, Extent)
     (Point { s: k, offset: pt.offset + end }, (pt.offset, pt.offset + end))
 }
 
+// TODO: extract to peresil?
+fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent> {
+    move |_, pt| {
+        let mut depth: usize = 0;
+        let spt = pt;
+
+        let val = |len| {
+            let pt = Point { s: &pt.s[len..], offset: pt.offset + len };
+            Progress::success(pt, ex(spt, pt))
+        };
+
+        for (i, c) in pt.s.char_indices() {
+            if c == close && depth == 0 {
+                return val(i);
+            } else if c == close {
+                depth -= 1;
+            } else if c == open {
+                depth += 1;
+            }
+        }
+        val(pt.s.len())
+    }
+}
+
 // TODO: extract to peresil
 fn one_or_more<'s, F, T>(pm: &mut Master<'s>, pt: Point<'s>, mut f: F) -> Progress<'s, Vec<T>>
     where F: FnMut(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
@@ -330,6 +358,16 @@ fn zero_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progre
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| pm.zero_or_more(pt, &f) // what why ref?
+}
+
+#[allow(dead_code)]
+fn map<'s, P, F, T, U>(p: P, f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, U>
+    where P: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
+          F: Fn(T) -> U
+{
+    move |pm, pt| {
+        p(pm, pt).map(&f)
+    }
 }
 
 // todo: promote?
@@ -503,22 +541,26 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 
 fn function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionBody> {
     let spt = pt;
-    let (pt, _)     = try_parse!(literal("{")(pm, pt));
-    let (pt, stmts) = try_parse!(zero_or_more(statement)(pm, pt));
-    let (pt, expr)  = try_parse!(optional(expression)(pm, pt));
-    let (pt, _)     = try_parse!(literal("}")(pm, pt));
+    sequence!(pm, pt, {
+        _x    = literal("{");
+        _x    = optional(whitespace);
+        stmts = zero_or_more(statement);
+        expr  = optional(expression);
+        _x    = optional(whitespace);
+        _x    = literal("}");
+    }, |_, pt| {
+        let mut stmts = stmts;
+        let mut expr = expr;
 
-    let mut stmts = stmts;
-    let mut expr = expr;
+        if expr.is_none() && stmts.last().map_or(false, Statement::is_implicit) {
+            expr = stmts.pop().and_then(Statement::implicit);
+        }
 
-    if expr.is_none() && stmts.last().map_or(false, Statement::is_implicit) {
-        expr = stmts.pop().and_then(Statement::implicit);
-    }
-
-    Progress::success(pt, FunctionBody {
-        extent: ex(spt, pt),
-        statements: stmts,
-        expression: expr,
+        FunctionBody {
+            extent: ex(spt, pt),
+            statements: stmts,
+            expression: expr,
+        }
     })
 }
 
@@ -571,44 +613,74 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(macro_call)
             .one(expr_let)
             .one(expr_assign)
-            .one(expr_method_call)
             .one(expr_function_call)
             .one(expr_tuple)
-            .one(expr_value)
             .one(expr_true)
+            .one(expr_value)
             .finish()
     });
     let mpt = pt;
-    let (pt, bin_op_tail) = try_parse!(optional(expr_binary_tail)(pm, pt));
-    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
+
+
+//    let (pt, tail) = try_parse!(optional(expression_tail)(pm, pt));
+//    let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
 
     let mut expression = Expression {
         extent: ex(spt, mpt),
         kind,
     };
 
-    if let Some(tail) = bin_op_tail {
-        expression = Expression {
-            extent: ex(spt, pt),
-            kind: ExpressionKind::Binary {
-                op: tail.op,
-                lhs: Box::new(expression),
-                rhs: tail.rhs,
+    let mut pt = pt;
+    loop {
+        let (pt2, tail) = try_parse!(optional(expression_tail)(pm, pt));
+        pt = pt2;
+        match tail {
+            Some(ExpressionTail::Binary { op, rhs }) => {
+                expression = Expression {
+                    extent: ex(spt, pt),
+                    kind: ExpressionKind::Binary {
+                        op: op,
+                        lhs: Box::new(expression),
+                        rhs: rhs,
+                    }
+                }
             }
-        };
+            Some(ExpressionTail::FieldAccess { field }) => {
+                //mid.insert(0, expression);
+                expression = Expression {
+                    extent: ex(spt, pt),
+                    kind: ExpressionKind::FieldAccess {
+                        value: Box::new(expression),
+                        field: field,
+                    }
+                }
+            }
+            Some(ExpressionTail::MethodCall { name, turbofish, args }) => {
+                expression = Expression {
+                    extent: ex(spt, pt),
+                    kind: ExpressionKind::MethodCall {
+                        receiver: Box::new(expression),
+                        name: name,
+                        turbofish: turbofish,
+                        args: args
+                    }
+                }
+            }
+            None => break,
+        }
     }
 
     Progress::success(pt, expression)
 }
 
 fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    let (pt, name) = try_parse!(ident(pm, pt));
-    let (pt, _)    = try_parse!(literal("!")(pm, pt));
-    let (pt, _)    = try_parse!(literal("(")(pm, pt));
-    let (pt, args) = parse_until(pt, ")");
-    let (pt, _)    = try_parse!(literal(")")(pm, pt));
-
-    Progress::success(pt, ExpressionKind::MacroCall { name, args })
+    sequence!(pm, pt, {
+        name = ident;
+        _x   = literal("!");
+        _x   = literal("(");
+        args = parse_nested_until('(', ')');
+        _x   = literal(")");
+    }, |_, _| ExpressionKind::MacroCall { name, args })
 }
 
 fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -720,31 +792,27 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ex
     }, |_, _| ExpressionKind::FunctionCall { name, args })
 }
 
-fn expr_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    sequence!(pm, pt, {
-        receiver  = pathed_ident;
-        _x        = literal(".");
-        name      = ident;
-        turbofish = optional(turbofish);
-        _x        = literal("(");
-        args      = zero_or_more(comma_tail(expression));
-        _x        = literal(")");
-    }, |_, _| ExpressionKind::MethodCall { receiver, name, turbofish, args })
-}
-
 fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
     let (pt, _) = try_parse!(literal("true")(pm, pt));
 
     Progress::success(pt, ExpressionKind::True)
 }
 
-fn expr_binary_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryTail> {
+fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    pm.alternate(pt)
+        .one(expr_tail_binary)
+        .one(expr_tail_method_call)
+        .one(expr_tail_field_access)
+        .finish()
+}
+
+fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _x  = optional(whitespace);
         op  = binary_op;
         _x  = optional(whitespace);
         rhs = expression;
-    }, |_, _| BinaryTail { op, rhs: Box::new(rhs) })
+    }, |_, _| ExpressionTail::Binary { op, rhs: Box::new(rhs) })
 }
 
 fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -765,6 +833,24 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
         .one(ext(literal("<")))
         .one(ext(literal(">")))
         .finish()
+}
+
+fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        _x        = literal(".");
+        name      = ident;
+        turbofish = optional(turbofish);
+        _x        = literal("(");
+        args      = zero_or_more(comma_tail(expression));
+        _x        = literal(")");
+    }, |_, _| ExpressionTail::MethodCall { name, turbofish, args })
+}
+
+fn expr_tail_field_access<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        _x = literal(".");
+        field = ident;
+    }, |_, _| ExpressionTail::FieldAccess { field })
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -788,7 +874,6 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     sequence!(pm, pt, {
         _x    = literal("::<");
         types = ext(one_or_more2(comma_tail(typ)));
-        _x = inspect(|pt| println!("{:?}, {:?}", pt, types));
         _x    = literal(">");
     }, |_, _| types)
 }
@@ -1132,6 +1217,18 @@ mod test {
     }
 
     #[test]
+    fn expr_field_access() {
+        let p = qp(expression, "foo.bar");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn expr_field_access_multiple() {
+        let p = qp(expression, "foo.bar.baz");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
     fn expr_function_call() {
         let p = qp(expression, "foo()");
         assert_eq!(unwrap_progress(p).extent, (0, 5))
@@ -1156,9 +1253,21 @@ mod test {
     }
 
     #[test]
+    fn expr_method_call_multiple() {
+        let p = qp(expression, "foo.bar().baz()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
     fn expr_method_call_with_turbofish() {
         let p = qp(expression, "foo.bar::<u8>()");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn expr_method_call_with_turbofish_2() {
+        let p = qp(expression, "e.into_iter().collect::<BTreeSet<_>>()");
+        assert_eq!(unwrap_progress(p).extent, (0, 38))
     }
 
     #[test]
@@ -1198,9 +1307,21 @@ mod test {
     }
 
     #[test]
+    fn expr_binary_multiple() {
+        let p = qp(expression, "1 + 2 + 3");
+        assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
     fn expr_binary_op_two_char() {
         let p = qp(expression, "a >= b");
         assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn expr_braced_true() {
+        let p = qp(expression, "{ true }");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
@@ -1219,6 +1340,12 @@ mod test {
     fn pattern_with_enum_tuple() {
         let p = qp(pattern, "Baz(a)");
         assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn expr_macro_call_with_nested_parens() {
+        let p = qp(expression, "foo!(())");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
