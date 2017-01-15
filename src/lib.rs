@@ -73,12 +73,14 @@ enum TopLevel {
     Enum(Enum),
     Trait(Trait),
     Impl(Impl),
-    Attribute(Extent),
+    Attribute(Attribute),
     ExternCrate(Crate),
     Use(Use),
     TypeAlias(TypeAlias),
     Whitespace(Vec<Whitespace>),
 }
+
+type Attribute = Extent;
 
 #[derive(Debug)]
 enum Whitespace {
@@ -347,7 +349,14 @@ struct Impl {
     extent: Extent,
     trait_name: Option<Type>,
     type_name: Type,
-    body: Vec<ImplFunction>,
+    body: Vec<ImplMember>,
+}
+
+#[derive(Debug)]
+enum ImplMember {
+    Function(ImplFunction),
+    Attribute(Attribute),
+    Whitespace(Vec<Whitespace>),
 }
 
 #[derive(Debug)]
@@ -498,7 +507,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(map(p_enum, TopLevel::Enum))
         .one(p_trait)
         .one(map(p_impl, TopLevel::Impl))
-        .one(attribute)
+        .one(map(attribute, TopLevel::Attribute))
         .one(extern_crate)
         .one(p_use)
         .one(map(type_alias, TopLevel::TypeAlias))
@@ -1105,7 +1114,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         _x         = optional(whitespace);
         _x         = literal("{");
         _x         = optional(whitespace);
-        body       = zero_or_more(impl_function);
+        body       = zero_or_more(impl_member);
         _x         = optional(whitespace);
         _x         = literal("}");
     }, |_, pt| Impl {
@@ -1125,6 +1134,14 @@ fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type>
     }, |_, _| trait_name)
 }
 
+fn impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplMember> {
+    pm.alternate(pt)
+        .one(map(impl_function, ImplMember::Function))
+        .one(map(attribute, ImplMember::Attribute))
+        .one(map(whitespace, ImplMember::Whitespace))
+        .finish()
+}
+
 fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFunction> {
     let spt = pt;
     sequence!(pm, pt, {
@@ -1139,7 +1156,7 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
 
 // TODO: optional could take E that is `into`, or just a different one
 
-fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> {
     let spt = pt;
     sequence!(pm, pt, {
         _x = literal("#");
@@ -1147,7 +1164,7 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         _x = literal("[");
         _x = parse_nested_until('[', ']');
         _x = literal("]");
-    }, |_, pt| TopLevel::Attribute(ex(spt, pt)))
+    }, |_, pt| ex(spt, pt))
 }
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -1309,6 +1326,18 @@ mod test {
     fn impl_with_trait() {
         let p = qp(p_impl, "impl Foo for Bar {}");
         assert_eq!(unwrap_progress(p).extent, (0, 19))
+    }
+
+    #[test]
+    fn impl_with_attribute() {
+        let p = qp(p_impl, "impl Foo { #[attribute] fn bar() {} }");
+        assert_eq!(unwrap_progress(p).extent, (0, 37))
+    }
+
+    #[test]
+    fn impl_with_attributes() {
+        let p = qp(p_impl, "impl Foo { #[a] #[b] fn bar() {} }");
+        assert_eq!(unwrap_progress(p).extent, (0, 34))
     }
 
     #[test]
