@@ -189,20 +189,98 @@ struct Expression {
 
 #[derive(Debug)]
 enum ExpressionKind {
-    MacroCall { name: Extent, args: Extent },
-    Let { pattern: Pattern, value: Option<Box<Expression>> },
-    Assign { name: Extent, value: Box<Expression> },
-    Tuple { members: Vec<Expression> },
-    FieldAccess { value: Box<Expression>, field: Extent },
-    Value { extent: Extent },
+    MacroCall(MacroCall),
+    Let(Let),
+    Assign(Assign),
+    Tuple(Tuple),
+    FieldAccess(FieldAccess),
+    Value(Value),
     Block(Box<Block>),
-    FunctionCall { name: Extent, args: Vec<Expression> },
-    MethodCall { receiver: Box<Expression>, name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
-    Loop { body: Box<Block> },
-    Binary { op: Extent, lhs: Box<Expression>, rhs: Box<Expression> },
-    If { condition: Box<Expression>, body: Box<Block> },
-    Match { head: Box<Expression>, arms: Vec<MatchArm> },
+    FunctionCall(FunctionCall),
+    MethodCall(MethodCall),
+    Loop(Loop),
+    Binary(Binary),
+    If(If),
+    Match(Match),
     True,
+}
+
+#[derive(Debug)]
+struct MacroCall {
+    name: Extent,
+    args: Extent,
+}
+
+#[derive(Debug)]
+struct Let {
+    pattern: Pattern,
+    value: Option<Box<Expression>>,
+}
+
+#[derive(Debug)]
+struct Assign {
+    name: Extent,
+    value: Box<Expression>,
+}
+
+#[derive(Debug)]
+struct Tuple {
+    members: Vec<Expression>,
+}
+
+#[derive(Debug)]
+struct FieldAccess {
+    value: Box<Expression>,
+    field: Extent
+}
+
+#[derive(Debug)]
+struct Value {
+    extent: Extent,
+}
+
+#[derive(Debug)]
+struct FunctionCall {
+    name: Extent,
+    args: Vec<Expression>,
+}
+
+#[derive(Debug)]
+struct MethodCall {
+    receiver: Box<Expression>,
+    name: Extent,
+    turbofish: Option<Extent>,
+    args: Vec<Expression>,
+}
+
+#[derive(Debug)]
+struct Loop {
+    body: Box<Block>,
+}
+
+#[derive(Debug)]
+struct Binary {
+    op: Extent,
+    lhs: Box<Expression>,
+    rhs: Box<Expression>,
+}
+
+#[derive(Debug)]
+struct If {
+    condition: Box<Expression>,
+    body: Box<Block>,
+}
+
+#[derive(Debug)]
+struct Match {
+    head: Box<Expression>,
+    arms: Vec<MatchArm>,
+}
+
+#[derive(Debug)]
+struct MatchArm {
+    pattern: Pattern,
+    body: Expression,
 }
 
 #[derive(Debug)]
@@ -213,21 +291,19 @@ enum ExpressionTail {
 }
 
 #[derive(Debug)]
-struct MatchArm {
-    pattern: Pattern,
-    body: Expression,
+enum Pattern {
+    Ident { extent: Extent, ident: Extent, tuple: Vec<Pattern> },
+    Tuple { extent: Extent, members: Vec<Pattern> },
 }
 
-#[derive(Debug)]
-struct Pattern {
-    extent: Extent,
-    kind: PatternKind,
-}
-
-#[derive(Debug)]
-enum PatternKind {
-    Ident { ident: Extent, tuple: Vec<Pattern> },
-    Tuple(Vec<Pattern>),
+impl Pattern {
+    #[allow(dead_code)]
+    fn extent(&self) -> Extent {
+        use Pattern::*;
+        match *self {
+            Ident { extent, .. } | Tuple { extent, .. } => extent
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -597,10 +673,10 @@ fn implicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, St
 
 fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
     pm.alternate(pt)
-        .one(expr_if)
-        .one(expr_loop)
-        .one(expr_match)
-        .one(expr_block)
+        .one(map(expr_if, ExpressionKind::If))
+        .one(map(expr_loop, ExpressionKind::Loop))
+        .one(map(expr_match, ExpressionKind::Match))
+        .one(map(expr_block, ExpressionKind::Block))
         .finish()
 }
 
@@ -610,13 +686,13 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     let (pt, kind) = try_parse!({
         pm.alternate(pt)
             .one(expression_ending_in_brace)
-            .one(macro_call)
-            .one(expr_let)
-            .one(expr_assign)
-            .one(expr_function_call)
-            .one(expr_tuple)
+            .one(map(expr_macro_call, ExpressionKind::MacroCall))
+            .one(map(expr_let, ExpressionKind::Let))
+            .one(map(expr_assign, ExpressionKind::Assign))
+            .one(map(expr_function_call, ExpressionKind::FunctionCall))
+            .one(map(expr_tuple, ExpressionKind::Tuple))
             .one(expr_true)
-            .one(expr_value)
+            .one(map(expr_value, ExpressionKind::Value))
             .finish()
     });
     let mpt = pt;
@@ -638,32 +714,32 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             Some(ExpressionTail::Binary { op, rhs }) => {
                 expression = Expression {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::Binary {
+                    kind: ExpressionKind::Binary(Binary {
                         op: op,
                         lhs: Box::new(expression),
                         rhs: rhs,
-                    }
+                    })
                 }
             }
             Some(ExpressionTail::FieldAccess { field }) => {
                 //mid.insert(0, expression);
                 expression = Expression {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::FieldAccess {
+                    kind: ExpressionKind::FieldAccess(FieldAccess {
                         value: Box::new(expression),
                         field: field,
-                    }
+                    })
                 }
             }
             Some(ExpressionTail::MethodCall { name, turbofish, args }) => {
                 expression = Expression {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::MethodCall {
+                    kind: ExpressionKind::MethodCall(MethodCall {
                         receiver: Box::new(expression),
                         name: name,
                         turbofish: turbofish,
                         args: args
-                    }
+                    })
                 }
             }
             None => break,
@@ -673,24 +749,24 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     Progress::success(pt, expression)
 }
 
-fn macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroCall> {
     sequence!(pm, pt, {
         name = ident;
         _x   = literal("!");
         _x   = literal("(");
         args = parse_nested_until('(', ')');
         _x   = literal(")");
-    }, |_, _| ExpressionKind::MacroCall { name, args })
+    }, |_, _| MacroCall { name, args })
 }
 
-fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
     let (pt, _)       = try_parse!(literal("let")(pm, pt));
     let (pt, _)       = try_parse!(whitespace(pm, pt));
     let (pt, pattern) = try_parse!(pattern(pm, pt));
     let (pt, _)       = try_parse!(optional(whitespace)(pm, pt));
     let (pt, value)   = try_parse!(optional(expr_let_rhs)(pm, pt));
 
-    Progress::success(pt, ExpressionKind::Let {
+    Progress::success(pt, Let {
         pattern,
         value: value.map(Box::new),
     })
@@ -704,37 +780,37 @@ fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expressi
     Progress::success(pt, value)
 }
 
-fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assign> {
     sequence!(pm, pt, {
         name  = ident;
         _x    = optional(whitespace);
         _x    = literal("=");
         _x    = optional(whitespace);
         value = expression;
-    }, |_, _| ExpressionKind::Assign { name, value: Box::new(value) })
+    }, |_, _| Assign { name, value: Box::new(value) })
 }
 
-fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
     sequence!(pm, pt, {
         _x        = literal("if");
         _x        = whitespace;
         condition = expression;
         _x        = optional(whitespace);
         body      = block;
-    }, |_, _| ExpressionKind::If { condition: Box::new(condition), body: Box::new(body) })
+    }, |_, _| If { condition: Box::new(condition), body: Box::new(body) })
 }
 
-fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
     let (pt, _)    = try_parse!(literal("loop")(pm, pt));
     let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
     let (pt, body) = try_parse!(block(pm, pt));
 
-    Progress::success(pt, ExpressionKind::Loop {
+    Progress::success(pt, Loop {
         body: Box::new(body),
     })
 }
 
-fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
     let (pt, _)    = try_parse!(literal("match")(pm, pt));
     let (pt, _)    = try_parse!(whitespace(pm, pt));
     let (pt, head) = try_parse!(expression(pm, pt));
@@ -743,7 +819,7 @@ fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
     let (pt, arms) = try_parse!(zero_or_more(match_arm)(pm, pt));
     let (pt, _)    = try_parse!(literal("}")(pm, pt));
 
-    Progress::success(pt, ExpressionKind::Match {
+    Progress::success(pt, Match {
         head: Box::new(head),
         arms,
     })
@@ -765,31 +841,31 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
     })
 }
 
-fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
     let (pt, _) = try_parse!(literal("(")(pm, pt));
     let (pt, v) = try_parse!(zero_or_more(comma_tail(expression))(pm, pt));
     let (pt, _) = try_parse!(literal(")")(pm, pt));
 
-    Progress::success(pt, ExpressionKind::Tuple {
+    Progress::success(pt, Tuple {
         members: v,
     })
 }
 
-fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    block(pm, pt).map(|block| ExpressionKind::Block(Box::new(block)))
+fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
+    block(pm, pt).map(Box::new)
 }
 
-fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    pathed_ident(pm, pt).map(|extent| ExpressionKind::Value { extent })
+fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
+    pathed_ident(pm, pt).map(|extent| Value { extent })
 }
 
-fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionCall> {
     sequence!(pm, pt, {
         name = pathed_ident;
         _x   = literal("(");
         args = zero_or_more(comma_tail(expression));
         _x   = literal(")");
-    }, |_, _| ExpressionKind::FunctionCall { name, args })
+    }, |_, _| FunctionCall { name, args })
 }
 
 fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
@@ -879,31 +955,26 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 }
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
-    let spt = pt;
-    let (pt, kind) = try_parse!({
-        pm.alternate(pt)
-            .one(pattern_ident)
-            .one(pattern_tuple)
-            .finish()
-    });
-
-    Progress::success(pt, Pattern {
-        extent: ex(spt, pt),
-        kind
-    })
+    pm.alternate(pt)
+        .one(pattern_ident)
+        .one(pattern_tuple)
+        .finish()
 }
 
-fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternKind> {
+fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+    let spt = pt;
     sequence!(pm, pt, {
         _x    = optional(literal("mut"));
         _x    = optional(whitespace);
         ident = pathed_ident;
         tuple = optional(pattern_tuple_inner);
-    }, |_, _| PatternKind::Ident { ident, tuple: tuple.unwrap_or_else(Vec::new) })
+    }, |_, pt| Pattern::Ident { extent: ex(spt, pt), ident, tuple: tuple.unwrap_or_else(Vec::new) })
 }
 
-fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternKind> {
-    pattern_tuple_inner(pm, pt).map(PatternKind::Tuple)
+fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+    let spt = pt;
+    let (pt, members) = try_parse!(pattern_tuple_inner(pm, pt));
+    Progress::success(pt, Pattern::Tuple { extent: ex(spt, pt), members })
 }
 
 fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
@@ -1327,19 +1398,19 @@ mod test {
     #[test]
     fn pattern_with_path() {
         let p = qp(pattern, "foo::Bar::Baz");
-        assert_eq!(unwrap_progress(p).extent, (0, 13))
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
     fn pattern_with_tuple() {
         let p = qp(pattern, "(a, b)");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
     fn pattern_with_enum_tuple() {
         let p = qp(pattern, "Baz(a)");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
