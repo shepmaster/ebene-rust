@@ -1296,6 +1296,12 @@ mod test {
     }
 
     #[test]
+    fn enum_with_generic_types() {
+        let p = qp(p_enum, "enum A { Foo(Vec<u8>) }");
+        assert_eq!(unwrap_progress(p).extent, (0, 23))
+    }
+
+    #[test]
     fn fn_with_public_modifier() {
         let p = qp(function_header, "pub fn foo()");
         assert_eq!(unwrap_progress(p).extent, (0, 12))
