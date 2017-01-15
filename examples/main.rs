@@ -1,10 +1,15 @@
 extern crate strata_rs;
 
-fn main() {
-  //  strata_rs::parse_rust_file(include_str!("data/hello_world.rs"));
-    strata_rs::parse_rust_file(include_str!("data/basic_generic.rs"));
+use std::fs::File;
+use std::env;
+use std::io::prelude::*;
 
-//    strata_rs::parse_rust_file(include_str!("../src/lib.rs"));
+fn main() {
+    let fname = env::args().nth(1).expect("Need filename argument");
+    let mut f = File::open(fname).expect("Can't open");
+    let mut s = String::new();
+    f.read_to_string(&mut s).expect("Can't read");
+    strata_rs::parse_rust_file(&s);
 }
 
 // Goal:
