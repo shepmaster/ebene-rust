@@ -68,7 +68,6 @@ type Extent = (usize, usize);
 
 #[derive(Debug)]
 enum TopLevel {
-    Comment(Comment),
     Function(Function),
     Enum(Enum),
     Trait(Trait),
@@ -77,6 +76,12 @@ enum TopLevel {
     ExternCrate(Crate),
     Use(Use),
     TypeAlias(TypeAlias),
+    Whitespace(Vec<Whitespace>),
+}
+
+#[derive(Debug)]
+enum Whitespace {
+    Comment(Comment),
     Whitespace(Extent),
 }
 
@@ -469,7 +474,6 @@ fn inspect<'s, F>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, (
 // TODO: can we transofrm this to (pm, pt)?
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     pm.alternate(pt)
-        .one(map(comment, TopLevel::Comment))
         .one(function)
         .one(p_enum)
         .one(p_trait)
@@ -478,7 +482,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(extern_crate)
         .one(p_use)
         .one(type_alias)
-        .one(whitespace)
+        .one(map(whitespace, TopLevel::Whitespace))
         .finish()
 }
 
@@ -1177,7 +1181,16 @@ fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     }, |_, _| name)
 }
 
-fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Whitespace>> {
+    one_or_more(|pm, pt| {
+        pm.alternate(pt)
+            .one(map(comment, Whitespace::Comment))
+            .one(map(true_whitespace, Whitespace::Whitespace))
+            .finish()
+    })(pm, pt)
+}
+
+fn true_whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
 
     let (pt, _) = try_parse!(one_or_more(|pm, pt| {
@@ -1189,7 +1202,7 @@ fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
             .finish()
     })(pm, pt));
 
-    Progress::success(pt, TopLevel::Whitespace(ex(spt, pt)))
+    Progress::success(pt, ex(spt, pt))
 }
 
 #[cfg(test)]
