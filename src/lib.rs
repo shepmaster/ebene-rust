@@ -481,7 +481,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(attribute)
         .one(extern_crate)
         .one(p_use)
-        .one(type_alias)
+        .one(map(type_alias, TopLevel::TypeAlias))
         .one(map(whitespace, TopLevel::Whitespace))
         .finish()
 }
@@ -1132,7 +1132,7 @@ fn p_use_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
     })
 }
 
-fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias> {
     let spt = pt;
     sequence!(pm, pt, {
         _x   = literal("type");
@@ -1144,11 +1144,11 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> 
         defn = typ;
         _x   = optional(whitespace);
         _x   = literal(";");
-    }, |_, pt| TopLevel::TypeAlias(TypeAlias {
+    }, |_, pt| TypeAlias {
         extent: ex(spt, pt),
         name,
         defn,
-    }))
+    })
 }
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -1157,6 +1157,29 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
         _x = optional(literal("&"));
         _x = optional(lifetime);
         _x = optional(whitespace);
+        _x = typ_inner;
+    }, |_, pt| ex(spt, pt))
+}
+
+fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    pm.alternate(pt)
+        .one(typ_core)
+        .one(typ_tuple)
+        .finish()
+}
+
+fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("(");
+        _x = zero_or_more(comma_tail(typ));
+        _x = literal(")");
+    }, |_, pt| ex(spt, pt))
+}
+
+fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
         _x = pathed_ident;
         _x = optional(typ_generics);
     }, |_, pt| ex(spt, pt))
@@ -1423,6 +1446,12 @@ mod test {
     fn expr_macro_call_with_nested_parens() {
         let p = qp(expression, "foo!(())");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn type_tuple() {
+        let p = qp(typ, "(u8, u8)");
+        assert_eq!(unwrap_progress(p), (0, 8))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
