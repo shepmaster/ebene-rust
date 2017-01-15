@@ -69,6 +69,7 @@ type Extent = (usize, usize);
 #[derive(Debug)]
 enum TopLevel {
     Function(Function),
+    Struct(Struct),
     Enum(Enum),
     Trait(Trait),
     Impl(Impl),
@@ -124,6 +125,20 @@ fn ex(start: Point, end: Point) -> Extent {
     let ex = (start.offset, end.offset);
     assert!(ex.1 > ex.0, "{} does not come before {}", ex.1, ex.0);
     ex
+}
+
+#[derive(Debug)]
+struct Struct {
+    extent: Extent,
+    name: Extent,
+    fields: Vec<StructField>,
+}
+
+#[derive(Debug)]
+struct StructField {
+    extent: Extent,
+    name: Extent,
+    typ: Type,
 }
 
 #[derive(Debug)]
@@ -475,7 +490,8 @@ fn inspect<'s, F>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, (
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     pm.alternate(pt)
         .one(function)
-        .one(p_enum)
+        .one(map(p_struct, TopLevel::Struct))
+        .one(map(p_enum, TopLevel::Enum))
         .one(p_trait)
         .one(p_impl)
         .one(attribute)
@@ -988,11 +1004,36 @@ fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, V
     }, |_, _| sub_patterns)
 }
 
-fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
-    p_enum_inner(pm, pt).map(TopLevel::Enum)
+fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x     = literal("struct");
+        _x     = whitespace;
+        name   = ident;
+        _x     = optional(whitespace);
+        _x     = literal("{");
+        _x     = optional(whitespace);
+        fields = zero_or_more(comma_tail(struct_field));
+        _x     = optional(whitespace);
+        _x     = literal("}");
+    }, |_, pt| Struct {
+        extent: ex(spt, pt),
+        name,
+        fields,
+    })
 }
 
-fn p_enum_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
+fn struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        name = ident;
+        _x   = literal(":");
+        _x   = optional(whitespace);
+        typ  = typ;
+    }, |_, pt| StructField { extent: ex(spt, pt), name, typ })
+}
+
+fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
     let spt = pt;
     sequence!(pm, pt, {
         _x       = literal("enum");
@@ -1250,7 +1291,7 @@ mod test {
 
     #[test]
     fn enum_with_trailing_stuff() {
-        let p = qp(p_enum_inner, "enum A {} impl Foo for Bar {}");
+        let p = qp(p_enum, "enum A {} impl Foo for Bar {}");
         assert_eq!(unwrap_progress(p).extent, (0, 9))
     }
 
@@ -1452,6 +1493,24 @@ mod test {
     fn type_tuple() {
         let p = qp(typ, "(u8, u8)");
         assert_eq!(unwrap_progress(p), (0, 8))
+    }
+
+    #[test]
+    fn type_with_generics() {
+        let p = qp(typ, "A<T>");
+        assert_eq!(unwrap_progress(p), (0, 4))
+    }
+
+    #[test]
+    fn struct_basic() {
+        let p = qp(p_struct, "struct S { field: TheType, other: OtherType }");
+        assert_eq!(unwrap_progress(p).extent, (0, 45))
+    }
+
+    #[test]
+    fn struct_with_generic_fields() {
+        let p = qp(p_struct, "struct S { field: Option<u8> }");
+        assert_eq!(unwrap_progress(p).extent, (0, 30))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
