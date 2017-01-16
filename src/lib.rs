@@ -1460,6 +1460,24 @@ fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ()> {
 }
 
 fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    pm.alternate(pt)
+        .one(typ_generics_fn)
+        .one(typ_generics_angle)
+        .finish()
+}
+
+fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("(");
+        _x = optional(one_or_more(comma_tail(typ)));
+        _x = literal(")");
+        _x = optional(whitespace);
+        _x = optional(function_return_type);
+    }, |_, pt| ex(spt, pt))
+}
+
+fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     sequence!(pm, pt, {
         _x = literal("<");
@@ -1876,6 +1894,12 @@ mod test {
     fn type_impl_trait() {
         let p = qp(typ, "impl Foo");
         assert_eq!(unwrap_progress(p), (0, 8))
+    }
+
+    #[test]
+    fn type_fn_trait() {
+        let p = qp(typ, "Fn(u8) -> u8");
+        assert_eq!(unwrap_progress(p), (0, 12))
     }
 
     #[test]
