@@ -673,10 +673,9 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
     sequence!(pm, pt, {
         _x       = literal("(");
         self_arg = optional(self_argument);
-        args     = zero_or_more(comma_tail(function_argument));
+        mut args = zero_or_more(comma_tail(function_argument));
         _x       = literal(")");
     }, move |_, _| {
-        let mut args = args;
         if let Some(arg) = self_arg {
             args.insert(0, arg);
         }
@@ -734,16 +733,13 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x    = literal("{");
-        _x    = optional(whitespace);
-        stmts = zero_or_more(statement);
-        expr  = optional(expression);
-        _x    = optional(whitespace);
-        _x    = literal("}");
+        _x        = literal("{");
+        _x        = optional(whitespace);
+        mut stmts = zero_or_more(statement);
+        mut expr  = optional(expression);
+        _x        = optional(whitespace);
+        _x        = literal("}");
     }, |_, pt| {
-        let mut stmts = stmts;
-        let mut expr = expr;
-
         if expr.is_none() && stmts.last().map_or(false, Statement::is_implicit) {
             expr = stmts.pop().and_then(Statement::implicit);
         }
@@ -1169,12 +1165,11 @@ fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern
 
 fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
     sequence!(pm, pt, {
-        _x           = literal("(");
-        sub_patterns = zero_or_more(comma_tail(pattern));
-        wildcard     = optional(ext(literal("..")));
+        _x               = literal("(");
+        mut sub_patterns = zero_or_more(comma_tail(pattern));
+        wildcard         = optional(ext(literal("..")));
         _x           = literal(")");
     }, |_, _| {
-        let mut sub_patterns = sub_patterns;
         if let Some(extent) = wildcard {
             sub_patterns.push(Pattern::Wildcard { extent });
         }
