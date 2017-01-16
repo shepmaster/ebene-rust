@@ -336,7 +336,9 @@ enum ExpressionTail {
 
 #[derive(Debug)]
 enum Pattern {
+    // TODO: split into ident and enumtuple
     Ident { extent: Extent, ident: Extent, tuple: Vec<Pattern> },
+    Struct { extent: Extent, name: Extent, fields: Vec<PatternStructField> },
     Tuple { extent: Extent, members: Vec<Pattern> },
     Wildcard { extent: Extent },
 }
@@ -348,9 +350,16 @@ impl Pattern {
         match *self {
             Ident { extent, .. } |
             Tuple { extent, .. } |
+            Struct { extent, .. } |
             Wildcard { extent, .. } => extent
         }
     }
+}
+
+#[derive(Debug)]
+struct PatternStructField {
+    name: Extent,
+    pattern: Pattern,
 }
 
 #[derive(Debug)]
@@ -1018,6 +1027,7 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     pm.alternate(pt)
+        .one(pattern_struct)
         .one(pattern_ident)
         .one(pattern_tuple)
         .finish()
@@ -1052,6 +1062,33 @@ fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, V
         }
         sub_patterns
     })
+}
+
+fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        name   = pathed_ident;
+        _x     = optional(whitespace);
+        _x     = literal("{");
+        _x     = optional(whitespace);
+        fields = zero_or_more(comma_tail(pattern_struct_field));
+        _x     = optional(whitespace);
+        _x     = literal("}");
+    }, |_, pt| Pattern::Struct {
+        extent: ex(spt, pt),
+        name,
+        fields
+    })
+}
+
+fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternStructField> {
+    sequence!(pm, pt, {
+        name    = ident;
+        _x      = optional(whitespace);
+        _x      = literal(":");
+        _x      = optional(whitespace);
+        pattern = pattern;
+    }, |_, _| PatternStructField { name, pattern })
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
@@ -1608,6 +1645,12 @@ mod test {
     fn pattern_with_tuple_wildcard() {
         let p = qp(pattern, "(..)");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn pattern_with_enum_struct() {
+        let p = qp(pattern, "Baz { a: a }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 12))
     }
 
     #[test]
