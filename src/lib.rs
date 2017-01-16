@@ -81,6 +81,7 @@ enum TopLevel {
 }
 
 type Attribute = Extent;
+type Lifetime = Extent;
 
 #[derive(Debug)]
 enum Whitespace {
@@ -112,6 +113,7 @@ struct FunctionHeader {
     extent: Extent,
     visibility: Option<Extent>,
     name: Extent,
+    lifetimes: Vec<Lifetime>,
     generics: Vec<Generic>,
     arguments: Vec<Argument>,
     return_type: Option<Type>,
@@ -602,15 +604,19 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         return_type = optional(function_return_type);
         _x          = optional(whitespace);
         wheres      = optional(function_where_clause);
-    }, |_, pt| FunctionHeader {
-        extent: ex(spt, pt),
-        visibility,
-        name,
-        generics: generics.unwrap_or_else(Vec::new),
-        arguments,
-        return_type,
-        wheres: wheres.unwrap_or_else(Vec::new),
-    })
+    }, |_, pt| {
+        let (lifetimes, generics) = generics.unwrap_or_else(|| (Vec::new(), Vec::new()));
+
+        FunctionHeader {
+            extent: ex(spt, pt),
+            visibility,
+            name,
+            lifetimes,
+            generics,
+            arguments,
+            return_type,
+            wheres: wheres.unwrap_or_else(Vec::new),
+        }})
 }
 
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -625,12 +631,13 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     }
 }
 
-fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Generic>> {
+fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<Lifetime>, Vec<Generic>)> {
     sequence!(pm, pt, {
-        _x    = literal("<");
-        decls = one_or_more(generic_declaration);
-        _x    = literal(">");
-    }, |_, _| decls)
+        _x        = literal("<");
+        lifetimes = zero_or_more(comma_tail(lifetime));
+        generics  = zero_or_more(comma_tail(generic_declaration));
+        _x        = literal(">");
+    }, |_, _| (lifetimes, generics))
 }
 
 fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
@@ -1477,6 +1484,24 @@ mod test {
     fn fn_with_return_type() {
         let p = qp(function_header, "fn foo() -> bool");
         assert_eq!(unwrap_progress(p).extent, (0, 16))
+    }
+
+    #[test]
+    fn fn_with_generics() {
+        let p = qp(function_header, "fn foo<A, B>()");
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
+    }
+
+    #[test]
+    fn fn_with_lifetimes() {
+        let p = qp(function_header, "fn foo<'a, 'b>()");
+        assert_eq!(unwrap_progress(p).extent, (0, 16))
+    }
+
+    #[test]
+    fn fn_with_lifetimes_and_generics() {
+        let p = qp(function_header, "fn foo<'a, T>()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
