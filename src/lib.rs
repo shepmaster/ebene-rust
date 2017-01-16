@@ -173,6 +173,7 @@ enum Argument {
 
 #[derive(Debug)]
 struct Where {
+    extent: Extent,
     name: Type,
     bounds: Extent,
 }
@@ -696,13 +697,14 @@ fn function_where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 }
 
 fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
+    let spt = pt;
     sequence!(pm, pt, {
         name   = ident;
         _x     = literal(":");
         _x     = optional(whitespace);
-        bounds = ident;
+        bounds = typ;
         _x     = optional(literal(","));
-    }, |_, _| Where { name, bounds })
+    }, |_, pt| Where { extent: ex(spt, pt), name, bounds })
 }
 
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
@@ -1738,6 +1740,12 @@ mod test {
     fn struct_with_generic_fields() {
         let p = qp(p_struct, "struct S { field: Option<u8> }");
         assert_eq!(unwrap_progress(p).extent, (0, 30))
+    }
+
+    #[test]
+    fn where_clause_with_path() {
+        let p = qp(function_where, "P: std::str::pattern::Pattern<'s>");
+        assert_eq!(unwrap_progress(p).extent, (0, 33))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
