@@ -186,9 +186,20 @@ struct Block {
 enum Statement {
     Explicit(Expression),
     Implicit(Expression),
+    Use(Use),
 }
 
 impl Statement {
+    #[allow(dead_code)]
+    fn extent(&self) -> Extent {
+        use Statement::*;
+        match *self {
+            Explicit(ref e) |
+            Implicit(ref e) => e.extent,
+            Use(ref u) => u.extent,
+        }
+    }
+
     #[allow(dead_code)]
     fn explicit(self) -> Option<Expression> {
         match self {
@@ -512,7 +523,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(map(p_impl, TopLevel::Impl))
         .one(map(attribute, TopLevel::Attribute))
         .one(extern_crate)
-        .one(p_use)
+        .one(map(p_use, TopLevel::Use))
         .one(map(type_alias, TopLevel::TypeAlias))
         .one(map(whitespace, TopLevel::Whitespace))
         .finish()
@@ -700,6 +711,7 @@ fn statement_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, State
     pm.alternate(pt)
         .one(explicit_statement)
         .one(implicit_statement)
+        .one(map(p_use, Statement::Use))
         .finish()
 }
 
@@ -1193,11 +1205,7 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel
     }))
 }
 
-fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
-    p_use_inner(pm, pt).map(TopLevel::Use)
-}
-
-fn p_use_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
+fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
     let spt = pt;
     sequence!(pm, pt, {
         _x   = literal("use");
@@ -1322,7 +1330,7 @@ mod test {
 
     #[test]
     fn top_level_use() {
-        let p = qp(p_use_inner, "use foo::Bar;");
+        let p = qp(p_use, "use foo::Bar;");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
     }
 
@@ -1416,6 +1424,12 @@ mod test {
     fn statement_match_no_semicolon() {
         let p = qp(statement, "match a { _ => () }");
         assert_eq!(unwrap_progress(p).implicit().unwrap().extent, (0, 19))
+    }
+
+    #[test]
+    fn statement_use() {
+        let p = qp(statement, "use foo::Bar;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
