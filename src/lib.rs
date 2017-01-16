@@ -1446,9 +1446,17 @@ fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Exten
 fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     sequence!(pm, pt, {
+        _x = optional(typ_impl);
         _x = pathed_ident;
         _x = optional(typ_generics);
     }, |_, pt| ex(spt, pt))
+}
+
+fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ()> {
+    sequence!(pm, pt, {
+        _x = literal("impl");
+        _x = whitespace;
+    }, |_, _| ())
 }
 
 fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -1862,6 +1870,12 @@ mod test {
     fn type_with_generics() {
         let p = qp(typ, "A<T>");
         assert_eq!(unwrap_progress(p), (0, 4))
+    }
+
+    #[test]
+    fn type_impl_trait() {
+        let p = qp(typ, "impl Foo");
+        assert_eq!(unwrap_progress(p), (0, 8))
     }
 
     #[test]
