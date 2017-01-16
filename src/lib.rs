@@ -1085,10 +1085,21 @@ fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     sequence!(pm, pt, {
         name    = ident;
         _x      = optional(whitespace);
+        pattern = optional(pattern_struct_field_tail);
+    }, |_, _| {
+        let pattern = pattern.unwrap_or_else(|| {
+            Pattern::Ident { extent: name, ident: name, tuple: Vec::new() }
+        });
+        PatternStructField { name, pattern }
+    })
+}
+
+fn pattern_struct_field_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+    sequence!(pm, pt, {
         _x      = literal(":");
         _x      = optional(whitespace);
         pattern = pattern;
-    }, |_, _| PatternStructField { name, pattern })
+    }, |_, _| pattern)
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
@@ -1651,6 +1662,12 @@ mod test {
     fn pattern_with_enum_struct() {
         let p = qp(pattern, "Baz { a: a }");
         assert_eq!(unwrap_progress(p).extent(), (0, 12))
+    }
+
+    #[test]
+    fn pattern_with_enum_struct_shorthand() {
+        let p = qp(pattern, "Baz { a }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
     }
 
     #[test]
