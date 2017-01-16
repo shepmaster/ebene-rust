@@ -338,7 +338,7 @@ enum ExpressionTail {
 enum Pattern {
     // TODO: split into ident and enumtuple
     Ident { extent: Extent, ident: Extent, tuple: Vec<Pattern> },
-    Struct { extent: Extent, name: Extent, fields: Vec<PatternStructField> },
+    Struct { extent: Extent, name: Extent, fields: Vec<PatternStructField>, wildcard: bool },
     Tuple { extent: Extent, members: Vec<Pattern> },
     Wildcard { extent: Extent },
 }
@@ -1067,17 +1067,20 @@ fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, V
 fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     let spt = pt;
     sequence!(pm, pt, {
-        name   = pathed_ident;
-        _x     = optional(whitespace);
-        _x     = literal("{");
-        _x     = optional(whitespace);
-        fields = zero_or_more(comma_tail(pattern_struct_field));
-        _x     = optional(whitespace);
-        _x     = literal("}");
+        name     = pathed_ident;
+        _x       = optional(whitespace);
+        _x       = literal("{");
+        _x       = optional(whitespace);
+        fields   = zero_or_more(comma_tail(pattern_struct_field));
+        _x       = optional(whitespace);
+        wildcard = optional(literal(".."));
+        _x       = optional(whitespace);
+        _x       = literal("}");
     }, |_, pt| Pattern::Struct {
         extent: ex(spt, pt),
         name,
-        fields
+        fields,
+        wildcard: wildcard.is_some(),
     })
 }
 
@@ -1668,6 +1671,12 @@ mod test {
     fn pattern_with_enum_struct_shorthand() {
         let p = qp(pattern, "Baz { a }");
         assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn pattern_with_enum_struct_wildcard() {
+        let p = qp(pattern, "Baz { .. }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
     }
 
     #[test]
