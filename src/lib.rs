@@ -326,6 +326,7 @@ enum ExpressionTail {
 enum Pattern {
     Ident { extent: Extent, ident: Extent, tuple: Vec<Pattern> },
     Tuple { extent: Extent, members: Vec<Pattern> },
+    Wildcard { extent: Extent },
 }
 
 impl Pattern {
@@ -333,7 +334,9 @@ impl Pattern {
     fn extent(&self) -> Extent {
         use Pattern::*;
         match *self {
-            Ident { extent, .. } | Tuple { extent, .. } => extent
+            Ident { extent, .. } |
+            Tuple { extent, .. } |
+            Wildcard { extent, .. } => extent
         }
     }
 }
@@ -1012,8 +1015,15 @@ fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, V
     sequence!(pm, pt, {
         _x           = literal("(");
         sub_patterns = zero_or_more(comma_tail(pattern));
+        wildcard     = optional(ext(literal("..")));
         _x           = literal(")");
-    }, |_, _| sub_patterns)
+    }, |_, _| {
+        let mut sub_patterns = sub_patterns;
+        if let Some(extent) = wildcard {
+            sub_patterns.push(Pattern::Wildcard { extent });
+        }
+        sub_patterns
+    })
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
@@ -1562,6 +1572,12 @@ mod test {
     fn pattern_with_enum_tuple() {
         let p = qp(pattern, "Baz(a)");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn pattern_with_tuple_wildcard() {
+        let p = qp(pattern, "(..)");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
