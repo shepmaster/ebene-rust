@@ -322,7 +322,8 @@ struct Match {
 
 #[derive(Debug)]
 struct MatchArm {
-    pattern: Pattern,
+    extent: Extent,
+    pattern: Vec<Pattern>,
     body: Expression,
 }
 
@@ -479,6 +480,20 @@ fn comma_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress
 }
 
 // TODO: promote?
+fn pipe_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        sequence!(pm, pt, {
+            v  = f;
+            _x = optional(whitespace);
+            _x = optional(literal("|"));
+            _x = optional(whitespace);
+        }, |_, _| v)
+    }
+}
+
+// TODO: promote?
 fn optional<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Option<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
@@ -592,7 +607,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, ex) = parse_until(pt, |c| {
-        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.'].contains(&c)
+        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.', '='].contains(&c)
     });
     if pt.offset <= spt.offset {
         Progress::failure(pt, Error::IdentNotFound)
@@ -876,9 +891,10 @@ fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
 }
 
 fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
+    let spt = pt;
     sequence!(pm, pt, {
         _x      = optional(whitespace);
-        pattern = pattern;
+        pattern = one_or_more(pipe_tail(pattern));
         _x      = optional(whitespace);
         _x      = literal("=>");
         _x      = optional(whitespace);
@@ -886,7 +902,7 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
         _x      = optional(whitespace);
         _x      = optional(literal(","));
         _x      = optional(whitespace);
-    }, |_, _| MatchArm { pattern, body })
+    }, |_, pt| MatchArm { extent: ex(spt, pt), pattern, body })
 }
 
 fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
@@ -1592,6 +1608,12 @@ mod test {
     fn pattern_with_tuple_wildcard() {
         let p = qp(pattern, "(..)");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn match_arm_with_alternate() {
+        let p = qp(match_arm, "a | b => 1");
+        assert_eq!(unwrap_progress(p).extent, (0, 10))
     }
 
     #[test]
