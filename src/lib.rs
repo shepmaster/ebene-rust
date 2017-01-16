@@ -176,7 +176,7 @@ enum Argument {
 struct Where {
     extent: Extent,
     name: Type,
-    bounds: Extent,
+    bounds: Vec<Extent>,
 }
 
 #[derive(Debug)]
@@ -525,6 +525,20 @@ fn pipe_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<
 }
 
 // TODO: promote?
+fn plus_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        sequence!(pm, pt, {
+            v  = f;
+            _x = optional(whitespace);
+            _x = optional(literal("+"));
+            _x = optional(whitespace);
+        }, |_, _| v)
+    }
+}
+
+// TODO: promote?
 fn optional<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Option<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
@@ -715,7 +729,7 @@ fn function_where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
     sequence!(pm, pt, {
         _x = literal("where");
         _x = whitespace;
-        w  = one_or_more(function_where);
+        w  = one_or_more(comma_tail(function_where));
     }, |_, _| w)
 }
 
@@ -725,8 +739,7 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
         name   = ident;
         _x     = literal(":");
         _x     = optional(whitespace);
-        bounds = typ;
-        _x     = optional(literal(","));
+        bounds = one_or_more(plus_tail(typ));
     }, |_, pt| Where { extent: ex(spt, pt), name, bounds })
 }
 
@@ -1918,6 +1931,19 @@ mod test {
     fn where_clause_with_path() {
         let p = qp(function_where, "P: std::str::pattern::Pattern<'s>");
         assert_eq!(unwrap_progress(p).extent, (0, 33))
+    }
+
+    #[test]
+    fn where_clause_with_multiple_bounds() {
+        let p = qp(function_where, "P: A + B");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn where_clause_with_multiple_types() {
+        let p = qp(function_where_clause, "where P: A, Q: B");
+        let p = unwrap_progress(p);
+        assert_eq!(p[1].extent, (12, 16))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
