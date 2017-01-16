@@ -248,6 +248,7 @@ enum ExpressionKind {
     Binary(Binary),
     If(If),
     Match(Match),
+    Range(Range),
     True,
 }
 
@@ -331,10 +332,17 @@ struct MatchArm {
 }
 
 #[derive(Debug)]
+struct Range {
+    lhs: Option<Box<Expression>>,
+    rhs: Option<Box<Expression>>,
+}
+
+#[derive(Debug)]
 enum ExpressionTail {
     Binary { op: Extent, rhs: Box<Expression> },
     FieldAccess { field: Extent },
     MethodCall { name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
+    Range { rhs: Option<Box<Expression>> },
 }
 
 #[derive(Debug)]
@@ -784,6 +792,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_assign, ExpressionKind::Assign))
             .one(map(expr_function_call, ExpressionKind::FunctionCall))
             .one(map(expr_tuple, ExpressionKind::Tuple))
+            .one(map(expr_range, ExpressionKind::Range))
             .one(expr_true)
             .one(map(expr_value, ExpressionKind::Value))
             .finish()
@@ -829,6 +838,16 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                         args: args
                     })
                 }
+            }
+            Some(ExpressionTail::Range { rhs }) => {
+                expression = Expression {
+                    extent: ex(spt, pt),
+                    kind: ExpressionKind::Range(Range {
+                        lhs: Some(Box::new(expression)),
+                        rhs
+                    })
+                }
+
             }
             None => break,
         }
@@ -931,6 +950,13 @@ fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
     }, |_, _| Tuple { members })
 }
 
+fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
+    sequence!(pm, pt, {
+        _x  = literal("..");
+        rhs = optional(expression);
+    }, |_, _| Range { lhs: None, rhs: rhs.map(Box::new) } )
+}
+
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
     block(pm, pt).map(Box::new)
 }
@@ -959,6 +985,7 @@ fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         .one(expr_tail_binary)
         .one(expr_tail_method_call)
         .one(expr_tail_field_access)
+        .one(expr_tail_range)
         .finish()
 }
 
@@ -1007,6 +1034,13 @@ fn expr_tail_field_access<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
         _x = literal(".");
         field = ident;
     }, |_, _| ExpressionTail::FieldAccess { field })
+}
+
+fn expr_tail_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        _x  = literal("..");
+        rhs = optional(expression);
+    }, |_, _| ExpressionTail::Range { rhs: rhs.map(Box::new) })
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -1665,6 +1699,36 @@ mod test {
     }
 
     #[test]
+    fn expr_macro_call_with_nested_parens() {
+        let p = qp(expression, "foo!(())");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn expr_range_both() {
+        let p = qp(expression, "1..2");
+        assert_eq!(unwrap_progress(p).extent, (0, 4))
+    }
+
+    #[test]
+    fn expr_range_left() {
+        let p = qp(expression, "3..");
+        assert_eq!(unwrap_progress(p).extent, (0, 3))
+    }
+
+    #[test]
+    fn expr_range_right() {
+        let p = qp(expression, "..4");
+        assert_eq!(unwrap_progress(p).extent, (0, 3))
+    }
+
+    #[test]
+    fn expr_range_none() {
+        let p = qp(expression, "..");
+        assert_eq!(unwrap_progress(p).extent, (0, 2))
+    }
+
+    #[test]
     fn pattern_with_path() {
         let p = qp(pattern, "foo::Bar::Baz");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
@@ -1710,12 +1774,6 @@ mod test {
     fn match_arm_with_alternate() {
         let p = qp(match_arm, "a | b => 1");
         assert_eq!(unwrap_progress(p).extent, (0, 10))
-    }
-
-    #[test]
-    fn expr_macro_call_with_nested_parens() {
-        let p = qp(expression, "foo!(())");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
