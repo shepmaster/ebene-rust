@@ -124,6 +124,7 @@ struct FunctionHeader {
 type Generic = Extent;
 
 type Type = Extent;
+type Ident = Extent;
 
 fn ex(start: Point, end: Point) -> Extent {
     let ex = (start.offset, end.offset);
@@ -283,8 +284,16 @@ struct FieldAccess {
 
 #[derive(Debug)]
 struct Value {
-    extent: Extent,
+    name: Extent,
+    literal: Option<Vec<StructLiteralField>>,
 }
+
+#[derive(Debug)]
+struct StructLiteralField {
+    name: Ident,
+    value: Expression,
+}
+
 
 #[derive(Debug)]
 struct FunctionCall {
@@ -314,6 +323,7 @@ struct Binary {
 
 #[derive(Debug)]
 struct If {
+    extent: Extent,
     condition: Box<Expression>,
     body: Box<Block>,
 }
@@ -475,8 +485,9 @@ fn one_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progres
 }
 
 // TODO: extract to peresil
+// alternate syntax: `foo: parser;`?
 macro_rules! sequence {
-    ($pm:expr, $pt:expr, {$x:ident = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
+    ($pm:expr, $pt:expr, {$x:pat = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
         let (pt, $x) = try_parse!($parser($pm, $pt));
         sequence!($pm, pt, {$($rest)*}, $creator)
     }};
@@ -518,6 +529,11 @@ fn optional<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| pm.optional(pt, &f) // what why ref?
+}
+
+// TODO: promote?
+fn point<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Point<'s>> {
+    Progress::success(pt, pt)
 }
 
 // TODO: promote?
@@ -898,13 +914,48 @@ fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assign> {
 }
 
 fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
+    let spt = pt;
     sequence!(pm, pt, {
-        _x        = literal("if");
-        _x        = whitespace;
+        _x                = literal("if");
+        _x                = whitespace;
+        (condition, body) = expr_if_inner;
+    }, move |_, pt| If { extent: ex(spt, pt), condition: Box::new(condition), body: Box::new(body) })
+}
+
+fn expr_if_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
+    pm.alternate(pt)
+        .one(expr_if_expr)
+        .one(expr_if_simple)
+        .finish()
+}
+
+fn expr_if_expr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
+    sequence!(pm, pt, {
         condition = expression;
         _x        = optional(whitespace);
         body      = block;
-    }, |_, _| If { condition: Box::new(condition), body: Box::new(body) })
+    }, |_, _| (condition, body))
+}
+
+// `if expr {}` greedily matches `if StructName {}` as a structure
+// literal and then fails because the body isn't found. Since thist
+// could be valid if `StructName` were a local variable, we force
+// backtracking if we didn't find the `if` body. This means we
+// duplicate some grammar from `expression`.
+fn expr_if_simple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        condition = pathed_ident;
+        mpt       = point;
+        _x        = optional(whitespace);
+        body      = block;
+    }, |_, _| {
+        let condition = Expression {
+            extent: ex(spt, mpt),
+            kind: ExpressionKind::Value(Value { name: condition, literal: None }),
+        };
+        (condition, body)
+    })
 }
 
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
@@ -962,7 +1013,31 @@ fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
-    pathed_ident(pm, pt).map(|extent| Value { extent })
+    sequence!(pm, pt, {
+        name    = pathed_ident;
+        _x      = optional(whitespace);
+        literal = optional(expr_value_struct_literal);
+    }, |_, _| Value { name, literal } )
+}
+
+fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructLiteralField>> {
+    sequence!(pm, pt, {
+        _x     = literal("{");
+        _x     = optional(whitespace);
+        fields = zero_or_more(comma_tail(expr_value_struct_literal_field));
+        _x     = optional(whitespace);
+        _x     = literal("}");
+    }, |_, _| fields)
+}
+
+fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructLiteralField> {
+    sequence!(pm, pt, {
+        name  = ident;
+        _x    = optional(whitespace);
+        _x    = literal(":");
+        _x    = optional(whitespace);
+        value = expression;
+    }, |_, _| StructLiteralField { name, value } )
 }
 
 fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionCall> {
@@ -1669,9 +1744,9 @@ mod test {
     }
 
     #[test]
-    fn expr_if() {
-        let p = qp(expression, "if true {}");
-        assert_eq!(unwrap_progress(p).extent, (0, 10))
+    fn expr_if_() {
+        let p = qp(expression, "if a {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
     }
 
     #[test]
@@ -1726,6 +1801,12 @@ mod test {
     fn expr_range_none() {
         let p = qp(expression, "..");
         assert_eq!(unwrap_progress(p).extent, (0, 2))
+    }
+
+    #[test]
+    fn expr_value_struct_literal() {
+        let p = qp(expression, "Point { a: 1 }");
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
     }
 
     #[test]
