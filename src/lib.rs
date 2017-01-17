@@ -245,6 +245,7 @@ enum ExpressionKind {
     Block(Box<Block>),
     FunctionCall(FunctionCall),
     MethodCall(MethodCall),
+    ForLoop(ForLoop),
     Loop(Loop),
     Binary(Binary),
     If(If),
@@ -309,6 +310,13 @@ struct MethodCall {
     name: Extent,
     turbofish: Option<Extent>,
     args: Vec<Expression>,
+}
+
+#[derive(Debug)]
+struct ForLoop {
+    pattern: Pattern,
+    iter: Box<Expression>,
+    body: Box<Block>,
 }
 
 #[derive(Debug)]
@@ -815,6 +823,7 @@ fn implicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, St
 fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
     pm.alternate(pt)
         .one(map(expr_if, ExpressionKind::If))
+        .one(map(expr_for_loop, ExpressionKind::ForLoop))
         .one(map(expr_loop, ExpressionKind::Loop))
         .one(map(expr_match, ExpressionKind::Match))
         .one(map(expr_block, ExpressionKind::Block))
@@ -950,18 +959,23 @@ fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
     sequence!(pm, pt, {
         _x                = literal("if");
         _x                = whitespace;
-        (condition, body) = expr_if_inner;
+        (condition, body) = expr_followed_by_block;
     }, move |_, pt| If { extent: ex(spt, pt), condition: Box::new(condition), body: Box::new(body) })
 }
 
-fn expr_if_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
+// `expr {}` greedily matches `StructName {}` as a structure literal
+// and then fails because the body isn't found. Since this could be
+// valid if `StructName` were a local variable, we force backtracking
+// if we didn't find the body. This means we duplicate some grammar
+// from `expression`.
+fn expr_followed_by_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
     pm.alternate(pt)
-        .one(expr_if_expr)
-        .one(expr_if_simple)
+        .one(expr_followed_by_block_expr)
+        .one(expr_followed_by_block_simple)
         .finish()
 }
 
-fn expr_if_expr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
+fn expr_followed_by_block_expr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
     sequence!(pm, pt, {
         condition = expression;
         _x        = optional(whitespace);
@@ -969,12 +983,7 @@ fn expr_if_expr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Express
     }, |_, _| (condition, body))
 }
 
-// `if expr {}` greedily matches `if StructName {}` as a structure
-// literal and then fails because the body isn't found. Since thist
-// could be valid if `StructName` were a local variable, we force
-// backtracking if we didn't find the `if` body. This means we
-// duplicate some grammar from `expression`.
-fn expr_if_simple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
+fn expr_followed_by_block_simple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
     let spt = pt;
     sequence!(pm, pt, {
         condition = pathed_ident;
@@ -988,6 +997,18 @@ fn expr_if_simple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expre
         };
         (condition, body)
     })
+}
+
+fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop> {
+    sequence!(pm, pt, {
+        _x           = literal("for");
+        _x           = whitespace;
+        pattern      = pattern;
+        _x           = whitespace;
+        _x           = literal("in");
+        _x           = whitespace;
+        (iter, body) = expr_followed_by_block;
+    }, |_, _| ForLoop { pattern, iter: Box::new(iter), body: Box::new(body) })
 }
 
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
@@ -1807,6 +1828,12 @@ mod test {
     fn expr_method_call_with_turbofish_nested() {
         let p = qp(expression, "e.into_iter().collect::<BTreeSet<_>>()");
         assert_eq!(unwrap_progress(p).extent, (0, 38))
+    }
+
+    #[test]
+    fn expr_for_loop() {
+        let p = qp(expression, "for (a, b) in c {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 18))
     }
 
     #[test]
