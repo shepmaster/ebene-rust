@@ -1156,6 +1156,8 @@ fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expr
 fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     // Two characters before one to avoid matching += as +
     pm.alternate(pt)
+        .one(ext(literal("!=")))
+        .one(ext(literal("==")))
         .one(ext(literal("+=")))
         .one(ext(literal("-=")))
         .one(ext(literal("*=")))
@@ -1882,6 +1884,12 @@ mod test {
     fn expr_binary_op_two_char() {
         let p = qp(expression, "a >= b");
         assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn expr_binary_op_equality() {
+        let p = qp(expression, "a == b != c");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
