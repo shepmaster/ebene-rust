@@ -263,6 +263,7 @@ struct MacroCall {
 #[derive(Debug)]
 struct Let {
     pattern: Pattern,
+    typ: Option<Type>,
     value: Option<Box<Expression>>,
 }
 
@@ -912,11 +913,18 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
         _x      = whitespace;
         pattern = pattern;
         _x      = optional(whitespace);
+        typ     = optional(expr_let_type);
+        _x      = optional(whitespace);
         value   = optional(expr_let_rhs);
-    }, |_, _| Let {
-        pattern,
-        value: value.map(Box::new),
-    })
+    }, |_, _| Let { pattern, typ, value: value.map(Box::new) })
+}
+
+fn expr_let_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+    sequence!(pm, pt, {
+        _x  = literal(":");
+        _x  = optional(whitespace);
+        typ = typ;
+    }, |_, _| typ)
 }
 
 fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
@@ -1715,6 +1723,12 @@ mod test {
     fn expr_true() {
         let p = qp(expression, "true");
         assert_eq!(unwrap_progress(p).extent, (0, 4))
+    }
+
+    #[test]
+    fn expr_let_explicit_type() {
+        let p = qp(expression, "let foo: bool");
+        assert_eq!(unwrap_progress(p).extent, (0, 13))
     }
 
     #[test]
