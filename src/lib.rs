@@ -1579,10 +1579,20 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias>
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x = optional(literal("&"));
-        _x = optional(lifetime);
+        _x = optional(typ_ref);
         _x = optional(whitespace);
         _x = typ_inner;
+    }, |_, pt| ex(spt, pt))
+}
+
+fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("&");
+        _x = optional(whitespace);
+        _x = optional(literal("mut"));
+        _x = optional(whitespace);
+        _x = optional(lifetime);
     }, |_, pt| ex(spt, pt))
 }
 
@@ -2131,6 +2141,12 @@ mod test {
     fn type_fn_trait() {
         let p = qp(typ, "Fn(u8) -> u8");
         assert_eq!(unwrap_progress(p), (0, 12))
+    }
+
+    #[test]
+    fn type_mut_ref() {
+        let p = qp(typ, "&mut Foo");
+        assert_eq!(unwrap_progress(p), (0, 8))
     }
 
     #[test]
