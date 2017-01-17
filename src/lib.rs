@@ -252,6 +252,7 @@ enum ExpressionKind {
     Match(Match),
     Range(Range),
     Closure(Closure),
+    Return(Return),
     True,
 }
 
@@ -368,6 +369,12 @@ struct Closure {
 struct ClosureArg {
     name: Ident,
     typ: Option<Type>,
+}
+
+#[derive(Debug)]
+struct Return {
+    extent: Extent,
+    value: Box<Expression>,
 }
 
 #[derive(Debug)]
@@ -843,6 +850,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_tuple, ExpressionKind::Tuple))
             .one(map(expr_range, ExpressionKind::Range))
             .one(map(expr_closure, ExpressionKind::Closure))
+            .one(map(expr_return, ExpressionKind::Return))
             .one(expr_true)
             .one(map(expr_value, ExpressionKind::Value))
             .finish()
@@ -1086,6 +1094,15 @@ fn expr_closure_arg_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
         _x  = optional(whitespace);
         typ = typ;
     }, |_, _| typ)
+}
+
+fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x    = optional(literal("return"));
+        _x    = whitespace;
+        value = expression;
+    }, |_, pt| Return { extent: ex(spt, pt), value: Box::new(value) })
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
@@ -1964,6 +1981,12 @@ mod test {
     fn expr_closure_move() {
         let p = qp(expression, "move || 42");
         assert_eq!(unwrap_progress(p).extent, (0, 10))
+    }
+
+    #[test]
+    fn expr_return() {
+        let p = qp(expression, "return 1");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
