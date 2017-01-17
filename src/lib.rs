@@ -337,6 +337,7 @@ struct If {
     extent: Extent,
     condition: Box<Expression>,
     body: Box<Block>,
+    more: Vec<If>,
     else_body: Option<Box<Block>>,
 }
 
@@ -969,19 +970,30 @@ fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
         _x                = literal("if");
         _x                = whitespace;
         (condition, body) = expr_followed_by_block;
-        else_body         = optional(expr_if_else);
+        more              = zero_or_more(expr_if_else_if);
+        else_body         = optional(expr_if_else_end);
     }, move |_, pt| If {
         extent: ex(spt, pt),
         condition: Box::new(condition),
         body: Box::new(body),
+        more,
         else_body: else_body.map(Box::new)
     })
 }
 
-fn expr_if_else<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
+fn expr_if_else_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
     sequence!(pm, pt, {
-        _x        = optional(whitespace);
-        _x        = literal("else");
+        _x   = optional(whitespace);
+        _x   = literal("else");
+        _x   = optional(whitespace);
+        tail = expr_if;
+    }, |_, _| tail)
+}
+
+fn expr_if_else_end<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
+    sequence!(pm, pt, {
+        _x   = optional(whitespace);
+        _x   = literal("else");
         _x        = optional(whitespace);
         else_body = block;
     }, |_, _| else_body)
@@ -1907,6 +1919,12 @@ mod test {
     fn expr_if_else() {
         let p = qp(expression, "if a {} else {}");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn expr_if_else_if() {
+        let p = qp(expression, "if a {} else if b {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
