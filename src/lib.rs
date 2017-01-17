@@ -250,6 +250,7 @@ enum ExpressionKind {
     If(If),
     Match(Match),
     Range(Range),
+    Closure(Closure),
     True,
 }
 
@@ -345,6 +346,19 @@ struct MatchArm {
 struct Range {
     lhs: Option<Box<Expression>>,
     rhs: Option<Box<Expression>>,
+}
+
+#[derive(Debug)]
+struct Closure {
+    is_move: bool,
+    args: Vec<ClosureArg>,
+    body: Box<Expression>,
+}
+
+#[derive(Debug)]
+struct ClosureArg {
+    name: Ident,
+    typ: Option<Type>,
 }
 
 #[derive(Debug)]
@@ -661,7 +675,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, ex) = parse_until(pt, |c| {
-        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.', '='].contains(&c)
+        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.', '=', '|'].contains(&c)
     });
     if pt.offset <= spt.offset {
         Progress::failure(pt, Error::IdentNotFound)
@@ -818,6 +832,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_function_call, ExpressionKind::FunctionCall))
             .one(map(expr_tuple, ExpressionKind::Tuple))
             .one(map(expr_range, ExpressionKind::Range))
+            .one(map(expr_closure, ExpressionKind::Closure))
             .one(expr_true)
             .one(map(expr_value, ExpressionKind::Value))
             .finish()
@@ -1015,6 +1030,33 @@ fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
         _x  = literal("..");
         rhs = optional(expression);
     }, |_, _| Range { lhs: None, rhs: rhs.map(Box::new) } )
+}
+
+fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure> {
+    sequence!(pm, pt, {
+        mov  = optional(literal("move"));
+        _x   = optional(whitespace);
+        _x   = literal("|");
+        args = zero_or_more(comma_tail(expr_closure_arg));
+        _x   = literal("|");
+        body = expression;
+    }, |_, _| Closure { is_move: mov.is_some(), args, body: Box::new(body) })
+}
+
+fn expr_closure_arg<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ClosureArg> {
+    sequence!(pm, pt, {
+        name = ident;
+        typ  = optional(expr_closure_arg_type);
+    }, |_, _| ClosureArg { name, typ })
+}
+
+fn expr_closure_arg_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+    sequence!(pm, pt, {
+        _x  = optional(whitespace);
+        _x  = literal(":");
+        _x  = optional(whitespace);
+        typ = typ;
+    }, |_, _| typ)
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
@@ -1841,6 +1883,30 @@ mod test {
     fn expr_value_struct_literal() {
         let p = qp(expression, "Point { a: 1 }");
         assert_eq!(unwrap_progress(p).extent, (0, 14))
+    }
+
+    #[test]
+    fn expr_closure() {
+        let p = qp(expression, "|a| a");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
+    }
+
+    #[test]
+    fn expr_closure_multiple() {
+        let p = qp(expression, "|a, b| a + b");
+        assert_eq!(unwrap_progress(p).extent, (0, 12))
+    }
+
+    #[test]
+    fn expr_closure_explicit_type() {
+        let p = qp(expression, "|a: u8| a");
+        assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn expr_closure_move() {
+        let p = qp(expression, "move || 42");
+        assert_eq!(unwrap_progress(p).extent, (0, 10))
     }
 
     #[test]
