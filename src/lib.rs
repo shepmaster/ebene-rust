@@ -1158,6 +1158,8 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     pm.alternate(pt)
         .one(ext(literal("!=")))
         .one(ext(literal("==")))
+        .one(ext(literal("&&")))
+        .one(ext(literal("||")))
         .one(ext(literal("+=")))
         .one(ext(literal("-=")))
         .one(ext(literal("*=")))
@@ -1889,6 +1891,12 @@ mod test {
     #[test]
     fn expr_binary_op_equality() {
         let p = qp(expression, "a == b != c");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn expr_binary_op_boolean_logic() {
+        let p = qp(expression, "a && b || c");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
