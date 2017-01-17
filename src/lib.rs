@@ -337,6 +337,7 @@ struct If {
     extent: Extent,
     condition: Box<Expression>,
     body: Box<Block>,
+    else_body: Option<Box<Block>>,
 }
 
 #[derive(Debug)]
@@ -968,7 +969,22 @@ fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
         _x                = literal("if");
         _x                = whitespace;
         (condition, body) = expr_followed_by_block;
-    }, move |_, pt| If { extent: ex(spt, pt), condition: Box::new(condition), body: Box::new(body) })
+        else_body         = optional(expr_if_else);
+    }, move |_, pt| If {
+        extent: ex(spt, pt),
+        condition: Box::new(condition),
+        body: Box::new(body),
+        else_body: else_body.map(Box::new)
+    })
+}
+
+fn expr_if_else<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
+    sequence!(pm, pt, {
+        _x        = optional(whitespace);
+        _x        = literal("else");
+        _x        = optional(whitespace);
+        else_body = block;
+    }, |_, _| else_body)
 }
 
 // `expr {}` greedily matches `StructName {}` as a structure literal
@@ -1885,6 +1901,12 @@ mod test {
     fn expr_if_() {
         let p = qp(expression, "if a {}");
         assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn expr_if_else() {
+        let p = qp(expression, "if a {} else {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
