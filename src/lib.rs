@@ -1250,6 +1250,7 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 
 fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
+        _x        = optional(whitespace);
         _x        = literal(".");
         name      = ident;
         turbofish = optional(turbofish);
@@ -1907,6 +1908,12 @@ mod test {
     fn expr_method_call_multiple() {
         let p = qp(expression, "foo.bar().baz()");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn expr_method_call_multiple_spaced() {
+        let p = qp(expression, "foo.bar()\n    .baz()");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
