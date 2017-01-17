@@ -259,6 +259,7 @@ enum ExpressionKind {
     If(If),
     Match(Match),
     Range(Range),
+    Array(Array),
     Closure(Closure),
     Return(Return),
     True,
@@ -366,6 +367,11 @@ struct MatchArm {
 struct Range {
     lhs: Option<Box<Expression>>,
     rhs: Option<Box<Expression>>,
+}
+
+#[derive(Debug)]
+struct Array {
+    members: Vec<Expression>,
 }
 
 #[derive(Debug)]
@@ -719,7 +725,7 @@ fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRule
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, ex) = parse_until(pt, |c| {
-        ['!', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.', '=', '|'].contains(&c)
+        ['!', '[', ']', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.', '=', '|'].contains(&c)
     });
     if pt.offset <= spt.offset {
         Progress::failure(pt, Error::IdentNotFound)
@@ -877,6 +883,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_function_call, ExpressionKind::FunctionCall))
             .one(map(expr_tuple, ExpressionKind::Tuple))
             .one(map(expr_range, ExpressionKind::Range))
+            .one(map(expr_array, ExpressionKind::Array))
             .one(map(expr_closure, ExpressionKind::Closure))
             .one(map(expr_return, ExpressionKind::Return))
             .one(expr_true)
@@ -1121,6 +1128,14 @@ fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
         _x  = literal("..");
         rhs = optional(expression);
     }, |_, _| Range { lhs: None, rhs: rhs.map(Box::new) } )
+}
+
+fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
+    sequence!(pm, pt, {
+        _x      = literal("[");
+        members = zero_or_more(comma_tail(expression));
+        _x      = literal("]");
+    }, |_, _| Array { members })
 }
 
 fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure> {
@@ -2076,6 +2091,12 @@ mod test {
     fn expr_return() {
         let p = qp(expression, "return 1");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn expr_array() {
+        let p = qp(expression, "[1, 1]");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
     }
 
     #[test]
