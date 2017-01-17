@@ -260,6 +260,7 @@ enum ExpressionKind {
     Match(Match),
     Range(Range),
     Array(Array),
+    Slice(Slice),
     Closure(Closure),
     Return(Return),
     True,
@@ -375,6 +376,12 @@ struct Array {
 }
 
 #[derive(Debug)]
+struct Slice {
+    target: Box<Expression>,
+    range: Box<Expression>,
+}
+
+#[derive(Debug)]
 struct Closure {
     is_move: bool,
     args: Vec<ClosureArg>,
@@ -399,6 +406,7 @@ enum ExpressionTail {
     FieldAccess { field: Extent },
     MethodCall { name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
     Range { rhs: Option<Box<Expression>> },
+    Slice { range: Box<Expression> },
 }
 
 #[derive(Debug)]
@@ -942,6 +950,16 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                 }
 
             }
+            Some(ExpressionTail::Slice { range }) => {
+                expression = Expression {
+                    extent: ex(spt, pt),
+                    kind: ExpressionKind::Slice(Slice {
+                        target: Box::new(expression),
+                        range
+                    })
+                }
+
+            }
             None => break,
         }
     }
@@ -1227,6 +1245,7 @@ fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         .one(expr_tail_method_call)
         .one(expr_tail_field_access)
         .one(expr_tail_range)
+        .one(expr_tail_slice)
         .finish()
 }
 
@@ -1287,6 +1306,16 @@ fn expr_tail_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         _x  = literal("..");
         rhs = optional(expression);
     }, |_, _| ExpressionTail::Range { rhs: rhs.map(Box::new) })
+}
+
+fn expr_tail_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        _x    = literal("[");
+        _x    = optional(whitespace);
+        range = expression;
+        _x    = optional(whitespace);
+        _x    = literal("]");
+    }, |_, _| ExpressionTail::Slice { range: Box::new(range) })
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -2096,6 +2125,12 @@ mod test {
     #[test]
     fn expr_array() {
         let p = qp(expression, "[1, 1]");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn expr_slice_index() {
+        let p = qp(expression, "a[..2]");
         assert_eq!(unwrap_progress(p).extent, (0, 6))
     }
 
