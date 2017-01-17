@@ -69,6 +69,7 @@ type Extent = (usize, usize);
 #[derive(Debug)]
 enum TopLevel {
     Function(Function),
+    MacroRules(MacroRules),
     Struct(Struct),
     Enum(Enum),
     Trait(Trait),
@@ -118,6 +119,13 @@ struct FunctionHeader {
     arguments: Vec<Argument>,
     return_type: Option<Type>,
     wheres: Vec<Where>,
+}
+
+#[derive(Debug)]
+struct MacroRules {
+    extent: Extent,
+    name: Ident,
+    body: Extent,
 }
 
 //#[derive(Debug)]
@@ -614,6 +622,7 @@ fn inspect<'s, F>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, (
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     pm.alternate(pt)
         .one(function)
+        .one(map(macro_rules, TopLevel::MacroRules))
         .one(map(p_struct, TopLevel::Struct))
         .one(map(p_enum, TopLevel::Enum))
         .one(p_trait)
@@ -688,6 +697,23 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
             return_type,
             wheres: wheres.unwrap_or_else(Vec::new),
         }})
+}
+
+fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRules> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x   = literal("macro_rules!");
+        _x   = whitespace;
+        name = ident;
+        _x   = whitespace;
+        _x   = literal("{");
+        body = parse_nested_until('{', '}');
+        _x   = literal("}");
+    }, |_, pt| MacroRules {
+        extent: ex(spt, pt),
+        name,
+        body,
+    })
 }
 
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -1671,6 +1697,12 @@ mod test {
     fn top_level_use() {
         let p = qp(p_use, "use foo::Bar;");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn top_level_macro_rules() {
+        let p = qp(macro_rules, "macro_rules! foo { }");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
