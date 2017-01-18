@@ -261,6 +261,7 @@ enum ExpressionKind {
     Range(Range),
     Array(Array),
     Character(Character),
+    String(String),
     Slice(Slice),
     Closure(Closure),
     Return(Return),
@@ -378,6 +379,11 @@ struct Array {
 
 #[derive(Debug)]
 struct Character {
+    value: Extent,
+}
+
+#[derive(Debug)]
+struct String {
     value: Extent,
 }
 
@@ -920,6 +926,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_range, ExpressionKind::Range))
             .one(map(expr_array, ExpressionKind::Array))
             .one(map(character_literal, ExpressionKind::Character))
+            .one(map(string_literal, ExpressionKind::String))
             .one(map(expr_closure, ExpressionKind::Closure))
             .one(map(expr_return, ExpressionKind::Return))
             .one(expr_true)
@@ -1205,7 +1212,35 @@ fn char_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
             (true, _) => escaped = false,
             (false, '\\') => escaped = true,
             (false, '\'') => return res(i),
-            (false, _) => { /* Next char*/ },
+            (false, _) => { /* Next char */ },
+        }
+    }
+
+    res(pt.s.len())
+}
+
+fn string_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
+    sequence!(pm, pt, {
+        _x    = literal("\"");
+        value = ext(str_char);
+        _x    = literal("\"");
+    }, |_, _| String { value })
+}
+
+fn str_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
+    let res = |i| {
+        let (head, tail) = pt.s.split_at(i);
+        let pt = Point { s: tail, offset: pt.offset + i };
+        Progress::success(pt, head)
+    };
+
+    let mut escaped = false;
+    for (i, c) in pt.s.char_indices() {
+        match (escaped, c) {
+            (true, _) => escaped = false,
+            (false, '\\') => escaped = true,
+            (false, '"') => return res(i),
+            (false, _) => { /* Next char */ },
         }
     }
 
@@ -2220,6 +2255,18 @@ mod test {
     #[test]
     fn expr_char_literal_escape() {
         let p = qp(expression, r"'\''");
+        assert_eq!(unwrap_progress(p).extent, (0, 4))
+    }
+
+    #[test]
+    fn expr_string_literal() {
+        let p = qp(expression, r#""a""#);
+        assert_eq!(unwrap_progress(p).extent, (0, 3))
+    }
+
+    #[test]
+    fn expr_string_literal_escape() {
+        let p = qp(expression, r#""\"""#);
         assert_eq!(unwrap_progress(p).extent, (0, 4))
     }
 
