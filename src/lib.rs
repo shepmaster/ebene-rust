@@ -662,10 +662,26 @@ fn literal<'s>(expected: &'static str) -> impl Fn(&mut Master<'s>, Point<'s>) ->
 }
 
 fn comment<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Comment> {
+    pm.alternate(pt)
+        .one(comment_end_of_line)
+        .one(comment_region)
+        .finish()
+}
+
+fn comment_end_of_line<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Comment> {
     let spt = pt;
     sequence!(pm, pt, {
         _x   = literal("//");
         text = parse_until2("\n");
+    }, |_, pt| Comment { extent: ex(spt, pt), text })
+}
+
+fn comment_region<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Comment> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x   = literal("/*");
+        text = parse_until2("*/");
+        _x   = literal("*/");
     }, |_, pt| Comment { extent: ex(spt, pt), text })
 }
 
@@ -2326,6 +2342,18 @@ mod test {
         let p = qp(function_where_clause, "where P: A, Q: B");
         let p = unwrap_progress(p);
         assert_eq!(p[1].extent, (12, 16))
+    }
+
+    #[test]
+    fn comment_end_of_line() {
+        let p = qp(comment, "// hello");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn comment_region() {
+        let p = qp(comment, "/* hello */");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
