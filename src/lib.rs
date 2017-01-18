@@ -1741,12 +1741,36 @@ fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
     sequence!(pm, pt, {
         _x   = literal("use");
         _x   = whitespace;
-        name = pathed_ident;
+        name = use_path;
         _x   = literal(";");
     }, |_, pt| Use {
         extent: ex(spt, pt),
         name
     })
+}
+
+fn use_path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = ident;
+        _x = zero_or_more(use_path_component);
+        _x = optional(use_path_tail);
+    }, |_, pt| ex(spt, pt))
+}
+
+fn use_path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("::");
+        _x = ident;
+    }, |_, pt| ex(spt, pt))
+}
+
+fn use_path_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("::*");
+    }, |_, pt| ex(spt, pt))
 }
 
 fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias> {
@@ -1912,6 +1936,12 @@ mod test {
     fn top_level_use() {
         let p = qp(p_use, "use foo::Bar;");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn top_level_use_wildcard() {
+        let p = qp(p_use, "use foo::*;");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
