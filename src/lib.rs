@@ -260,6 +260,7 @@ enum ExpressionKind {
     Match(Match),
     Range(Range),
     Array(Array),
+    Character(Character),
     Slice(Slice),
     Closure(Closure),
     Return(Return),
@@ -373,6 +374,11 @@ struct Range {
 #[derive(Debug)]
 struct Array {
     members: Vec<Expression>,
+}
+
+#[derive(Debug)]
+struct Character {
+    value: Extent,
 }
 
 #[derive(Debug)]
@@ -733,7 +739,10 @@ fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRule
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     let (pt, ex) = parse_until(pt, |c| {
-        ['!', '[', ']', '(', ')', ' ', '<', '>', '{', '}', ':', ',', ';', '/', '.', '=', '|'].contains(&c)
+        [
+            '[', ']', '(', ')', '<', '>', '{', '}',
+            '!', ' ', ':', ',', ';', '/', '.', '=', '|', '\'', '"',
+        ].contains(&c)
     });
     if pt.offset <= spt.offset {
         Progress::failure(pt, Error::IdentNotFound)
@@ -892,6 +901,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_tuple, ExpressionKind::Tuple))
             .one(map(expr_range, ExpressionKind::Range))
             .one(map(expr_array, ExpressionKind::Array))
+            .one(map(expr_character, ExpressionKind::Character))
             .one(map(expr_closure, ExpressionKind::Closure))
             .one(map(expr_return, ExpressionKind::Return))
             .one(expr_true)
@@ -1154,6 +1164,34 @@ fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
         members = zero_or_more(comma_tail(expression));
         _x      = literal("]");
     }, |_, _| Array { members })
+}
+
+fn expr_character<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Character> {
+    sequence!(pm, pt, {
+        _x    = literal("'");
+        value = ext(char_char);
+        _x    = literal("'");
+    }, |_, _| Character { value })
+}
+
+fn char_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
+    let res = |i| {
+        let (head, tail) = pt.s.split_at(i);
+        let pt = Point { s: tail, offset: pt.offset + i };
+        Progress::success(pt, head)
+    };
+
+    let mut escaped = false;
+    for (i, c) in pt.s.char_indices() {
+        match (escaped, c) {
+            (true, _) => escaped = false,
+            (false, '\\') => escaped = true,
+            (false, '\'') => return res(i),
+            (false, _) => { /* Next char*/ },
+        }
+    }
+
+    res(pt.s.len())
 }
 
 fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure> {
@@ -2126,6 +2164,18 @@ mod test {
     fn expr_array() {
         let p = qp(expression, "[1, 1]");
         assert_eq!(unwrap_progress(p).extent, (0, 6))
+    }
+
+    #[test]
+    fn expr_char_literal() {
+        let p = qp(expression, "'a'");
+        assert_eq!(unwrap_progress(p).extent, (0, 3))
+    }
+
+    #[test]
+    fn expr_char_literal_escape() {
+        let p = qp(expression, r"'\''");
+        assert_eq!(unwrap_progress(p).extent, (0, 4))
     }
 
     #[test]
