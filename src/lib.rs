@@ -245,6 +245,7 @@ struct Expression {
 #[derive(Debug)]
 enum ExpressionKind {
     MacroCall(MacroCall),
+    Call(Call),
     Let(Let),
     Assign(Assign),
     Tuple(Tuple),
@@ -310,6 +311,12 @@ struct StructLiteralField {
     value: Expression,
 }
 
+// TODO: Can we roll up function and method call into this?
+#[derive(Debug)]
+struct Call {
+    target: Box<Expression>,
+    args: Vec<Expression>,
+}
 
 #[derive(Debug)]
 struct FunctionCall {
@@ -416,6 +423,7 @@ struct Return {
 enum ExpressionTail {
     Binary { op: Extent, rhs: Box<Expression> },
     FieldAccess { field: Extent },
+    Call { args: Vec<Expression> },
     MethodCall { name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
     Range { rhs: Option<Box<Expression>> },
     Slice { range: Box<Expression> },
@@ -964,6 +972,15 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                     })
                 }
             }
+            Some(ExpressionTail::Call { args }) => {
+                expression = Expression {
+                    extent: ex(spt, pt),
+                    kind: ExpressionKind::Call(Call {
+                        target: Box::new(expression),
+                        args: args
+                    })
+                }
+            }
             Some(ExpressionTail::MethodCall { name, turbofish, args }) => {
                 expression = Expression {
                     extent: ex(spt, pt),
@@ -1347,6 +1364,7 @@ fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionK
 fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     pm.alternate(pt)
         .one(expr_tail_binary)
+        .one(expr_tail_call)
         .one(expr_tail_method_call)
         .one(expr_tail_field_access)
         .one(expr_tail_range)
@@ -1397,6 +1415,14 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
         args      = zero_or_more(comma_tail(expression));
         _x        = literal(")");
     }, |_, _| ExpressionTail::MethodCall { name, turbofish, args })
+}
+
+fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        _x        = literal("(");
+        args      = zero_or_more(comma_tail(expression));
+        _x        = literal(")");
+    }, |_, _| ExpressionTail::Call { args })
 }
 
 fn expr_tail_field_access<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
@@ -2082,6 +2108,12 @@ mod test {
     fn expr_method_call_with_turbofish_nested() {
         let p = qp(expression, "e.into_iter().collect::<BTreeSet<_>>()");
         assert_eq!(unwrap_progress(p).extent, (0, 38))
+    }
+
+    #[test]
+    fn expr_call_of_expr() {
+        let p = qp(expression, "{foo}()");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
     }
 
     #[test]
