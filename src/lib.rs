@@ -1253,13 +1253,27 @@ fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
 }
 
 fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructLiteralField> {
+    let spt = pt;
     sequence!(pm, pt, {
         name  = ident;
+        mpt   = point;
         _x    = optional(whitespace);
+        value = optional(expr_value_struct_literal_field_value);
+    }, |_, _| {
+        let value = value.unwrap_or_else(|| Expression {
+            extent: ex(spt, mpt),
+            kind: ExpressionKind::Value(Value { name, literal: None }),
+        });
+        StructLiteralField { name, value }
+    })
+}
+
+fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+    sequence!(pm, pt, {
         _x    = literal(":");
         _x    = optional(whitespace);
         value = expression;
-    }, |_, _| StructLiteralField { name, value } )
+    }, |_, _| value )
 }
 
 fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionCall> {
@@ -2128,6 +2142,12 @@ mod test {
     fn expr_value_struct_literal() {
         let p = qp(expression, "Point { a: 1 }");
         assert_eq!(unwrap_progress(p).extent, (0, 14))
+    }
+
+    #[test]
+    fn expr_value_struct_literal_shortahnd() {
+        let p = qp(expression, "Point { a }");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
