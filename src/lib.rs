@@ -78,6 +78,7 @@ enum TopLevel {
     ExternCrate(Crate),
     Use(Use),
     TypeAlias(TypeAlias),
+    Module(Module),
     Whitespace(Vec<Whitespace>),
 }
 
@@ -500,6 +501,13 @@ struct TypeAlias {
     defn: Type,
 }
 
+#[derive(Debug)]
+struct Module {
+    extent: Extent,
+    name: Ident,
+    body: Box<TopLevel>,
+}
+
 // TODO: extract to peresil?
 fn parse_until<'s, P>(pt: Point<'s>, p: P) -> (Point<'s>, Extent)
     where P: std::str::pattern::Pattern<'s>
@@ -667,6 +675,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(extern_crate)
         .one(map(p_use, TopLevel::Use))
         .one(map(type_alias, TopLevel::TypeAlias))
+        .one(map(module, TopLevel::Module))
         .one(map(whitespace, TopLevel::Whitespace))
         .finish()
 }
@@ -1759,6 +1768,19 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias>
     })
 }
 
+fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x   = literal("mod");
+        _x   = whitespace;
+        name = ident;
+        _x   = optional(whitespace);
+        _x   = literal("{");
+        body = top_level;
+        _x   = literal("}");
+    }, |_, pt| Module { extent: ex(spt, pt), name, body: Box::new(body) })
+}
+
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let spt = pt;
     sequence!(pm, pt, {
@@ -1896,6 +1918,12 @@ mod test {
     fn top_level_macro_rules() {
         let p = qp(macro_rules, "macro_rules! foo { }");
         assert_eq!(unwrap_progress(p).extent, (0, 20))
+    }
+
+    #[test]
+    fn top_level_mod() {
+        let p = qp(module, "mod foo { }");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
