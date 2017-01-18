@@ -82,6 +82,26 @@ enum TopLevel {
     Whitespace(Vec<Whitespace>),
 }
 
+impl TopLevel {
+    #[allow(dead_code)]
+    fn extent(&self) -> Extent {
+        match *self {
+            TopLevel::Function(Function { extent, .. })     |
+            TopLevel::MacroRules(MacroRules { extent, .. }) |
+            TopLevel::Struct(Struct { extent, .. })         |
+            TopLevel::Enum(Enum { extent, .. })             |
+            TopLevel::Trait(Trait { extent, .. })           |
+            TopLevel::Impl(Impl { extent, .. })             |
+            TopLevel::Attribute(extent)                     |
+            TopLevel::ExternCrate(Crate { extent, .. })     |
+            TopLevel::Use(Use { extent, .. })               |
+            TopLevel::TypeAlias(TypeAlias { extent, .. })   |
+            TopLevel::Module(Module { extent, .. })         => extent,
+            TopLevel::Whitespace(..)                        => unimplemented!(),
+        }
+    }
+}
+
 type Attribute = Extent;
 type Lifetime = Extent;
 
