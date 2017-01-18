@@ -422,6 +422,7 @@ enum Pattern {
     Struct { extent: Extent, name: Extent, fields: Vec<PatternStructField>, wildcard: bool },
     Tuple { extent: Extent, members: Vec<Pattern> },
     Wildcard { extent: Extent },
+    Character { extent: Extent, value: Character },
 }
 
 impl Pattern {
@@ -432,7 +433,8 @@ impl Pattern {
             Ident { extent, .. } |
             Tuple { extent, .. } |
             Struct { extent, .. } |
-            Wildcard { extent, .. } => extent
+            Wildcard { extent, .. } |
+            Character { extent, .. } => extent
         }
     }
 }
@@ -901,7 +903,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_tuple, ExpressionKind::Tuple))
             .one(map(expr_range, ExpressionKind::Range))
             .one(map(expr_array, ExpressionKind::Array))
-            .one(map(expr_character, ExpressionKind::Character))
+            .one(map(character_literal, ExpressionKind::Character))
             .one(map(expr_closure, ExpressionKind::Closure))
             .one(map(expr_return, ExpressionKind::Return))
             .one(expr_true)
@@ -1166,7 +1168,7 @@ fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
     }, |_, _| Array { members })
 }
 
-fn expr_character<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Character> {
+fn character_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Character> {
     sequence!(pm, pt, {
         _x    = literal("'");
         value = ext(char_char);
@@ -1400,6 +1402,7 @@ fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
         .one(pattern_struct)
         .one(pattern_ident)
         .one(pattern_tuple)
+        .one(pattern_char)
         .finish()
 }
 
@@ -1472,6 +1475,12 @@ fn pattern_struct_field_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
         _x      = optional(whitespace);
         pattern = pattern;
     }, |_, _| pattern)
+}
+
+fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+    let spt = pt;
+    let (pt, value) = try_parse!(character_literal(pm, pt));
+    Progress::success(pt, Pattern::Character { extent: ex(spt, pt), value })
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
@@ -2244,6 +2253,12 @@ mod test {
     fn pattern_with_enum_struct_wildcard() {
         let p = qp(pattern, "Baz { .. }");
         assert_eq!(unwrap_progress(p).extent(), (0, 10))
+    }
+
+    #[test]
+    fn pattern_with_char_literal() {
+        let p = qp(pattern, "'a'");
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
     }
 
     #[test]
