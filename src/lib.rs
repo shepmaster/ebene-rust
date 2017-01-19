@@ -592,8 +592,16 @@ fn one_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progres
 // TODO: extract to peresil
 // alternate syntax: `foo: parser;`?
 macro_rules! sequence {
+    ($pm:expr, $pt:expr, {let $x:pat = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
+        let (pt, $x) = try_parse!($parser($pm, $pt));
+        sequence!($pm, pt, {$($rest)*}, $creator)
+    }};
     ($pm:expr, $pt:expr, {$x:pat = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
         let (pt, $x) = try_parse!($parser($pm, $pt));
+        sequence!($pm, pt, {$($rest)*}, $creator)
+    }};
+    ($pm:expr, $pt:expr, {$parser:expr; $($rest:tt)*}, $creator:expr) => {{
+        let (pt, _) = try_parse!($parser($pm, $pt));
         sequence!($pm, pt, {$($rest)*}, $creator)
     }};
     ($pm:expr, $pt:expr, {}, $creator:expr) => {
