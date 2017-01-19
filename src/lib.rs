@@ -577,14 +577,14 @@ fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, P
 }
 
 // TODO: extract to peresil
-fn one_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+fn one_or_more<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
 {
     move |pm, pt| {
         let (pt, head) = try_parse!(f(pm, pt));
-        let (pt, mut tail) = try_parse!(pm.zero_or_more(pt, &f));// what why ref
+        let existing = vec![head];
+        let (pt, tail) = try_parse!(zero_or_more_append(existing, f)(pm, pt));
 
-        tail.insert(0, head);
         Progress::success(pt, tail)
     }
 }
@@ -652,10 +652,10 @@ fn plus_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<
 }
 
 // TODO: promote?
-fn optional<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Option<T>>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+fn optional<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Option<T>>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
-    move |pm, pt| pm.optional(pt, &f) // what why ref?
+    move |pm, pt| pm.optional(pt, f)
 }
 
 // TODO: promote?
@@ -670,13 +670,30 @@ fn zero_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progre
     move |pm, pt| pm.zero_or_more(pt, &f) // what why ref?
 }
 
+// TODO: promote?
+fn zero_or_more_append<'s, F, T>(mut existing: Vec<T>, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
+{
+    move |pm, mut pt| {
+        loop {
+            match f(pm, pt) {
+                Progress { point, status: peresil::Status::Success(v) } => {
+                    existing.push(v);
+                    pt = point;
+                },
+                Progress { point, .. } => return Progress::success(point, existing),
+            }
+        }
+    }
+}
+
 #[allow(dead_code)]
-fn map<'s, P, F, T, U>(p: P, f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, U>
-    where P: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
-          F: Fn(T) -> U
+fn map<'s, P, F, T, U>(p: P, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, U>
+    where P: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
+          F: FnOnce(T) -> U
 {
     move |pm, pt| {
-        p(pm, pt).map(&f)
+        p(pm, pt).map(f)
     }
 }
 
@@ -750,8 +767,8 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     }))
 }
 
-fn ext<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+fn ext<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| {
         let spt = pt;
