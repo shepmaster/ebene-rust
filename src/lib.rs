@@ -19,6 +19,7 @@ type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 enum Error {
     Literal(&'static str),
     IdentNotFound,
+    UnterminatedRawString,
 }
 
 impl peresil::Recoverable for Error {
@@ -802,7 +803,8 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let (pt, ex) = parse_until(pt, |c| {
         [
             '[', ']', '(', ')', '<', '>', '{', '}',
-            '!', ' ', ':', ',', ';', '/', '.', '=', '|', '\'', '"',
+            '!', ' ', ':', ',', ';', '/', '.', '=',
+            '|', '\'', '"', '#',
         ].contains(&c)
     });
     if pt.offset <= spt.offset {
@@ -1266,6 +1268,13 @@ fn char_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
 }
 
 fn string_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
+    pm.alternate(pt)
+        .one(string_literal_normal)
+        .one(string_literal_raw)
+        .finish()
+}
+
+fn string_literal_normal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
     sequence!(pm, pt, {
         _x    = literal("\"");
         value = ext(str_char);
@@ -1291,6 +1300,34 @@ fn str_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
     }
 
     res(pt.s.len())
+}
+
+fn string_literal_raw<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
+    sequence!(pm, pt, {
+        _x    = literal("r");
+        h = zero_or_more(literal("#"));
+        _x = literal(r#"""#);
+        value = ext(raw_raw(h.len()));
+    }, |_, _| String { value })
+}
+
+fn raw_raw<'s>(hashes: usize) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, &'s str> {
+    let mut s = r#"""#.to_string();
+    for _ in 0..hashes { s.push('#') };
+
+    move |_, pt| {
+        match pt.s.find(&s) {
+            Some(end) => {
+                let (str_content, quote_tail) = pt.s.split_at(end);
+                let (_quotes, tail) = quote_tail.split_at(s.len());
+                let pt = Point { s: tail, offset: pt.offset + end + s.len() };
+                Progress::success(pt, str_content)
+            }
+            None => {
+                Progress::failure(pt, Error::UnterminatedRawString)
+            }
+        }
+    }
 }
 
 fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure> {
@@ -2384,6 +2421,12 @@ mod test {
     fn expr_string_literal_escape() {
         let p = qp(expression, r#""\"""#);
         assert_eq!(unwrap_progress(p).extent, (0, 4))
+    }
+
+    #[test]
+    fn expr_string_literal_raw() {
+        let p = qp(expression, r###"r#"foo"#"###);
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
