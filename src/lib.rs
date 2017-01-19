@@ -670,11 +670,25 @@ fn zero_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progre
     move |pm, pt| pm.zero_or_more(pt, &f) // what why ref?
 }
 
+trait IntoAppend<T> {
+    fn into(self) -> Vec<T>;
+}
+impl<T> IntoAppend<T> for Vec<T> {
+    fn into(self) -> Vec<T> { self }
+}
+impl<T> IntoAppend<T> for Option<T> {
+    fn into(self) -> Vec<T> {
+        self.map(|v| vec![v]).unwrap_or_else(Vec::new)
+    }
+}
+
 // TODO: promote?
-fn zero_or_more_append<'s, F, T>(mut existing: Vec<T>, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+fn zero_or_more_append<'s, A, F, T>(existing: A, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
+          A: IntoAppend<T>,
 {
     move |pm, mut pt| {
+        let mut existing = existing.into();
         loop {
             match f(pm, pt) {
                 Progress { point, status: peresil::Status::Success(v) } => {
@@ -856,14 +870,9 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
     sequence!(pm, pt, {
         _x       = literal("(");
         self_arg = optional(self_argument);
-        mut args = zero_or_more(comma_tail(function_argument));
+        args     = zero_or_more_append(self_arg, comma_tail(function_argument));
         _x       = literal(")");
-    }, move |_, _| {
-        if let Some(arg) = self_arg {
-            args.insert(0, arg);
-        }
-        args
-    })
+    }, move |_, _| args)
 }
 
 fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
@@ -1595,7 +1604,7 @@ fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, V
         _x               = literal("(");
         mut sub_patterns = zero_or_more(comma_tail(pattern));
         wildcard         = optional(ext(literal("..")));
-        _x           = literal(")");
+        _x               = literal(")");
     }, |_, _| {
         if let Some(extent) = wildcard {
             sub_patterns.push(Pattern::Wildcard { extent });
