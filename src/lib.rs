@@ -525,7 +525,7 @@ struct TypeAlias {
 struct Module {
     extent: Extent,
     name: Ident,
-    body: Box<TopLevel>,
+    body: Vec<TopLevel>,
 }
 
 // TODO: extract to peresil?
@@ -1820,9 +1820,9 @@ fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
         name = ident;
         _x   = optional(whitespace);
         _x   = literal("{");
-        body = top_level;
+        body = zero_or_more(top_level);
         _x   = literal("}");
-    }, |_, pt| Module { extent: ex(spt, pt), name, body: Box::new(body) })
+    }, |_, pt| Module { extent: ex(spt, pt), name, body })
 }
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -1962,6 +1962,12 @@ mod test {
     fn top_level_use_wildcard() {
         let p = qp(p_use, "use foo::*;");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn top_level_mod_multiple() {
+        let p = qp(top_level, "mod foo { use super::*; }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 25))
     }
 
     #[test]
