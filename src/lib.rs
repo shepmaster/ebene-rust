@@ -141,6 +141,7 @@ struct FunctionHeader {
     arguments: Vec<Argument>,
     return_type: Option<Type>,
     wheres: Vec<Where>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug)]
@@ -659,6 +660,25 @@ fn optional<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progre
 }
 
 // TODO: promote?
+fn optional_append<'s, A, F, T>(a: A, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
+          A: IntoAppend<T>,
+{
+    move |pm, pt| {
+        let mut a = a.into();
+        match f(pm, pt) {
+            Progress { point, status: peresil::Status::Success(v) } => {
+                a.push(v);
+                Progress::success(point, a)
+            }
+            Progress { point, status: peresil::Status::Failure(..) } => {
+                Progress::success(point, a)
+            }
+        }
+    }
+}
+
+// TODO: promote?
 fn point<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Point<'s>> {
     Progress::success(pt, pt)
 }
@@ -792,18 +812,19 @@ fn ext<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s
 }
 
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
+    let ws = Vec::new();
     let spt = pt;
     sequence!(pm, pt, {
         visibility  = optional(ext(literal("pub")));
-        _x          = optional(whitespace);
+        ws          = optional_append(ws, whitespace);
         _x          = literal("fn");
-        _x          = optional(whitespace);
+        ws          = optional_append(ws, whitespace);
         name        = ident;
         generics    = optional(function_generic_declarations);
         arguments   = function_arglist;
-        _x          = optional(whitespace);
+        ws          = optional_append(ws, whitespace);
         return_type = optional(function_return_type);
-        _x          = optional(whitespace);
+        ws          = optional_append(ws, whitespace);
         wheres      = optional(function_where_clause);
     }, |_, pt| {
         let (lifetimes, generics) = generics.unwrap_or_else(|| (Vec::new(), Vec::new()));
@@ -817,7 +838,12 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
             arguments,
             return_type,
             wheres: wheres.unwrap_or_else(Vec::new),
+            whitespace: fix_ws(ws),
         }})
+}
+
+fn fix_ws(ws: Vec<Vec<Whitespace>>) -> Vec<Whitespace> {
+    ws.into_iter().flat_map(|x| x).collect()
 }
 
 fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRules> {
