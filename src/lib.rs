@@ -490,6 +490,7 @@ struct PatternStructField {
 struct Trait {
     extent: Extent,
     name: Extent,
+    generics: Option<GenericDeclarations>,
 }
 
 #[derive(Debug)]
@@ -754,7 +755,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(map(macro_rules, TopLevel::MacroRules))
         .one(map(p_struct, TopLevel::Struct))
         .one(map(p_enum, TopLevel::Enum))
-        .one(p_trait)
+        .one(map(p_trait, TopLevel::Trait))
         .one(map(p_impl, TopLevel::Impl))
         .one(map(attribute, TopLevel::Attribute))
         .one(extern_crate)
@@ -1776,18 +1777,16 @@ fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enu
         .finish()
 }
 
-fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
     let spt        = pt;
     sequence!(pm, pt, {
-        _x   = literal("trait");
-        _x   = whitespace;
-        name = ident;
-        _x   = whitespace;
-        _x   = literal("{}");
-    }, |_, pt| TopLevel::Trait(Trait {
-        extent: ex(spt, pt),
-        name,
-    }))
+        _x       = literal("trait");
+        _x       = whitespace;
+        name     = ident;
+        generics = optional(function_generic_declarations);
+        _x       = whitespace;
+        _x       = literal("{}");
+    }, |_, pt| Trait { extent: ex(spt, pt), name, generics })
 }
 
 fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
@@ -2095,6 +2094,18 @@ mod test {
     fn top_level_mod() {
         let p = qp(module, "mod foo { }");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn top_level_trait() {
+        let p = qp(top_level, "trait Foo {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 12))
+    }
+
+    #[test]
+    fn top_level_trait_with_generics() {
+        let p = qp(top_level, "trait Foo<T> {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
