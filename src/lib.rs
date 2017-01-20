@@ -1113,10 +1113,31 @@ fn expr_macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Macro
     sequence!(pm, pt, {
         name = ident;
         _x   = literal("!");
+        args = expr_macro_call_args;
+    }, |_, _| MacroCall { name, args })
+}
+
+fn expr_macro_call_args<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    pm.alternate(pt)
+        .one(expr_macro_call_paren)
+        .one(expr_macro_call_square)
+        .finish()
+}
+
+fn expr_macro_call_paren<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
         _x   = literal("(");
         args = parse_nested_until('(', ')');
         _x   = literal(")");
-    }, |_, _| MacroCall { name, args })
+    }, |_, _| args)
+}
+
+fn expr_macro_call_square<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        _x   = literal("[");
+        args = parse_nested_until('[', ']');
+        _x   = literal("]");
+    }, |_, _| args)
 }
 
 fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
@@ -2380,6 +2401,12 @@ mod test {
     fn expr_macro_call_with_nested_parens() {
         let p = qp(expression, "foo!(())");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn expr_macro_call_with_square_brackets() {
+        let p = qp(expression, "vec![]");
+        assert_eq!(unwrap_progress(p).extent, (0, 6))
     }
 
     #[test]
