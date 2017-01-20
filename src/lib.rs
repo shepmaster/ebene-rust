@@ -811,20 +811,24 @@ fn ext<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s
     }
 }
 
+fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
+    zero_or_more_append(ws, whitespace_core)
+}
+
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
     let ws = Vec::new();
     let spt = pt;
     sequence!(pm, pt, {
         visibility  = optional(ext(literal("pub")));
-        ws          = optional_append(ws, whitespace);
+        ws          = optional_whitespace(ws);
         _x          = literal("fn");
-        ws          = optional_append(ws, whitespace);
+        ws          = optional_whitespace(ws);
         name        = ident;
         generics    = optional(function_generic_declarations);
         arguments   = function_arglist;
-        ws          = optional_append(ws, whitespace);
+        ws          = optional_whitespace(ws);
         return_type = optional(function_return_type);
-        ws          = optional_append(ws, whitespace);
+        ws          = optional_whitespace(ws);
         wheres      = optional(function_where_clause);
     }, |_, pt| {
         let (lifetimes, generics) = generics.unwrap_or_else(|| (Vec::new(), Vec::new()));
@@ -838,12 +842,8 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
             arguments,
             return_type,
             wheres: wheres.unwrap_or_else(Vec::new),
-            whitespace: fix_ws(ws),
+            whitespace: ws,
         }})
-}
-
-fn fix_ws(ws: Vec<Vec<Whitespace>>) -> Vec<Whitespace> {
-    ws.into_iter().flat_map(|x| x).collect()
 }
 
 fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRules> {
@@ -2012,12 +2012,14 @@ fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Whitespace>> {
-    one_or_more(|pm, pt| {
-        pm.alternate(pt)
-            .one(map(comment, Whitespace::Comment))
-            .one(map(true_whitespace, Whitespace::Whitespace))
-            .finish()
-    })(pm, pt)
+    one_or_more(whitespace_core)(pm, pt)
+}
+
+fn whitespace_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Whitespace> {
+    pm.alternate(pt)
+        .one(map(comment, Whitespace::Comment))
+        .one(map(true_whitespace, Whitespace::Whitespace))
+        .finish()
 }
 
 fn true_whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
