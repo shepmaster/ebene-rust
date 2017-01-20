@@ -1752,6 +1752,8 @@ fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
 fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
     let spt = pt;
     sequence!(pm, pt, {
+        _x   = optional(literal("pub"));
+        _x   = optional(whitespace);
         name = ident;
         _x   = literal(":");
         _x   = optional(whitespace);
@@ -2702,6 +2704,12 @@ mod test {
     fn struct_public() {
         let p = qp(p_struct, "pub struct S {}");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn struct_public_field() {
+        let p = qp(p_struct, "struct S { pub age: u8 }");
+        assert_eq!(unwrap_progress(p).extent, (0, 24))
     }
 
     #[test]
