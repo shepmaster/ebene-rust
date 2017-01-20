@@ -29,9 +29,10 @@ impl peresil::Recoverable for Error {
 // Construct a point, initialize  the master. This is what stores errors
 // todo: rename?
 
-pub fn parse_rust_file(file: &str) {
+pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ()> {
     let mut pt = Point::new(file);
     let mut pm = Master::new();
+    let mut results = Vec::new();
 
     loop {
         let next_pt;
@@ -41,13 +42,13 @@ pub fn parse_rust_file(file: &str) {
 
         match top_level.status {
             peresil::Status::Success(s) => {
-                println!("Ok {:#?}", s);
+                results.push(s);
                 next_pt = top_level.point;
             },
             peresil::Status::Failure(e) => {
                 println!("Err @ {}: {:?}", top_level.point.offset, e.into_iter().collect::<BTreeSet<_>>());
                 println!(">>{}<<", &file[top_level.point.offset..]);
-                break;
+                return Err(());
             },
         }
 
@@ -60,6 +61,8 @@ pub fn parse_rust_file(file: &str) {
         if pt.s.is_empty() { break }
     }
 
+    Ok(results)
+
     // TODO: add `expect` to progress?
 }
 
@@ -68,7 +71,7 @@ pub fn parse_rust_file(file: &str) {
 type Extent = (usize, usize);
 
 #[derive(Debug)]
-enum TopLevel {
+pub enum TopLevel {
     Function(Function),
     MacroRules(MacroRules),
     Struct(Struct),
@@ -107,25 +110,25 @@ type Attribute = Extent;
 type Lifetime = Extent;
 
 #[derive(Debug)]
-enum Whitespace {
+pub enum Whitespace {
     Comment(Comment),
     Whitespace(Extent),
 }
 
 #[derive(Debug)]
-struct Comment {
+pub struct Comment {
     extent: Extent,
     text: Extent,
 }
 
 #[derive(Debug)]
-struct Use {
+pub struct Use {
     extent: Extent,
     name: Extent,
 }
 
 #[derive(Debug)]
-struct Function {
+pub struct Function {
     extent: Extent,
     header: FunctionHeader,
     body: Block,
@@ -150,7 +153,7 @@ struct GenericDeclarations {
 }
 
 #[derive(Debug)]
-struct MacroRules {
+pub struct MacroRules {
     extent: Extent,
     name: Ident,
     body: Extent,
@@ -169,21 +172,21 @@ fn ex(start: Point, end: Point) -> Extent {
 }
 
 #[derive(Debug)]
-struct Struct {
+pub struct Struct {
     extent: Extent,
     name: Extent,
     fields: Vec<StructField>,
 }
 
 #[derive(Debug)]
-struct StructField {
+pub struct StructField {
     extent: Extent,
     name: Extent,
     typ: Type,
 }
 
 #[derive(Debug)]
-struct Enum {
+pub struct Enum {
     extent: Extent,
     name: Extent,
     variants: Vec<EnumVariant>,
@@ -487,7 +490,7 @@ struct PatternStructField {
 }
 
 #[derive(Debug)]
-struct Trait {
+pub struct Trait {
     extent: Extent,
     name: Extent,
     generics: Option<GenericDeclarations>,
@@ -495,21 +498,21 @@ struct Trait {
 }
 
 #[derive(Debug)]
-enum TraitMember {
+pub enum TraitMember {
     Function(TraitImplFunction),
     Attribute(Attribute),
     Whitespace(Vec<Whitespace>),
 }
 
 #[derive(Debug)]
-struct TraitImplFunction {
+pub struct TraitImplFunction {
     extent: Extent,
     header: FunctionHeader,
     body: Option<Block>,
 }
 
 #[derive(Debug)]
-struct Impl {
+pub struct Impl {
     extent: Extent,
     generics: Option<GenericDeclarations>,
     trait_name: Option<Type>,
@@ -532,20 +535,20 @@ struct ImplFunction {
 }
 
 #[derive(Debug)]
-struct Crate {
+pub struct Crate {
     extent: Extent,
     name: Extent,
 }
 
 #[derive(Debug)]
-struct TypeAlias {
+pub struct TypeAlias {
     extent: Extent,
     name: Type,
     defn: Type,
 }
 
 #[derive(Debug)]
-struct Module {
+pub struct Module {
     extent: Extent,
     name: Ident,
     body: Vec<TopLevel>,

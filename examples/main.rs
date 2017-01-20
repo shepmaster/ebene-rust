@@ -9,7 +9,8 @@ fn main() {
     let mut f = File::open(fname).expect("Can't open");
     let mut s = String::new();
     f.read_to_string(&mut s).expect("Can't read");
-    strata_rs::parse_rust_file(&s);
+    let file = strata_rs::parse_rust_file(&s).expect("Failed");
+    println!("{:#?}", file);
 }
 
 // Goal:
