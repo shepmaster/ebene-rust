@@ -491,6 +491,21 @@ struct Trait {
     extent: Extent,
     name: Extent,
     generics: Option<GenericDeclarations>,
+    members: Vec<TraitMember>,
+}
+
+#[derive(Debug)]
+enum TraitMember {
+    Function(TraitImplFunction),
+    Attribute(Attribute),
+    Whitespace(Vec<Whitespace>),
+}
+
+#[derive(Debug)]
+struct TraitImplFunction {
+    extent: Extent,
+    header: FunctionHeader,
+    body: Option<Block>,
 }
 
 #[derive(Debug)]
@@ -1785,8 +1800,35 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
         name     = ident;
         generics = optional(function_generic_declarations);
         _x       = whitespace;
-        _x       = literal("{}");
-    }, |_, pt| Trait { extent: ex(spt, pt), name, generics })
+        _x       = literal("{");
+        _x       = optional(whitespace);
+        members  = zero_or_more(trait_impl_member);
+        _x       = optional(whitespace);
+        _x       = literal("}");
+    }, |_, pt| Trait { extent: ex(spt, pt), name, generics, members })
+}
+
+fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMember> {
+    pm.alternate(pt)
+        .one(map(trait_impl_function, TraitMember::Function))
+        .one(map(attribute, TraitMember::Attribute))
+        .one(map(whitespace, TraitMember::Whitespace))
+        .finish()
+}
+
+fn trait_impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplFunction> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        header = function_header;
+        body   = trait_impl_function_body;
+    }, |_, pt| TraitImplFunction { extent: ex(spt, pt), header, body })
+}
+
+fn trait_impl_function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Option<Block>> {
+    pm.alternate(pt)
+        .one(map(block, Some))
+        .one(map(literal(";"), |_| None))
+        .finish()
 }
 
 fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
@@ -2102,6 +2144,18 @@ mod test {
     fn top_level_trait_with_generics() {
         let p = qp(top_level, "trait Foo<T> {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 15))
+    }
+
+    #[test]
+    fn top_level_trait_with_members() {
+        let p = qp(top_level, "trait Foo { fn bar(&self) -> u8; }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 34))
+    }
+
+    #[test]
+    fn top_level_trait_with_members_with_body() {
+        let p = qp(top_level, "trait Foo { fn bar(&self) -> u8 { 42 } }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 40))
     }
 
     #[test]
