@@ -136,12 +136,17 @@ struct FunctionHeader {
     extent: Extent,
     visibility: Option<Extent>,
     name: Extent,
-    lifetimes: Vec<Lifetime>,
-    generics: Vec<Generic>,
+    generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
     return_type: Option<Type>,
     wheres: Vec<Where>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+struct GenericDeclarations {
+    lifetimes: Vec<Lifetime>,
+    types: Vec<Generic>,
 }
 
 #[derive(Debug)]
@@ -831,13 +836,10 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         ws          = optional_whitespace(ws);
         wheres      = optional(function_where_clause);
     }, |_, pt| {
-        let (lifetimes, generics) = generics.unwrap_or_else(|| (Vec::new(), Vec::new()));
-
         FunctionHeader {
             extent: ex(spt, pt),
             visibility,
             name,
-            lifetimes,
             generics,
             arguments,
             return_type,
@@ -879,13 +881,13 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     }
 }
 
-fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<Lifetime>, Vec<Generic>)> {
+fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
     sequence!(pm, pt, {
         _x        = literal("<");
         lifetimes = zero_or_more(comma_tail(lifetime));
-        generics  = zero_or_more(comma_tail(generic_declaration));
+        types     = zero_or_more(comma_tail(generic_declaration));
         _x        = literal(">");
-    }, |_, _| (lifetimes, generics))
+    }, |_, _| GenericDeclarations { lifetimes, types })
 }
 
 fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
