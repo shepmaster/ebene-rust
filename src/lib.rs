@@ -512,7 +512,7 @@ enum ImplMember {
 struct ImplFunction {
     extent: Extent,
     header: FunctionHeader,
-    body: Option<Block>,
+    body: Block,
 }
 
 #[derive(Debug)]
@@ -1831,12 +1831,8 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
     let spt = pt;
     sequence!(pm, pt, {
         header = function_header;
-        body   = optional(block);
-    }, |_, pt| ImplFunction {
-        extent: ex(spt, pt),
-        header,
-        body,
-    })
+        body   = block;
+    }, |_, pt| ImplFunction { extent: ex(spt, pt), header, body })
 }
 
 // TODO: optional could take E that is `into`, or just a different one
