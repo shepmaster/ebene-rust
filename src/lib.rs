@@ -511,6 +511,7 @@ struct TraitImplFunction {
 #[derive(Debug)]
 struct Impl {
     extent: Extent,
+    generics: Option<GenericDeclarations>,
     trait_name: Option<Type>,
     type_name: Type,
     body: Vec<ImplMember>,
@@ -1835,6 +1836,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     let spt = pt;
     sequence!(pm, pt, {
         _x         = literal("impl");
+        generics   = optional(function_generic_declarations);
         _x         = whitespace;
         trait_name = optional(p_impl_of_trait);
         type_name  = typ;
@@ -1846,6 +1848,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         _x         = literal("}");
     }, |_, pt| Impl {
         extent: ex(spt, pt),
+        generics,
         trait_name,
         type_name,
         body,
@@ -2168,6 +2171,12 @@ mod test {
     fn impl_with_trait() {
         let p = qp(p_impl, "impl Foo for Bar {}");
         assert_eq!(unwrap_progress(p).extent, (0, 19))
+    }
+
+    #[test]
+    fn impl_with_generics() {
+        let p = qp(p_impl, "impl<'a, T> Foo<'a, T> for Bar<'a, T> {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 40))
     }
 
     #[test]
