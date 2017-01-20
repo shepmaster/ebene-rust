@@ -159,7 +159,7 @@ type Ident = Extent;
 
 fn ex(start: Point, end: Point) -> Extent {
     let ex = (start.offset, end.offset);
-    assert!(ex.1 > ex.0, "{} does not come before {}", ex.1, ex.0);
+    assert!(ex.1 >= ex.0, "{} does not come before {}", ex.1, ex.0);
     ex
 }
 
