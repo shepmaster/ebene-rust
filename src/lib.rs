@@ -1722,6 +1722,8 @@ fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern>
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
     let spt = pt;
     sequence!(pm, pt, {
+        _x     = optional(literal("pub"));
+        _x     = optional(whitespace);
         _x     = literal("struct");
         _x     = whitespace;
         name   = ident;
@@ -2691,6 +2693,12 @@ mod test {
     fn struct_with_generic_fields() {
         let p = qp(p_struct, "struct S { field: Option<u8> }");
         assert_eq!(unwrap_progress(p).extent, (0, 30))
+    }
+
+    #[test]
+    fn struct_public() {
+        let p = qp(p_struct, "pub struct S {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
