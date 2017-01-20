@@ -289,7 +289,6 @@ enum ExpressionKind {
     Slice(Slice),
     Closure(Closure),
     Return(Return),
-    True,
 }
 
 #[derive(Debug)]
@@ -660,6 +659,7 @@ fn optional<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progre
 }
 
 // TODO: promote?
+#[allow(dead_code)]
 fn optional_append<'s, A, F, T>(a: A, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
     where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
           A: IntoAppend<T>,
@@ -1028,7 +1028,6 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(string_literal, ExpressionKind::String))
             .one(map(expr_closure, ExpressionKind::Closure))
             .one(map(expr_return, ExpressionKind::Return))
-            .one(expr_true)
             .one(map(expr_value, ExpressionKind::Value))
             .finish()
     });
@@ -1479,12 +1478,6 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Fu
         args = zero_or_more(comma_tail(expression));
         _x   = literal(")");
     }, |_, _| FunctionCall { name, args })
-}
-
-fn expr_true<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
-    let (pt, _) = try_parse!(literal("true")(pm, pt));
-
-    Progress::success(pt, ExpressionKind::True)
 }
 
 fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
