@@ -68,7 +68,7 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ()> {
 
 // TODO: enum variants track whole extent, enum delegates
 
-type Extent = (usize, usize);
+pub type Extent = (usize, usize);
 
 #[derive(Debug)]
 pub enum TopLevel {
@@ -1958,6 +1958,8 @@ fn use_path_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent>
 fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias> {
     let spt = pt;
     sequence!(pm, pt, {
+        _x   = optional(literal("pub"));
+        _x   = optional(whitespace);
         _x   = literal("type");
         _x   = whitespace;
         name = typ;
@@ -2168,6 +2170,18 @@ mod test {
     fn top_level_trait_with_members_with_body() {
         let p = qp(top_level, "trait Foo { fn bar(&self) -> u8 { 42 } }");
         assert_eq!(unwrap_progress(p).extent(), (0, 40))
+    }
+
+    #[test]
+    fn top_level_type_alias() {
+        let p = qp(top_level, "type Foo<T> = Bar<T, u8>;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 25))
+    }
+
+    #[test]
+    fn top_level_type_alias_public() {
+        let p = qp(top_level, "pub type Foo<T> = Bar<T, u8>;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 29))
     }
 
     #[test]
