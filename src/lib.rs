@@ -88,7 +88,7 @@ pub enum TopLevel {
 
 impl TopLevel {
     #[allow(dead_code)]
-    fn extent(&self) -> Extent {
+    pub fn extent(&self) -> Extent {
         match *self {
             TopLevel::Function(Function { extent, .. })     |
             TopLevel::MacroRules(MacroRules { extent, .. }) |
@@ -130,15 +130,15 @@ pub struct Use {
 #[derive(Debug)]
 pub struct Function {
     extent: Extent,
-    header: FunctionHeader,
+    pub header: FunctionHeader,
     body: Block,
 }
 
 #[derive(Debug)]
-struct FunctionHeader {
+pub struct FunctionHeader {
     extent: Extent,
     visibility: Option<Extent>,
-    name: Extent,
+    pub name: Extent,
     generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
     return_type: Option<Type>,
