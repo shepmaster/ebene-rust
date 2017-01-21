@@ -4,4 +4,9 @@ name = "strata_rs"
 version = "0.1.0"
 
 [dependencies]
-peresil = { path = "../sxd/peresil" }#""0.3.0"
+serde = "0.8.22"
+serde_derive = "0.8.22"
+serde_json = "0.8.6"
+
+[dependencies.peresil]
+path = "../sxd/peresil"
