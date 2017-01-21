@@ -181,6 +181,7 @@ pub struct Struct {
 #[derive(Debug)]
 pub struct StructField {
     extent: Extent,
+    attributes: Vec<Attribute>,
     name: Extent,
     typ: Type,
 }
@@ -1752,13 +1753,21 @@ fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
 fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x   = optional(literal("pub"));
-        _x   = optional(whitespace);
-        name = ident;
-        _x   = literal(":");
-        _x   = optional(whitespace);
-        typ  = typ;
-    }, |_, pt| StructField { extent: ex(spt, pt), name, typ })
+        attributes = zero_or_more(struct_defn_field_attr);
+        _x         = optional(literal("pub"));
+        _x         = optional(whitespace);
+        name       = ident;
+        _x         = literal(":");
+        _x         = optional(whitespace);
+        typ        = typ;
+    }, |_, pt| StructField { extent: ex(spt, pt), attributes, name, typ })
+}
+
+fn struct_defn_field_attr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> {
+    sequence!(pm, pt, {
+        attribute = attribute;
+        _x = optional(whitespace);
+    }, |_, _| attribute)
 }
 
 fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
@@ -2724,6 +2733,12 @@ mod test {
     fn struct_public_field() {
         let p = qp(p_struct, "struct S { pub age: u8 }");
         assert_eq!(unwrap_progress(p).extent, (0, 24))
+    }
+
+    #[test]
+    fn struct_with_attributed_field() {
+        let p = qp(p_struct, "struct S { #[foo(bar)] #[baz(quux)] field: u8 }");
+        assert_eq!(unwrap_progress(p).extent, (0, 47))
     }
 
     #[test]
