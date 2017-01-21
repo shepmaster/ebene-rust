@@ -137,7 +137,7 @@ pub struct Function {
 #[derive(Debug)]
 pub struct FunctionHeader {
     extent: Extent,
-    visibility: Option<Extent>,
+    visibility: Option<Visibility>,
     pub name: Extent,
     generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
@@ -149,7 +149,7 @@ pub struct FunctionHeader {
 #[derive(Debug)]
 pub struct TraitImplFunctionHeader {
     extent: Extent,
-    visibility: Option<Extent>,
+    visibility: Option<Visibility>,
     pub name: Extent,
     generics: Option<GenericDeclarations>,
     arguments: Vec<TraitImplArgument>,
@@ -574,6 +574,11 @@ pub struct Module {
     body: Vec<TopLevel>,
 }
 
+#[derive(Debug)]
+pub struct Visibility {
+    extent: Extent,
+}
+
 // TODO: extract to peresil?
 fn parse_until<'s, P>(pt: Point<'s>, p: P) -> (Point<'s>, Extent)
     where P: std::str::pattern::Pattern<'s>
@@ -864,8 +869,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
     let ws = Vec::new();
     let spt = pt;
     sequence!(pm, pt, {
-        visibility  = optional(ext(literal("pub")));
-        ws          = optional_whitespace(ws);
+        visibility  = optional(visibility);
         _x          = literal("fn");
         ws          = optional_whitespace(ws);
         name        = ident;
@@ -1747,8 +1751,7 @@ fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern>
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x     = optional(literal("pub"));
-        _x     = optional(whitespace);
+        _x     = optional(visibility);
         _x     = literal("struct");
         _x     = whitespace;
         name   = ident;
@@ -1775,8 +1778,7 @@ fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Str
     let spt = pt;
     sequence!(pm, pt, {
         attributes = zero_or_more(struct_defn_field_attr);
-        _x         = optional(literal("pub"));
-        _x         = optional(whitespace);
+        _x         = optional(visibility);
         name       = ident;
         _x         = literal(":");
         _x         = optional(whitespace);
@@ -1794,8 +1796,7 @@ fn struct_defn_field_attr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x       = optional(literal("pub"));
-        _x       = optional(whitespace);
+        _x       = optional(visibility);
         _x       = literal("enum");
         _x       = whitespace;
         name     = ident;
@@ -1835,6 +1836,7 @@ fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enu
 fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
     let spt        = pt;
     sequence!(pm, pt, {
+        _x       = optional(visibility);
         _x       = literal("trait");
         _x       = whitespace;
         name     = ident;
@@ -1864,13 +1866,20 @@ fn trait_impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, T
     }, |_, pt| TraitImplFunction { extent: ex(spt, pt), header, body })
 }
 
+fn visibility<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Visibility> {
+    let spt = pt;
+    sequence!(pm, pt, {
+        _x = literal("pub");
+        _x = optional(whitespace);
+    }, |_, pt| Visibility { extent: ex(spt, pt) })
+}
+
 // TODO: Massively duplicated!!!
 fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplFunctionHeader> {
     let ws = Vec::new();
     let spt = pt;
     sequence!(pm, pt, {
-        visibility  = optional(ext(literal("pub")));
-        ws          = optional_whitespace(ws);
+        visibility  = optional(visibility);
         _x          = literal("fn");
         ws          = optional_whitespace(ws);
         name        = ident;
@@ -2043,8 +2052,7 @@ fn use_path_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent>
 fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x   = optional(literal("pub"));
-        _x   = optional(whitespace);
+        _x   = optional(visibility);
         _x   = literal("type");
         _x   = whitespace;
         name = typ;
@@ -2237,6 +2245,12 @@ mod test {
     fn top_level_trait() {
         let p = qp(top_level, "trait Foo {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 12))
+    }
+
+    #[test]
+    fn top_level_trait_public() {
+        let p = qp(top_level, "pub trait Foo {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 16))
     }
 
     #[test]
