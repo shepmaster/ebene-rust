@@ -952,6 +952,7 @@ fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent>
         _x = optional(whitespace);
         _x = literal("self");
         _x = optional(literal(","));
+        _x = optional(whitespace);
     }, |_, pt| ex(spt, pt))
 }
 
@@ -2344,6 +2345,12 @@ mod test {
     fn fn_with_self_type() {
         let p = qp(function_header, "fn foo(&self)");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_self_type_and_regular() {
+        let p = qp(function_header, "fn foo(&self, a: u8)");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
