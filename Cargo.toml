@@ -16,3 +16,6 @@ path = "../sxd/peresil"
 
 [dependencies.strata]
 path = "../strata"
+
+[dependencies.visit-derive]
+path = "visit-derive"

@@ -1,0 +1,11 @@
+[package]
+authors = ["Jake Goulding <jake.goulding@gmail.com>"]
+name = "visit-derive"
+version = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "0.3.12"
+syn = "0.10.6"

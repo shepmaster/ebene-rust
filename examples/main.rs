@@ -8,10 +8,19 @@ use std::fs::File;
 use std::env;
 use std::io::prelude::*;
 
+use strata_rs::{Visit, Visitor, Function};
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Done {
     functions: Vec<strata_rs::Extent>,
     idents: Vec<strata_rs::Extent>,
+}
+
+impl Visitor for Done {
+    fn visit_function(&mut self, function: &Function) {
+        self.functions.push(function.extent);
+        self.idents.push(function.header.name);
+    }
 }
 
 fn main() {
@@ -24,14 +33,7 @@ fn main() {
     let mut d = Done::default();
 
     for i in &file {
-        use strata_rs::TopLevel::*;
-
-        if let Function(ref f) = *i {
-//            let name = f.header.name;
-//            println!("{:?}, {:?}, {}", i.extent(), name, &s[name.0..name.1]);
-            d.functions.push(i.extent());
-            d.idents.push(f.header.name);
-        }
+        i.visit(&mut d);
     }
 
     let mut out = std::io::stdout();

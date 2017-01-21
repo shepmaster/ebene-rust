@@ -1,6 +1,10 @@
 #![feature(field_init_shorthand)]
 #![feature(conservative_impl_trait)]
 #![feature(pattern)]
+#![feature(custom_derive)]
+
+#[macro_use]
+extern crate visit_derive;
 
 #[macro_use]
 extern crate peresil;
@@ -70,7 +74,7 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ()> {
 
 pub type Extent = (usize, usize);
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub enum TopLevel {
     Function(Function),
     MacroRules(MacroRules),
@@ -109,27 +113,28 @@ impl TopLevel {
 type Attribute = Extent;
 type Lifetime = Extent;
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub enum Whitespace {
     Comment(Comment),
     Whitespace(Extent),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Comment {
     extent: Extent,
     text: Extent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Use {
     extent: Extent,
     name: Extent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Function {
-    extent: Extent,
+    pub extent: Extent,
+    #[visit(ignore)]
     pub header: FunctionHeader,
     body: Block,
 }
@@ -164,7 +169,7 @@ struct GenericDeclarations {
     types: Vec<Generic>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct MacroRules {
     extent: Extent,
     name: Ident,
@@ -183,10 +188,11 @@ fn ex(start: Point, end: Point) -> Extent {
     ex
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Struct {
     extent: Extent,
     name: Extent,
+    #[visit(ignore)]
     fields: Vec<StructField>,
 }
 
@@ -198,10 +204,11 @@ pub struct StructField {
     typ: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Enum {
     extent: Extent,
     name: Extent,
+    #[visit(ignore)]
     variants: Vec<EnumVariant>,
 }
 
@@ -237,15 +244,15 @@ struct Where {
     bounds: Vec<Extent>,
 }
 
-#[derive(Debug)]
-struct Block {
+#[derive(Debug, Visit)]
+pub struct Block {
     extent: Extent,
     statements: Vec<Statement>,
     expression: Option<Expression>,
 }
 
-#[derive(Debug)]
-enum Statement {
+#[derive(Debug, Visit)]
+pub enum Statement {
     Explicit(Expression),
     Implicit(Expression),
     Use(Use),
@@ -286,9 +293,10 @@ impl Statement {
     }
 }
 
-#[derive(Debug)]
-struct Expression {
+#[derive(Debug, Visit)]
+pub struct Expression {
     extent: Extent,
+    #[visit(ignore)]
     kind: ExpressionKind,
 }
 
@@ -508,11 +516,13 @@ struct PatternStructField {
     pattern: Pattern,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Trait {
     extent: Extent,
     name: Extent,
+    #[visit(ignore)]
     generics: Option<GenericDeclarations>,
+    #[visit(ignore)]
     members: Vec<TraitMember>,
 }
 
@@ -530,13 +540,16 @@ pub struct TraitImplFunction {
     body: Option<Block>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Impl {
     extent: Extent,
+    #[visit(ignore)]
     generics: Option<GenericDeclarations>,
     trait_name: Option<Type>,
     type_name: Type,
+    #[visit(ignore)]
     wheres: Vec<Where>,
+    #[visit(ignore)]
     body: Vec<ImplMember>,
 }
 
@@ -554,20 +567,20 @@ struct ImplFunction {
     body: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Crate {
     extent: Extent,
     name: Extent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct TypeAlias {
     extent: Extent,
     name: Type,
     defn: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Module {
     extent: Extent,
     name: Ident,
@@ -578,6 +591,66 @@ pub struct Module {
 pub struct Visibility {
     extent: Extent,
 }
+
+// --------------------------------------------------
+
+pub trait Visit {
+    fn visit<V>(&self, &mut V)
+        where V: Visitor;
+}
+
+impl<T> Visit for Option<T>
+    where T: Visit
+{
+    fn visit<V>(&self, v: &mut V)
+        where V: Visitor
+    {
+        for i in self {
+            i.visit(v)
+        }
+    }
+}
+
+impl<T> Visit for Vec<T>
+    where T: Visit
+{
+    fn visit<V>(&self, v: &mut V)
+        where V: Visitor
+    {
+        for i in self {
+            i.visit(v)
+        }
+    }
+}
+
+// Cheap hack to avoid having to annotate every terminal `Extent`;
+// just visit it and don't do anything.
+impl Visit for Extent {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
+pub trait Visitor {
+    fn visit_block(&mut self, &Block) {}
+    fn visit_comment(&mut self, &Comment) {}
+    fn visit_crate(&mut self, &Crate) {}
+    fn visit_enum(&mut self, &Enum) {}
+    fn visit_expression(&mut self, &Expression) {}
+    fn visit_function(&mut self, &Function) {}
+    fn visit_impl(&mut self, &Impl) {}
+    fn visit_macrorules(&mut self, &MacroRules) {}
+    fn visit_module(&mut self, &Module) {}
+    fn visit_statement(&mut self, &Statement) {}
+    fn visit_struct(&mut self, &Struct) {}
+    fn visit_toplevel(&mut self, &TopLevel) {}
+    fn visit_trait(&mut self, &Trait) {}
+    fn visit_typealias(&mut self, &TypeAlias) {}
+    fn visit_use(&mut self, &Use) {}
+    fn visit_whitespace(&mut self, &Whitespace) {}
+}
+
+// --------------------------------------------------
 
 // TODO: extract to peresil?
 fn parse_until<'s, P>(pt: Point<'s>, p: P) -> (Point<'s>, Extent)
