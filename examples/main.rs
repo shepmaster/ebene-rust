@@ -17,9 +17,12 @@ struct Done {
 }
 
 impl Visitor for Done {
+    fn visit_ident(&mut self, ident: &strata_rs::Ident) {
+        self.idents.push(ident.extent);
+    }
+
     fn visit_function(&mut self, function: &Function) {
         self.functions.push(function.extent);
-        self.idents.push(function.header.name.extent);
     }
 }
 
