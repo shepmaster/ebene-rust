@@ -536,6 +536,7 @@ pub struct Impl {
     generics: Option<GenericDeclarations>,
     trait_name: Option<Type>,
     type_name: Type,
+    wheres: Vec<Where>,
     body: Vec<ImplMember>,
 }
 
@@ -873,7 +874,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         ws          = optional_whitespace(ws);
         return_type = optional(function_return_type);
         ws          = optional_whitespace(ws);
-        wheres      = optional(function_where_clause);
+        wheres      = optional(where_clause);
     }, |_, pt| {
         FunctionHeader {
             extent: ex(spt, pt),
@@ -971,7 +972,7 @@ fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     }, |_, _| typ)
 }
 
-fn function_where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Where>> {
+fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Where>> {
     sequence!(pm, pt, {
         _x = literal("where");
         _x = whitespace;
@@ -1877,7 +1878,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         ws          = optional_whitespace(ws);
         return_type = optional(function_return_type);
         ws          = optional_whitespace(ws);
-        wheres      = optional(function_where_clause);
+        wheres      = optional(where_clause);
     }, |_, pt| {
         TraitImplFunctionHeader {
             extent: ex(spt, pt),
@@ -1931,6 +1932,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         trait_name = optional(p_impl_of_trait);
         type_name  = typ;
         _x         = optional(whitespace);
+        wheres     = optional(where_clause);
         _x         = literal("{");
         _x         = optional(whitespace);
         body       = zero_or_more(impl_member);
@@ -1941,6 +1943,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         generics,
         trait_name,
         type_name,
+        wheres: wheres.unwrap_or_else(Vec::new),
         body,
     })
 }
@@ -2287,6 +2290,12 @@ mod test {
     fn impl_with_generics() {
         let p = qp(p_impl, "impl<'a, T> Foo<'a, T> for Bar<'a, T> {}");
         assert_eq!(unwrap_progress(p).extent, (0, 40))
+    }
+
+    #[test]
+    fn impl_with_trait_bounds() {
+        let p = qp(p_impl, "impl<T> Foo for Bar<T> where T: Quux {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 39))
     }
 
     #[test]
@@ -2833,7 +2842,7 @@ mod test {
 
     #[test]
     fn where_clause_with_multiple_types() {
-        let p = qp(function_where_clause, "where P: A, Q: B");
+        let p = qp(where_clause, "where P: A, Q: B");
         let p = unwrap_progress(p);
         assert_eq!(p[1].extent, (12, 16))
     }
