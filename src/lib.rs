@@ -100,7 +100,7 @@ impl TopLevel {
             TopLevel::Enum(Enum { extent, .. })             |
             TopLevel::Trait(Trait { extent, .. })           |
             TopLevel::Impl(Impl { extent, .. })             |
-            TopLevel::Attribute(extent)                     |
+            TopLevel::Attribute(Attribute { extent, .. })   |
             TopLevel::ExternCrate(Crate { extent, .. })     |
             TopLevel::Use(Use { extent, .. })               |
             TopLevel::TypeAlias(TypeAlias { extent, .. })   |
@@ -110,8 +110,16 @@ impl TopLevel {
     }
 }
 
-type Attribute = Extent;
-type Lifetime = Extent;
+#[derive(Debug, Visit)]
+pub struct Attribute {
+    extent: Extent,
+}
+
+#[derive(Debug, Visit)]
+pub struct Lifetime {
+    extent: Extent,
+    name: Ident,
+}
 
 #[derive(Debug, Visit)]
 pub enum Whitespace {
@@ -143,7 +151,7 @@ pub struct Function {
 pub struct FunctionHeader {
     extent: Extent,
     visibility: Option<Visibility>,
-    pub name: Extent,
+    pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
     return_type: Option<Type>,
@@ -155,7 +163,7 @@ pub struct FunctionHeader {
 pub struct TraitImplFunctionHeader {
     extent: Extent,
     visibility: Option<Visibility>,
-    pub name: Extent,
+    pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<TraitImplArgument>,
     return_type: Option<Type>,
@@ -176,11 +184,31 @@ pub struct MacroRules {
     body: Extent,
 }
 
-//#[derive(Debug)]
-type Generic = Extent;
+#[derive(Debug, Visit)]
+pub struct Generic {
+    extent: Extent,
+}
 
-type Type = Extent;
-type Ident = Extent;
+#[derive(Debug, Visit)]
+pub struct Type {
+    extent: Extent,
+}
+
+#[derive(Debug, Copy, Clone, Visit)]
+pub struct Ident {
+    pub extent: Extent,
+}
+
+#[derive(Debug)]
+pub struct PathedIdent {
+    extent: Extent,
+}
+
+impl From<Ident> for PathedIdent {
+    fn from(other: Ident) -> PathedIdent {
+        PathedIdent { extent: other.extent }
+    }
+}
 
 fn ex(start: Point, end: Point) -> Extent {
     let ex = (start.offset, end.offset);
@@ -191,7 +219,7 @@ fn ex(start: Point, end: Point) -> Extent {
 #[derive(Debug, Visit)]
 pub struct Struct {
     extent: Extent,
-    name: Extent,
+    name: Ident,
     #[visit(ignore)]
     fields: Vec<StructField>,
 }
@@ -200,14 +228,14 @@ pub struct Struct {
 pub struct StructField {
     extent: Extent,
     attributes: Vec<Attribute>,
-    name: Extent,
+    name: Ident,
     typ: Type,
 }
 
 #[derive(Debug, Visit)]
 pub struct Enum {
     extent: Extent,
-    name: Extent,
+    name: Ident,
     #[visit(ignore)]
     variants: Vec<EnumVariant>,
 }
@@ -215,7 +243,7 @@ pub struct Enum {
 #[derive(Debug)]
 struct EnumVariant {
     extent: Extent,
-    name: Extent,
+    name: Ident,
     body: Option<EnumVariantBody>,
 }
 
@@ -228,20 +256,20 @@ enum EnumVariantBody {
 #[derive(Debug)]
 enum Argument {
     SelfArgument,
-    Named { name: Extent, typ: Type }
+    Named { name: Ident, typ: Type }
 }
 
 #[derive(Debug)]
 enum TraitImplArgument {
     SelfArgument,
-    Named { name: Option<Extent>, typ: Type }
+    Named { name: Option<Ident>, typ: Type }
 }
 
 #[derive(Debug)]
 struct Where {
     extent: Extent,
     name: Type,
-    bounds: Vec<Extent>,
+    bounds: Vec<Type>,
 }
 
 #[derive(Debug, Visit)]
@@ -328,7 +356,7 @@ enum ExpressionKind {
 
 #[derive(Debug)]
 struct MacroCall {
-    name: Extent,
+    name: Ident,
     args: Extent,
 }
 
@@ -341,7 +369,7 @@ struct Let {
 
 #[derive(Debug)]
 struct Assign {
-    name: Extent,
+    name: Ident,
     value: Box<Expression>,
 }
 
@@ -353,12 +381,12 @@ struct Tuple {
 #[derive(Debug)]
 struct FieldAccess {
     value: Box<Expression>,
-    field: Extent
+    field: Ident
 }
 
 #[derive(Debug)]
 struct Value {
-    name: Extent,
+    name: PathedIdent,
     literal: Option<Vec<StructLiteralField>>,
 }
 
@@ -377,14 +405,14 @@ struct Call {
 
 #[derive(Debug)]
 struct FunctionCall {
-    name: Extent,
+    name: PathedIdent,
     args: Vec<Expression>,
 }
 
 #[derive(Debug)]
 struct MethodCall {
     receiver: Box<Expression>,
-    name: Extent,
+    name: Ident,
     turbofish: Option<Extent>,
     args: Vec<Expression>,
 }
@@ -479,9 +507,9 @@ struct Return {
 #[derive(Debug)]
 enum ExpressionTail {
     Binary { op: Extent, rhs: Box<Expression> },
-    FieldAccess { field: Extent },
+    FieldAccess { field: Ident },
     Call { args: Vec<Expression> },
-    MethodCall { name: Extent, turbofish: Option<Extent>, args: Vec<Expression> },
+    MethodCall { name: Ident, turbofish: Option<Extent>, args: Vec<Expression> },
     Range { rhs: Option<Box<Expression>> },
     Slice { range: Box<Expression> },
 }
@@ -489,8 +517,8 @@ enum ExpressionTail {
 #[derive(Debug)]
 enum Pattern {
     // TODO: split into ident and enumtuple
-    Ident { extent: Extent, ident: Extent, tuple: Vec<Pattern> },
-    Struct { extent: Extent, name: Extent, fields: Vec<PatternStructField>, wildcard: bool },
+    Ident { extent: Extent, ident: PathedIdent, tuple: Vec<Pattern> },
+    Struct { extent: Extent, name: PathedIdent, fields: Vec<PatternStructField>, wildcard: bool },
     Tuple { extent: Extent, members: Vec<Pattern> },
     Wildcard { extent: Extent },
     Character { extent: Extent, value: Character },
@@ -512,14 +540,14 @@ impl Pattern {
 
 #[derive(Debug)]
 struct PatternStructField {
-    name: Extent,
+    name: Ident,
     pattern: Pattern,
 }
 
 #[derive(Debug, Visit)]
 pub struct Trait {
     extent: Extent,
-    name: Extent,
+    name: Ident,
     #[visit(ignore)]
     generics: Option<GenericDeclarations>,
     #[visit(ignore)]
@@ -570,7 +598,7 @@ struct ImplFunction {
 #[derive(Debug, Visit)]
 pub struct Crate {
     extent: Extent,
-    name: Extent,
+    name: Ident,
 }
 
 #[derive(Debug, Visit)]
@@ -632,19 +660,24 @@ impl Visit for Extent {
 }
 
 pub trait Visitor {
+    fn visit_attribute(&mut self, &Attribute) {}
     fn visit_block(&mut self, &Block) {}
     fn visit_comment(&mut self, &Comment) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_enum(&mut self, &Enum) {}
     fn visit_expression(&mut self, &Expression) {}
     fn visit_function(&mut self, &Function) {}
+    fn visit_generic(&mut self, &Generic) {}
+    fn visit_ident(&mut self, &Ident) {}
     fn visit_impl(&mut self, &Impl) {}
+    fn visit_lifetime(&mut self, &Lifetime) {}
     fn visit_macrorules(&mut self, &MacroRules) {}
     fn visit_module(&mut self, &Module) {}
     fn visit_statement(&mut self, &Statement) {}
     fn visit_struct(&mut self, &Struct) {}
     fn visit_toplevel(&mut self, &TopLevel) {}
     fn visit_trait(&mut self, &Trait) {}
+    fn visit_type(&mut self, &Type) {}
     fn visit_typealias(&mut self, &TypeAlias) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_whitespace(&mut self, &Whitespace) {}
@@ -982,7 +1015,7 @@ fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRule
     })
 }
 
-fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
     let spt = pt;
     let (pt, ex) = parse_until(pt, |c| {
         [
@@ -994,7 +1027,7 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     if pt.offset <= spt.offset {
         Progress::failure(pt, Error::IdentNotFound)
     } else {
-        Progress::success(pt, ex)
+        Progress::success(pt, Ident { extent: ex })
     }
 }
 
@@ -1008,7 +1041,7 @@ fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Prog
 }
 
 fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
-    ident(pm, pt)
+    ident(pm, pt).map(|ex| Generic { extent: ex.extent })
 }
 
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
@@ -1061,7 +1094,7 @@ fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Wher
 fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
     let spt = pt;
     sequence!(pm, pt, {
-        name   = ident;
+        name   = typ;
         _x     = literal(":");
         _x     = optional(whitespace);
         bounds = one_or_more(plus_tail(typ));
@@ -1599,7 +1632,7 @@ fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Pr
     }, |_, _| {
         let value = value.unwrap_or_else(|| Expression {
             extent: ex(spt, mpt),
-            kind: ExpressionKind::Value(Value { name, literal: None }),
+            kind: ExpressionKind::Value(Value { name: name.into(), literal: None }),
         });
         StructLiteralField { name, value }
     })
@@ -1710,13 +1743,13 @@ fn expr_tail_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
     }, |_, _| ExpressionTail::Slice { range: Box::new(range) })
 }
 
-fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
     let spt = pt;
     sequence!(pm, pt, {
         _x = ident;
         _x = zero_or_more(path_component);
         _x = optional(turbofish);
-    }, |_, pt| ex(spt, pt))
+    }, |_, pt| PathedIdent { extent: ex(spt, pt) })
 }
 
 fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -1795,13 +1828,14 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
 }
 
 fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternStructField> {
+    let spt = pt;
     sequence!(pm, pt, {
         name    = ident;
         _x      = optional(whitespace);
         pattern = optional(pattern_struct_field_tail);
-    }, |_, _| {
+    }, |_, pt| {
         let pattern = pattern.unwrap_or_else(|| {
-            Pattern::Ident { extent: name, ident: name, tuple: Vec::new() }
+            Pattern::Ident { extent: ex(spt, pt), ident: name.into(), tuple: Vec::new() }
         });
         PatternStructField { name, pattern }
     })
@@ -2066,7 +2100,7 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> 
         _x = literal("[");
         _x = parse_nested_until('[', ']');
         _x = literal("]");
-    }, |_, pt| ex(spt, pt))
+    }, |_, pt| Attribute { extent: ex(spt, pt) })
 }
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -2079,10 +2113,7 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel
         name = ident;
         _x   = optional(whitespace);
         _x   = literal(";");
-    }, |_, pt| TopLevel::ExternCrate(Crate {
-        extent: ex(spt, pt),
-        name,
-    }))
+    }, |_, pt| TopLevel::ExternCrate(Crate { extent: ex(spt, pt), name }))
 }
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
@@ -2155,13 +2186,13 @@ fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
     }, |_, pt| Module { extent: ex(spt, pt), name, body })
 }
 
-fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     let spt = pt;
     sequence!(pm, pt, {
         _x = optional(typ_ref);
         _x = optional(whitespace);
         _x = typ_inner;
-    }, |_, pt| ex(spt, pt))
+    }, |_, pt| Type { extent: ex(spt, pt) })
 }
 
 fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -2236,12 +2267,13 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ex
     }, |_, pt| ex(spt, pt))
 }
 
-fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
+    let spt = pt;
     sequence!(pm, pt, {
         _x   = literal("'");
         _x   = optional(whitespace);
         name = ident;
-    }, |_, _| name)
+    }, |_, pt| Lifetime { extent: ex(spt, pt), name })
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Whitespace>> {
@@ -2559,7 +2591,7 @@ mod test {
     #[test]
     fn pathed_ident_with_turbofish() {
         let p = qp(pathed_ident, "foo::<Vec<u8>>");
-        assert_eq!(unwrap_progress(p), (0, 14))
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
     }
 
     #[test]
@@ -2865,31 +2897,31 @@ mod test {
     #[test]
     fn type_tuple() {
         let p = qp(typ, "(u8, u8)");
-        assert_eq!(unwrap_progress(p), (0, 8))
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
     fn type_with_generics() {
         let p = qp(typ, "A<T>");
-        assert_eq!(unwrap_progress(p), (0, 4))
+        assert_eq!(unwrap_progress(p).extent, (0, 4))
     }
 
     #[test]
     fn type_impl_trait() {
         let p = qp(typ, "impl Foo");
-        assert_eq!(unwrap_progress(p), (0, 8))
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
     fn type_fn_trait() {
         let p = qp(typ, "Fn(u8) -> u8");
-        assert_eq!(unwrap_progress(p), (0, 12))
+        assert_eq!(unwrap_progress(p).extent, (0, 12))
     }
 
     #[test]
     fn type_mut_ref() {
         let p = qp(typ, "&mut Foo");
-        assert_eq!(unwrap_progress(p), (0, 8))
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
