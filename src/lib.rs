@@ -147,6 +147,18 @@ pub struct FunctionHeader {
 }
 
 #[derive(Debug)]
+pub struct TraitImplFunctionHeader {
+    extent: Extent,
+    visibility: Option<Extent>,
+    pub name: Extent,
+    generics: Option<GenericDeclarations>,
+    arguments: Vec<TraitImplArgument>,
+    return_type: Option<Type>,
+    wheres: Vec<Where>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
 struct GenericDeclarations {
     lifetimes: Vec<Lifetime>,
     types: Vec<Generic>,
@@ -210,6 +222,12 @@ enum EnumVariantBody {
 enum Argument {
     SelfArgument,
     Named { name: Extent, typ: Type }
+}
+
+#[derive(Debug)]
+enum TraitImplArgument {
+    SelfArgument,
+    Named { name: Option<Extent>, typ: Type }
 }
 
 #[derive(Debug)]
@@ -508,7 +526,7 @@ pub enum TraitMember {
 #[derive(Debug)]
 pub struct TraitImplFunction {
     extent: Extent,
-    header: FunctionHeader,
+    header: TraitImplFunctionHeader,
     body: Option<Block>,
 }
 
@@ -918,13 +936,14 @@ fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, G
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
     sequence!(pm, pt, {
         _x       = literal("(");
-        self_arg = optional(self_argument);
+        self_arg = optional(map(self_argument, |_| Argument::SelfArgument));
         args     = zero_or_more_append(self_arg, comma_tail(function_argument));
         _x       = literal(")");
     }, move |_, _| args)
 }
 
-fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
+fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    let spt = pt;
     sequence!(pm, pt, {
         _x = optional(literal("&"));
         _x = optional(whitespace);
@@ -932,7 +951,7 @@ fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argumen
         _x = optional(whitespace);
         _x = literal("self");
         _x = optional(literal(","));
-    }, |_, _| Argument::SelfArgument)
+    }, |_, pt| ex(spt, pt))
 }
 
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
@@ -1838,9 +1857,62 @@ fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tra
 fn trait_impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplFunction> {
     let spt = pt;
     sequence!(pm, pt, {
-        header = function_header;
+        header = trait_impl_function_header;
         body   = trait_impl_function_body;
     }, |_, pt| TraitImplFunction { extent: ex(spt, pt), header, body })
+}
+
+// TODO: Massively duplicated!!!
+fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplFunctionHeader> {
+    let ws = Vec::new();
+    let spt = pt;
+    sequence!(pm, pt, {
+        visibility  = optional(ext(literal("pub")));
+        ws          = optional_whitespace(ws);
+        _x          = literal("fn");
+        ws          = optional_whitespace(ws);
+        name        = ident;
+        generics    = optional(function_generic_declarations);
+        arguments   = trait_impl_function_arglist;
+        ws          = optional_whitespace(ws);
+        return_type = optional(function_return_type);
+        ws          = optional_whitespace(ws);
+        wheres      = optional(function_where_clause);
+    }, |_, pt| {
+        TraitImplFunctionHeader {
+            extent: ex(spt, pt),
+            visibility,
+            name,
+            generics,
+            arguments,
+            return_type,
+            wheres: wheres.unwrap_or_else(Vec::new),
+            whitespace: ws,
+        }})
+}
+
+fn trait_impl_function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<TraitImplArgument>> {
+    sequence!(pm, pt, {
+        _x       = literal("(");
+        self_arg = optional(map(self_argument, |_| TraitImplArgument::SelfArgument));
+        args     = zero_or_more_append(self_arg, comma_tail(trait_impl_function_argument));
+        _x       = literal(")");
+    }, move |_, _| args)
+}
+
+fn trait_impl_function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplArgument> {
+    sequence!(pm, pt, {
+        name = optional(trait_impl_function_argument_name);
+        typ  = typ;
+    }, |_, _| TraitImplArgument::Named { name, typ })
+}
+
+fn trait_impl_function_argument_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+    sequence!(pm, pt, {
+        name = ident;
+        _x   = literal(":");
+        _x   = optional(whitespace);
+    }, |_, _| name)
 }
 
 fn trait_impl_function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Option<Block>> {
@@ -2179,6 +2251,12 @@ mod test {
     fn top_level_trait_with_members_with_body() {
         let p = qp(top_level, "trait Foo { fn bar(&self) -> u8 { 42 } }");
         assert_eq!(unwrap_progress(p).extent(), (0, 40))
+    }
+
+    #[test]
+    fn top_level_trait_with_unnamed_parameters() {
+        let p = qp(top_level, "trait Foo { fn bar(&self, u8); }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 32))
     }
 
     #[test]
