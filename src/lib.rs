@@ -206,8 +206,16 @@ pub struct TypeReference {
 
 #[derive(Debug, Visit)]
 pub enum TypeInner {
-    Core(Extent),
+    Core(TypeCore),
     Tuple(Extent),
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeCore {
+    extent: Extent,
+    is_impl: Option<Extent>,
+    name: PathedIdent,
+    generics: Option<Extent>,
 }
 
 #[derive(Debug, Copy, Clone, Visit)]
@@ -826,6 +834,7 @@ pub trait Visitor {
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
+    fn visit_type_core(&mut self, &TypeCore) {}
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_use(&mut self, &Use) {}
@@ -2378,20 +2387,21 @@ fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Exten
     }, |_, pt| ex(spt, pt))
 }
 
-fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
+fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCore> {
     sequence!(pm, pt, {
-        _x = optional(typ_impl);
-        _x = pathed_ident;
-        _x = optional(typ_generics);
-    }, |_, pt| ex(spt, pt))
+        spt      = point;
+        is_impl  = optional(typ_impl);
+        name     = pathed_ident;
+        generics = optional(typ_generics);
+    }, |_, pt| TypeCore { extent: ex(spt, pt), is_impl, name, generics })
 }
 
-fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ()> {
+fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     sequence!(pm, pt, {
-        _x = literal("impl");
-        _x = whitespace;
-    }, |_, _| ())
+        spt = point;
+        _x  = literal("impl");
+        _x  = whitespace;
+    }, |_, _| ex(spt, pt))
 }
 
 fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
