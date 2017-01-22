@@ -964,42 +964,14 @@ macro_rules! sequence {
 }
 
 // TODO: promote?
-fn comma_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| {
         sequence!(pm, pt, {
             v  = f;
             _x = optional(whitespace);
-            _x = optional(literal(","));
-            _x = optional(whitespace);
-        }, |_, _| v)
-    }
-}
-
-// TODO: promote?
-fn pipe_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-{
-    move |pm, pt| {
-        sequence!(pm, pt, {
-            v  = f;
-            _x = optional(whitespace);
-            _x = optional(literal("|"));
-            _x = optional(whitespace);
-        }, |_, _| v)
-    }
-}
-
-// TODO: promote?
-fn plus_tail<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-{
-    move |pm, pt| {
-        sequence!(pm, pt, {
-            v  = f;
-            _x = optional(whitespace);
-            _x = optional(literal("+"));
+            _x = optional(literal(sep));
             _x = optional(whitespace);
         }, |_, _| v)
     }
@@ -1238,8 +1210,8 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
 fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
     sequence!(pm, pt, {
         _x        = literal("<");
-        lifetimes = zero_or_more(comma_tail(lifetime));
-        types     = zero_or_more(comma_tail(generic_declaration));
+        lifetimes = zero_or_more(tail(",", lifetime));
+        types     = zero_or_more(tail(",", generic_declaration));
         _x        = literal(">");
     }, |_, _| GenericDeclarations { lifetimes, types })
 }
@@ -1252,7 +1224,7 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
     sequence!(pm, pt, {
         _x       = literal("(");
         self_arg = optional(map(self_argument, Argument::SelfArgument));
-        args     = zero_or_more_append(self_arg, comma_tail(function_argument));
+        args     = zero_or_more_append(self_arg, tail(",", function_argument));
         _x       = literal(")");
     }, move |_, _| args)
 }
@@ -1296,7 +1268,7 @@ fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Wher
     sequence!(pm, pt, {
         _x = literal("where");
         _x = whitespace;
-        w  = one_or_more(comma_tail(function_where));
+        w  = one_or_more(tail(",", function_where));
     }, |_, _| w)
 }
 
@@ -1306,7 +1278,7 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
         name   = typ;
         _x     = literal(":");
         _x     = optional(whitespace);
-        bounds = one_or_more(plus_tail(typ));
+        bounds = one_or_more(tail("+", typ));
     }, |_, pt| Where { extent: ex(spt, pt), name, bounds })
 }
 
@@ -1637,7 +1609,7 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
     let spt = pt;
     sequence!(pm, pt, {
         _x      = optional(whitespace);
-        pattern = one_or_more(pipe_tail(pattern));
+        pattern = one_or_more(tail("|", pattern));
         _x      = optional(whitespace);
         _x      = literal("=>");
         _x      = optional(whitespace);
@@ -1652,7 +1624,7 @@ fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
     sequence!(pm, pt, {
         spt     = point;
         _x      = literal("(");
-        members = zero_or_more(comma_tail(expression));
+        members = zero_or_more(tail(",", expression));
         _x      = literal(")");
     }, |_, pt| Tuple { extent: ex(spt, pt), members })
 }
@@ -1669,7 +1641,7 @@ fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
     sequence!(pm, pt, {
         spt     = point;
         _x      = literal("[");
-        members = zero_or_more(comma_tail(expression));
+        members = zero_or_more(tail(",", expression));
         _x      = literal("]");
     }, |_, pt| Array { extent: ex(spt, pt), members })
 }
@@ -1774,7 +1746,7 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
         mov  = optional(literal("move"));
         _x   = optional(whitespace);
         _x   = literal("|");
-        args = zero_or_more(comma_tail(expr_closure_arg));
+        args = zero_or_more(tail(",", expr_closure_arg));
         _x   = literal("|");
         body = expression;
     }, |_, pt| Closure {
@@ -1827,7 +1799,7 @@ fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
     sequence!(pm, pt, {
         _x     = literal("{");
         _x     = optional(whitespace);
-        fields = zero_or_more(comma_tail(expr_value_struct_literal_field));
+        fields = zero_or_more(tail(",", expr_value_struct_literal_field));
         _x     = optional(whitespace);
         _x     = literal("}");
     }, |_, _| fields)
@@ -1863,7 +1835,7 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Fu
         spt  = point;
         name = pathed_ident;
         _x   = literal("(");
-        args = zero_or_more(comma_tail(expression));
+        args = zero_or_more(tail(",", expression));
         _x   = literal(")");
     }, |_, pt| FunctionCall { extent: ex(spt, pt), name, args })
 }
@@ -1919,7 +1891,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
         name      = ident;
         turbofish = optional(turbofish);
         _x        = literal("(");
-        args      = zero_or_more(comma_tail(expression));
+        args      = zero_or_more(tail(",", expression));
         _x        = literal(")");
     }, |_, _| ExpressionTail::MethodCall { name, turbofish, args })
 }
@@ -1927,7 +1899,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _x        = literal("(");
-        args      = zero_or_more(comma_tail(expression));
+        args      = zero_or_more(tail(",", expression));
         _x        = literal(")");
     }, |_, _| ExpressionTail::Call { args })
 }
@@ -1976,7 +1948,7 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> 
     sequence!(pm, pt, {
         spt   = point;
         _x    = literal("::<");
-        types = zero_or_more(comma_tail(typ));
+        types = zero_or_more(tail(",", typ));
         _x    = literal(">");
     }, |_, pt| Turbofish { extent: ex(spt, pt), types: types })
 }
@@ -2009,7 +1981,7 @@ fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern
 fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
     sequence!(pm, pt, {
         _x               = literal("(");
-        mut sub_patterns = zero_or_more(comma_tail(pattern));
+        mut sub_patterns = zero_or_more(tail(",", pattern));
         wildcard         = optional(ext(literal("..")));
         _x               = literal(")");
     }, |_, _| {
@@ -2027,7 +1999,7 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
         _x       = optional(whitespace);
         _x       = literal("{");
         _x       = optional(whitespace);
-        fields   = zero_or_more(comma_tail(pattern_struct_field));
+        fields   = zero_or_more(tail(",", pattern_struct_field));
         _x       = optional(whitespace);
         wildcard = optional(literal(".."));
         _x       = optional(whitespace);
@@ -2088,7 +2060,7 @@ fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
     sequence!(pm, pt, {
         _x = literal("{");
         _x = optional(whitespace);
-        fields = zero_or_more(comma_tail(struct_defn_field));
+        fields = zero_or_more(tail(",", struct_defn_field));
         _x = optional(whitespace);
         _x = literal("}");
     }, |_, _| fields)
@@ -2123,7 +2095,7 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         _x       = optional(whitespace);
         _x       = literal("{");
         _x       = optional(whitespace);
-        variants = zero_or_more(comma_tail(enum_variant));
+        variants = zero_or_more(tail(",", enum_variant));
         _x       = optional(whitespace);
         _x       = literal("}");
     }, |_, pt| Enum {
@@ -2226,7 +2198,7 @@ fn trait_impl_function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
     sequence!(pm, pt, {
         _x       = literal("(");
         self_arg = optional(map(self_argument, TraitImplArgument::SelfArgument));
-        args     = zero_or_more_append(self_arg, comma_tail(trait_impl_function_argument));
+        args     = zero_or_more_append(self_arg, tail(",", trait_impl_function_argument));
         _x       = literal(")");
     }, move |_, _| args)
 }
@@ -2430,7 +2402,7 @@ fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Exten
     let spt = pt;
     sequence!(pm, pt, {
         _x = literal("(");
-        _x = zero_or_more(comma_tail(typ));
+        _x = zero_or_more(tail(",", typ));
         _x = literal(")");
     }, |_, pt| ex(spt, pt))
 }
@@ -2463,7 +2435,7 @@ fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeG
     sequence!(pm, pt, {
         spt = point;
         _x = literal("(");
-        types = zero_or_more(comma_tail(typ));
+        types = zero_or_more(tail(",", typ));
         _x = literal(")");
         _x = optional(whitespace);
         return_type = optional(function_return_type);
@@ -2479,8 +2451,8 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
         spt       = point;
         _x        = literal("<");
         _x        = optional(whitespace);
-        lifetimes = zero_or_more(comma_tail(lifetime));
-        types     = zero_or_more(comma_tail(typ));
+        lifetimes = zero_or_more(tail(",", lifetime));
+        types     = zero_or_more(tail(",", typ));
         _x        = literal(">");
     }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types })
 }
