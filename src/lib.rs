@@ -193,6 +193,14 @@ pub struct Generic {
 #[derive(Debug, Visit)]
 pub struct Type {
     extent: Extent,
+    reference: Option<TypeReference>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeReference {
+    extent: Extent,
+    mutable: Option<Extent>,
+    lifetime: Option<Lifetime>,
 }
 
 #[derive(Debug, Copy, Clone, Visit)]
@@ -810,6 +818,7 @@ pub trait Visitor {
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
+    fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_value(&mut self, &Value) {}
@@ -2328,21 +2337,21 @@ fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x = optional(typ_ref);
-        _x = optional(whitespace);
-        _x = typ_inner;
-    }, |_, pt| Type { extent: ex(spt, pt) })
+        reference = optional(typ_ref);
+        _x        = optional(whitespace);
+        _x        = typ_inner;
+    }, |_, pt| Type { extent: ex(spt, pt), reference })
 }
 
-fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
+fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference> {
     sequence!(pm, pt, {
-        _x = literal("&");
-        _x = optional(whitespace);
-        _x = optional(literal("mut"));
-        _x = optional(whitespace);
-        _x = optional(lifetime);
-    }, |_, pt| ex(spt, pt))
+        spt      = point;
+        _x       = literal("&");
+        _x       = optional(whitespace);
+        mutable  = optional(ext(literal("mut")));
+        _x       = optional(whitespace);
+        lifetime = optional(lifetime);
+    }, |_, pt| TypeReference { extent: ex(spt, pt), mutable, lifetime })
 }
 
 fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
