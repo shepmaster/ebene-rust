@@ -194,6 +194,7 @@ pub struct Generic {
 pub struct Type {
     extent: Extent,
     reference: Option<TypeReference>,
+    inner: TypeInner,
 }
 
 #[derive(Debug, Visit)]
@@ -201,6 +202,12 @@ pub struct TypeReference {
     extent: Extent,
     mutable: Option<Extent>,
     lifetime: Option<Lifetime>,
+}
+
+#[derive(Debug, Visit)]
+pub enum TypeInner {
+    Core(Extent),
+    Tuple(Extent),
 }
 
 #[derive(Debug, Copy, Clone, Visit)]
@@ -818,8 +825,9 @@ pub trait Visitor {
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
-    fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
+    fn visit_type_inner(&mut self, &TypeInner) {}
+    fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_value(&mut self, &Value) {}
     fn visit_visibility(&mut self, &Visibility) {}
@@ -2335,12 +2343,12 @@ fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
 }
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
-    let spt = pt;
     sequence!(pm, pt, {
+        spt       = point;
         reference = optional(typ_ref);
         _x        = optional(whitespace);
-        _x        = typ_inner;
-    }, |_, pt| Type { extent: ex(spt, pt), reference })
+        inner     = typ_inner;
+    }, |_, pt| Type { extent: ex(spt, pt), reference, inner })
 }
 
 fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference> {
@@ -2354,10 +2362,10 @@ fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference
     }, |_, pt| TypeReference { extent: ex(spt, pt), mutable, lifetime })
 }
 
-fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> {
     pm.alternate(pt)
-        .one(typ_core)
-        .one(tuple_defn_body)
+        .one(map(typ_core, TypeInner::Core))
+        .one(map(tuple_defn_body, TypeInner::Tuple))
         .finish()
 }
 
