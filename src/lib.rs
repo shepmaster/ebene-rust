@@ -152,7 +152,6 @@ pub struct FunctionHeader {
     visibility: Option<Visibility>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
-    #[visit(ignore)]
     arguments: Vec<Argument>,
     return_type: Option<Type>,
     wheres: Vec<Where>,
@@ -165,7 +164,6 @@ pub struct TraitImplFunctionHeader {
     visibility: Option<Visibility>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
-    #[visit(ignore)]
     arguments: Vec<TraitImplArgument>,
     return_type: Option<Type>,
     wheres: Vec<Where>,
@@ -451,7 +449,6 @@ pub struct MacroCall {
 #[derive(Debug, Visit)]
 pub struct Let {
     extent: Extent,
-    #[visit(ignore)]
     pattern: Pattern,
     typ: Option<Type>,
     value: Option<Box<Expression>>,
@@ -517,7 +514,6 @@ pub struct MethodCall {
 #[derive(Debug, Visit)]
 pub struct ForLoop {
     extent: Extent,
-    #[visit(ignore)]
     pattern: Pattern,
     iter: Box<Expression>,
     body: Box<Block>,
@@ -556,7 +552,6 @@ pub struct Match {
 #[derive(Debug, Visit)]
 pub struct MatchArm {
     extent: Extent,
-    #[visit(ignore)]
     pattern: Vec<Pattern>,
     body: Expression,
 }
