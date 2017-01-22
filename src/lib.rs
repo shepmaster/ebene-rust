@@ -750,58 +750,58 @@ pub trait Visitor {
     fn visit_call(&mut self, &Call) {}
     fn visit_character(&mut self, &Character) {}
     fn visit_closure(&mut self, &Closure) {}
-    fn visit_closurearg(&mut self, &ClosureArg) {}
+    fn visit_closure_arg(&mut self, &ClosureArg) {}
     fn visit_comment(&mut self, &Comment) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_enum(&mut self, &Enum) {}
-    fn visit_enumvariant(&mut self, &EnumVariant) {}
-    fn visit_enumvariantbody(&mut self, &EnumVariantBody) {}
+    fn visit_enum_variant(&mut self, &EnumVariant) {}
+    fn visit_enum_variant_body(&mut self, &EnumVariantBody) {}
     fn visit_expression(&mut self, &Expression) {}
-    fn visit_fieldaccess(&mut self, &FieldAccess) {}
-    fn visit_forloop(&mut self, &ForLoop) {}
+    fn visit_field_access(&mut self, &FieldAccess) {}
+    fn visit_for_loop(&mut self, &ForLoop) {}
     fn visit_function(&mut self, &Function) {}
-    fn visit_functioncall(&mut self, &FunctionCall) {}
-    fn visit_functionheader(&mut self, &FunctionHeader) {}
+    fn visit_function_call(&mut self, &FunctionCall) {}
+    fn visit_function_header(&mut self, &FunctionHeader) {}
     fn visit_generic(&mut self, &Generic) {}
-    fn visit_genericdeclarations(&mut self, &GenericDeclarations) {}
+    fn visit_generic_declarations(&mut self, &GenericDeclarations) {}
     fn visit_ident(&mut self, &Ident) {}
     fn visit_if(&mut self, &If) {}
     fn visit_impl(&mut self, &Impl) {}
-    fn visit_implfunction(&mut self, &ImplFunction) {}
-    fn visit_implmember(&mut self, &ImplMember) {}
+    fn visit_impl_function(&mut self, &ImplFunction) {}
+    fn visit_impl_member(&mut self, &ImplMember) {}
     fn visit_let(&mut self, &Let) {}
     fn visit_lifetime(&mut self, &Lifetime) {}
     fn visit_loop(&mut self, &Loop) {}
-    fn visit_macrocall(&mut self, &MacroCall) {}
-    fn visit_macrorules(&mut self, &MacroRules) {}
+    fn visit_macro_call(&mut self, &MacroCall) {}
+    fn visit_macro_rules(&mut self, &MacroRules) {}
     fn visit_match(&mut self, &Match) {}
-    fn visit_matcharm(&mut self, &MatchArm) {}
-    fn visit_methodcall(&mut self, &MethodCall) {}
+    fn visit_match_arm(&mut self, &MatchArm) {}
+    fn visit_method_call(&mut self, &MethodCall) {}
     fn visit_module(&mut self, &Module) {}
-    fn visit_pathedident(&mut self, &PathedIdent) {}
+    fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
-    fn visit_patterncharacter(&mut self, &PatternCharacter) {}
-    fn visit_patternident(&mut self, &PatternIdent) {}
-    fn visit_patternstruct(&mut self, &PatternStruct) {}
-    fn visit_patternstructfield(&mut self, &PatternStructField) {}
-    fn visit_patterntuple(&mut self, &PatternTuple) {}
-    fn visit_patternwildcard(&mut self, &PatternWildcard) {}
+    fn visit_pattern_character(&mut self, &PatternCharacter) {}
+    fn visit_pattern_ident(&mut self, &PatternIdent) {}
+    fn visit_pattern_struct(&mut self, &PatternStruct) {}
+    fn visit_pattern_struct_field(&mut self, &PatternStructField) {}
+    fn visit_pattern_tuple(&mut self, &PatternTuple) {}
+    fn visit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn visit_range(&mut self, &Range) {}
     fn visit_return(&mut self, &Return) {}
     fn visit_slice(&mut self, &Slice) {}
     fn visit_statement(&mut self, &Statement) {}
     fn visit_string(&mut self, &String) {}
     fn visit_struct(&mut self, &Struct) {}
-    fn visit_structfield(&mut self, &StructField) {}
-    fn visit_structliteralfield(&mut self, &StructLiteralField) {}
-    fn visit_toplevel(&mut self, &TopLevel) {}
+    fn visit_struct_field(&mut self, &StructField) {}
+    fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
+    fn visit_top_level(&mut self, &TopLevel) {}
     fn visit_trait(&mut self, &Trait) {}
-    fn visit_traitimplfunction(&mut self, &TraitImplFunction) {}
-    fn visit_traitimplfunctionheader(&mut self, &TraitImplFunctionHeader) {}
-    fn visit_traitmember(&mut self, &TraitMember) {}
+    fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
+    fn visit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
+    fn visit_trait_member(&mut self, &TraitMember) {}
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_type(&mut self, &Type) {}
-    fn visit_typealias(&mut self, &TypeAlias) {}
+    fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_value(&mut self, &Value) {}
     fn visit_visibility(&mut self, &Visibility) {}

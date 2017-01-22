@@ -22,10 +22,25 @@ pub fn visit_derive(input: TokenStream) -> TokenStream {
     gen.parse().expect("Unable to generate")
 }
 
+fn camelcase_to_snake_case(camelcase: &str) -> String {
+    let mut s = String::new();
+
+    for c in camelcase.chars() {
+        if c.is_lowercase() {
+            s.push(c);
+        } else {
+            s.push('_');
+            s.extend(c.to_lowercase());
+        }
+    }
+
+    s
+}
+
 fn impl_visit(ast: &syn::MacroInput) -> quote::Tokens {
     let name = &ast.ident;
-    let method_name = name.to_string().to_lowercase();
-    let method_name: quote::Ident = format!("visit_{}", method_name).into();
+    let method_name = camelcase_to_snake_case(&name.to_string());
+    let method_name: quote::Ident = format!("visit{}", method_name).into();
 
     let visit_fields = impl_visit_fields(ast);
 
