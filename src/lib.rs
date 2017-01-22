@@ -559,34 +559,66 @@ enum ExpressionTail {
     Slice { range: Box<Expression> },
 }
 
-#[derive(Debug)]
-enum Pattern {
+#[derive(Debug, Visit)]
+pub enum Pattern {
     // TODO: split into ident and enumtuple
-    Ident { extent: Extent, ident: PathedIdent, tuple: Vec<Pattern> },
-    Struct { extent: Extent, name: PathedIdent, fields: Vec<PatternStructField>, wildcard: bool },
-    Tuple { extent: Extent, members: Vec<Pattern> },
-    Wildcard { extent: Extent },
-    Character { extent: Extent, value: Character },
+    Ident(PatternIdent),
+    Struct(PatternStruct),
+    Tuple(PatternTuple),
+    Wildcard(PatternWildcard),
+    Character(PatternCharacter),
 }
 
 impl Pattern {
     #[allow(dead_code)]
     fn extent(&self) -> Extent {
-        use Pattern::*;
         match *self {
-            Ident { extent, .. } |
-            Tuple { extent, .. } |
-            Struct { extent, .. } |
-            Wildcard { extent, .. } |
-            Character { extent, .. } => extent
+            Pattern::Ident(PatternIdent { extent, .. }) |
+            Pattern::Tuple(PatternTuple { extent, .. }) |
+            Pattern::Struct(PatternStruct { extent, .. }) |
+            Pattern::Wildcard(PatternWildcard { extent, .. }) |
+            Pattern::Character(PatternCharacter { extent, .. }) => extent
         }
     }
 }
 
-#[derive(Debug)]
-struct PatternStructField {
+#[derive(Debug, Visit)]
+pub struct PatternIdent {
+    extent: Extent,
+    ident: PathedIdent,
+    tuple: Vec<Pattern>,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternStruct {
+    extent: Extent,
+    name: PathedIdent,
+    fields: Vec<PatternStructField>,
+    #[visit(ignore)]
+    wildcard: bool,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternStructField {
     name: Ident,
     pattern: Pattern,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternTuple {
+    extent: Extent,
+    members: Vec<Pattern>,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternWildcard {
+    extent: Extent,
+}
+
+#[derive(Debug,Visit)]
+pub struct PatternCharacter {
+    extent: Extent,
+    value: Character,
 }
 
 #[derive(Debug, Visit)]
@@ -747,6 +779,13 @@ pub trait Visitor {
     fn visit_methodcall(&mut self, &MethodCall) {}
     fn visit_module(&mut self, &Module) {}
     fn visit_pathedident(&mut self, &PathedIdent) {}
+    fn visit_pattern(&mut self, &Pattern) {}
+    fn visit_patterncharacter(&mut self, &PatternCharacter) {}
+    fn visit_patternident(&mut self, &PatternIdent) {}
+    fn visit_patternstruct(&mut self, &PatternStruct) {}
+    fn visit_patternstructfield(&mut self, &PatternStructField) {}
+    fn visit_patterntuple(&mut self, &PatternTuple) {}
+    fn visit_patternwildcard(&mut self, &PatternWildcard) {}
     fn visit_range(&mut self, &Range) {}
     fn visit_return(&mut self, &Return) {}
     fn visit_slice(&mut self, &Slice) {}
@@ -1861,27 +1900,27 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     pm.alternate(pt)
-        .one(pattern_struct)
-        .one(pattern_ident)
-        .one(pattern_tuple)
-        .one(pattern_char)
+        .one(map(pattern_struct, Pattern::Struct))
+        .one(map(pattern_ident, Pattern::Ident))
+        .one(map(pattern_tuple, Pattern::Tuple))
+        .one(map(pattern_char, Pattern::Character))
         .finish()
 }
 
-fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternIdent> {
     let spt = pt;
     sequence!(pm, pt, {
         _x    = optional(literal("mut"));
         _x    = optional(whitespace);
         ident = pathed_ident;
         tuple = optional(pattern_tuple_inner);
-    }, |_, pt| Pattern::Ident { extent: ex(spt, pt), ident, tuple: tuple.unwrap_or_else(Vec::new) })
+    }, |_, pt| PatternIdent { extent: ex(spt, pt), ident, tuple: tuple.unwrap_or_else(Vec::new) })
 }
 
-fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternTuple> {
     let spt = pt;
     let (pt, members) = try_parse!(pattern_tuple_inner(pm, pt));
-    Progress::success(pt, Pattern::Tuple { extent: ex(spt, pt), members })
+    Progress::success(pt, PatternTuple { extent: ex(spt, pt), members })
 }
 
 fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
@@ -1892,13 +1931,13 @@ fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, V
         _x               = literal(")");
     }, |_, _| {
         if let Some(extent) = wildcard {
-            sub_patterns.push(Pattern::Wildcard { extent });
+            sub_patterns.push(Pattern::Wildcard(PatternWildcard { extent }));
         }
         sub_patterns
     })
 }
 
-fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternStruct> {
     let spt = pt;
     sequence!(pm, pt, {
         name     = pathed_ident;
@@ -1910,7 +1949,7 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
         wildcard = optional(literal(".."));
         _x       = optional(whitespace);
         _x       = literal("}");
-    }, |_, pt| Pattern::Struct {
+    }, |_, pt| PatternStruct {
         extent: ex(spt, pt),
         name,
         fields,
@@ -1926,7 +1965,7 @@ fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
         pattern = optional(pattern_struct_field_tail);
     }, |_, pt| {
         let pattern = pattern.unwrap_or_else(|| {
-            Pattern::Ident { extent: ex(spt, pt), ident: name.into(), tuple: Vec::new() }
+            Pattern::Ident(PatternIdent { extent: ex(spt, pt), ident: name.into(), tuple: Vec::new() })
         });
         PatternStructField { name, pattern }
     })
@@ -1940,10 +1979,10 @@ fn pattern_struct_field_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
     }, |_, _| pattern)
 }
 
-fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternCharacter> {
     let spt = pt;
     let (pt, value) = try_parse!(character_literal(pm, pt));
-    Progress::success(pt, Pattern::Character { extent: ex(spt, pt), value })
+    Progress::success(pt, PatternCharacter { extent: ex(spt, pt), value })
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
