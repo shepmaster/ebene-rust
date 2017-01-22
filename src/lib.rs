@@ -203,11 +203,13 @@ pub struct Ident {
 #[derive(Debug, Visit)]
 pub struct PathedIdent {
     extent: Extent,
+    idents: Vec<Ident>,
+    turbofish: Option<Extent>,
 }
 
 impl From<Ident> for PathedIdent {
     fn from(other: Ident) -> PathedIdent {
-        PathedIdent { extent: other.extent }
+        PathedIdent { extent: other.extent, idents: vec![other], turbofish: None }
     }
 }
 
@@ -997,7 +999,7 @@ fn zero_or_more_append<'s, A, F, T>(existing: A, f: F) -> impl FnOnce(&mut Maste
                     existing.push(v);
                     pt = point;
                 },
-                Progress { point, .. } => return Progress::success(point, existing),
+                Progress { .. } => return Progress::success(pt, existing),
             }
         }
     }
@@ -1874,20 +1876,19 @@ fn expr_tail_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
-    let spt = pt;
     sequence!(pm, pt, {
-        _x = ident;
-        _x = zero_or_more(path_component);
-        _x = optional(turbofish);
-    }, |_, pt| PathedIdent { extent: ex(spt, pt) })
+        spt       = point;
+        ident     = ident;
+        idents    = zero_or_more_append(vec![ident], path_component);
+        turbofish = optional(turbofish);
+    }, |_, pt| PathedIdent { extent: ex(spt, pt), idents, turbofish })
 }
 
-fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
+fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
     sequence!(pm, pt, {
-        _x = literal("::");
-        _x = ident;
-    }, |_, pt| ex(spt, pt))
+        _x    = literal("::");
+        ident = ident;
+    }, |_, _| ident)
 }
 
 fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
