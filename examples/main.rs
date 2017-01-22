@@ -11,12 +11,13 @@ use std::io::prelude::*;
 use strata_rs::{Visit, Visitor, Function};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct Done {
+struct IndexedFile {
+    source: String,
     functions: Vec<strata_rs::Extent>,
     idents: Vec<strata_rs::Extent>,
 }
 
-impl Visitor for Done {
+impl Visitor for IndexedFile {
     fn visit_ident(&mut self, ident: &strata_rs::Ident) {
         self.idents.push(ident.extent);
     }
@@ -32,7 +33,8 @@ fn main() {
     let mut s = String::new();
     f.read_to_string(&mut s).expect("Can't read");
     let file = strata_rs::parse_rust_file(&s).expect("Failed");
-    let mut d = Done::default();
+    let mut d = IndexedFile::default();
+    d.source = s;
 
     for i in &file {
         i.visit(&mut d);
