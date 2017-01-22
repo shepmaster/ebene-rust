@@ -199,7 +199,7 @@ pub struct Ident {
     pub extent: Extent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct PathedIdent {
     extent: Extent,
 }
@@ -292,7 +292,7 @@ impl Statement {
         use Statement::*;
         match *self {
             Explicit(ref e) |
-            Implicit(ref e) => e.extent,
+            Implicit(ref e) => e.extent(),
             Use(ref u) => u.extent,
         }
     }
@@ -322,71 +322,102 @@ impl Statement {
 }
 
 #[derive(Debug, Visit)]
-pub struct Expression {
-    extent: Extent,
-    #[visit(ignore)]
-    kind: ExpressionKind,
-}
-
-#[derive(Debug)]
-enum ExpressionKind {
-    MacroCall(MacroCall),
-    Call(Call),
-    Let(Let),
-    Assign(Assign),
-    Tuple(Tuple),
-    FieldAccess(FieldAccess),
-    Value(Value),
-    Block(Box<Block>),
-    FunctionCall(FunctionCall),
-    MethodCall(MethodCall),
-    ForLoop(ForLoop),
-    Loop(Loop),
-    Binary(Binary),
-    If(If),
-    Match(Match),
-    Range(Range),
+pub enum Expression {
     Array(Array),
+    Assign(Assign),
+    Binary(Binary),
+    Block(Box<Block>),
+    Call(Call),
     Character(Character),
-    String(String),
-    Slice(Slice),
     Closure(Closure),
+    FieldAccess(FieldAccess),
+    ForLoop(ForLoop),
+    FunctionCall(FunctionCall),
+    If(If),
+    Let(Let),
+    Loop(Loop),
+    MacroCall(MacroCall),
+    Match(Match),
+    MethodCall(MethodCall),
+    Range(Range),
     Return(Return),
+    Slice(Slice),
+    String(String),
+    Tuple(Tuple),
+    Value(Value),
 }
 
-#[derive(Debug)]
-struct MacroCall {
+impl Expression {
+    fn extent(&self) -> Extent {
+        match *self {
+            Expression::Block(ref x) => x.extent,
+
+            Expression::Array(Array { extent, .. }) |
+            Expression::Assign(Assign { extent, .. }) |
+            Expression::Binary(Binary { extent, .. }) |
+            Expression::Call(Call { extent, .. }) |
+            Expression::Character(Character { extent, .. }) |
+            Expression::Closure(Closure { extent, .. }) |
+            Expression::FieldAccess(FieldAccess { extent, .. }) |
+            Expression::ForLoop(ForLoop { extent, .. }) |
+            Expression::FunctionCall(FunctionCall { extent, .. }) |
+            Expression::If(If { extent, .. }) |
+            Expression::Let(Let { extent, .. }) |
+            Expression::Loop(Loop { extent, .. }) |
+            Expression::MacroCall(MacroCall { extent, .. }) |
+            Expression::Match(Match { extent, .. }) |
+            Expression::MethodCall(MethodCall { extent, .. }) |
+            Expression::Range(Range { extent, .. }) |
+            Expression::Return(Return { extent, .. }) |
+            Expression::Slice(Slice { extent, .. }) |
+            Expression::String(String { extent, .. }) |
+            Expression::Tuple(Tuple { extent, .. }) |
+            Expression::Value(Value { extent, .. }) => extent,
+        }
+    }
+}
+
+#[derive(Debug, Visit)]
+pub struct MacroCall {
+    extent: Extent,
     name: Ident,
     args: Extent,
 }
 
-#[derive(Debug)]
-struct Let {
+#[derive(Debug, Visit)]
+pub struct Let {
+    extent: Extent,
+    #[visit(ignore)]
     pattern: Pattern,
     typ: Option<Type>,
     value: Option<Box<Expression>>,
 }
 
-#[derive(Debug)]
-struct Assign {
+#[derive(Debug, Visit)]
+pub struct Assign {
+    extent: Extent,
     name: Ident,
     value: Box<Expression>,
 }
 
-#[derive(Debug)]
-struct Tuple {
+#[derive(Debug, Visit)]
+pub struct Tuple {
+    extent: Extent,
     members: Vec<Expression>,
 }
 
-#[derive(Debug)]
-struct FieldAccess {
+#[derive(Debug, Visit)]
+pub struct FieldAccess {
+    extent: Extent,
     value: Box<Expression>,
     field: Ident
 }
 
-#[derive(Debug)]
-struct Value {
+#[derive(Debug, Visit)]
+pub struct Value {
+    extent: Extent,
     name: PathedIdent,
+    #[visit(ignore)]
     literal: Option<Vec<StructLiteralField>>,
 }
 
@@ -397,47 +428,54 @@ struct StructLiteralField {
 }
 
 // TODO: Can we roll up function and method call into this?
-#[derive(Debug)]
-struct Call {
+#[derive(Debug, Visit)]
+pub struct Call {
+    extent: Extent,
     target: Box<Expression>,
     args: Vec<Expression>,
 }
 
-#[derive(Debug)]
-struct FunctionCall {
+#[derive(Debug, Visit)]
+pub struct FunctionCall {
+    extent: Extent,
     name: PathedIdent,
     args: Vec<Expression>,
 }
 
-#[derive(Debug)]
-struct MethodCall {
+#[derive(Debug, Visit)]
+pub struct MethodCall {
+    extent: Extent,
     receiver: Box<Expression>,
     name: Ident,
     turbofish: Option<Extent>,
     args: Vec<Expression>,
 }
 
-#[derive(Debug)]
-struct ForLoop {
+#[derive(Debug, Visit)]
+pub struct ForLoop {
+    extent: Extent,
+    #[visit(ignore)]
     pattern: Pattern,
     iter: Box<Expression>,
     body: Box<Block>,
 }
 
-#[derive(Debug)]
-struct Loop {
+#[derive(Debug, Visit)]
+pub struct Loop {
+    extent: Extent,
     body: Box<Block>,
 }
 
-#[derive(Debug)]
-struct Binary {
+#[derive(Debug, Visit)]
+pub struct Binary {
+    extent: Extent,
     op: Extent,
     lhs: Box<Expression>,
     rhs: Box<Expression>,
 }
 
-#[derive(Debug)]
-struct If {
+#[derive(Debug, Visit)]
+pub struct If {
     extent: Extent,
     condition: Box<Expression>,
     body: Box<Block>,
@@ -445,9 +483,11 @@ struct If {
     else_body: Option<Box<Block>>,
 }
 
-#[derive(Debug)]
-struct Match {
+#[derive(Debug, Visit)]
+pub struct Match {
+    extent: Extent,
     head: Box<Expression>,
+    #[visit(ignore)]
     arms: Vec<MatchArm>,
 }
 
@@ -458,48 +498,56 @@ struct MatchArm {
     body: Expression,
 }
 
-#[derive(Debug)]
-struct Range {
+#[derive(Debug, Visit)]
+pub struct Range {
+    extent: Extent,
     lhs: Option<Box<Expression>>,
     rhs: Option<Box<Expression>>,
 }
 
-#[derive(Debug)]
-struct Array {
+#[derive(Debug, Visit)]
+pub struct Array {
+    extent: Extent,
     members: Vec<Expression>,
 }
 
-#[derive(Debug)]
-struct Character {
+#[derive(Debug, Visit)]
+pub struct Character {
+    extent: Extent,
     value: Extent,
 }
 
-#[derive(Debug)]
-struct String {
+#[derive(Debug, Visit)]
+pub struct String {
+    extent: Extent,
     value: Extent,
 }
 
-#[derive(Debug)]
-struct Slice {
+#[derive(Debug, Visit)]
+pub struct Slice {
+    extent: Extent,
     target: Box<Expression>,
     range: Box<Expression>,
 }
 
-#[derive(Debug)]
-struct Closure {
+#[derive(Debug, Visit)]
+pub struct Closure {
+    extent: Extent,
+    #[visit(ignore)]
     is_move: bool,
+    #[visit(ignore)]
     args: Vec<ClosureArg>,
     body: Box<Expression>,
 }
 
 #[derive(Debug)]
-struct ClosureArg {
+pub struct ClosureArg {
     name: Ident,
     typ: Option<Type>,
 }
 
-#[derive(Debug)]
-struct Return {
+#[derive(Debug, Visit)]
+pub struct Return {
     extent: Extent,
     value: Box<Expression>,
 }
@@ -627,6 +675,16 @@ pub trait Visit {
         where V: Visitor;
 }
 
+impl<T> Visit for Box<T>
+    where T: Visit
+{
+    fn visit<V>(&self, v: &mut V)
+        where V: Visitor
+    {
+        (**self).visit(v)
+    }
+}
+
 impl<T> Visit for Option<T>
     where T: Visit
 {
@@ -660,6 +718,30 @@ impl Visit for Extent {
 }
 
 pub trait Visitor {
+    fn visit_pathedident(&mut self, &PathedIdent) {}
+    fn visit_array(&mut self, &Array) {}
+    fn visit_assign(&mut self, &Assign) {}
+    fn visit_binary(&mut self, &Binary) {}
+    fn visit_call(&mut self, &Call) {}
+    fn visit_character(&mut self, &Character) {}
+    fn visit_closure(&mut self, &Closure) {}
+    fn visit_fieldaccess(&mut self, &FieldAccess) {}
+    fn visit_forloop(&mut self, &ForLoop) {}
+    fn visit_functioncall(&mut self, &FunctionCall) {}
+    fn visit_if(&mut self, &If) {}
+    fn visit_let(&mut self, &Let) {}
+    fn visit_loop(&mut self, &Loop) {}
+    fn visit_macrocall(&mut self, &MacroCall) {}
+    fn visit_match(&mut self, &Match) {}
+    fn visit_methodcall(&mut self, &MethodCall) {}
+    fn visit_range(&mut self, &Range) {}
+    fn visit_return(&mut self, &Return) {}
+    fn visit_slice(&mut self, &Slice) {}
+    fn visit_string(&mut self, &String) {}
+    fn visit_tuple(&mut self, &Tuple) {}
+    fn visit_value(&mut self, &Value) {}
+
+
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_block(&mut self, &Block) {}
     fn visit_comment(&mut self, &Comment) {}
@@ -1149,48 +1231,39 @@ fn explicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, St
 // idea: trait w/associated types to avoid redefin fn types?
 
 fn implicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
-    let spt = pt;
-    let (pt, kind) = try_parse!(expression_ending_in_brace(pm, pt));
-
-    Progress::success(pt, Statement::Implicit(Expression { extent: ex(spt, pt), kind: kind }))
+    expression_ending_in_brace(pm, pt).map(Statement::Implicit)
 }
 
-fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionKind> {
+fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     pm.alternate(pt)
-        .one(map(expr_if, ExpressionKind::If))
-        .one(map(expr_for_loop, ExpressionKind::ForLoop))
-        .one(map(expr_loop, ExpressionKind::Loop))
-        .one(map(expr_match, ExpressionKind::Match))
-        .one(map(expr_block, ExpressionKind::Block))
+        .one(map(expr_if, Expression::If))
+        .one(map(expr_for_loop, Expression::ForLoop))
+        .one(map(expr_loop, Expression::Loop))
+        .one(map(expr_match, Expression::Match))
+        .one(map(expr_block, Expression::Block))
         .finish()
 }
 
 fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     let spt        = pt;
     let (pt, _)    = try_parse!(optional(whitespace)(pm, pt));
-    let (pt, kind) = try_parse!({
+    let (pt, mut expression) = try_parse!({
         pm.alternate(pt)
             .one(expression_ending_in_brace)
-            .one(map(expr_macro_call, ExpressionKind::MacroCall))
-            .one(map(expr_let, ExpressionKind::Let))
-            .one(map(expr_assign, ExpressionKind::Assign))
-            .one(map(expr_function_call, ExpressionKind::FunctionCall))
-            .one(map(expr_tuple, ExpressionKind::Tuple))
-            .one(map(expr_range, ExpressionKind::Range))
-            .one(map(expr_array, ExpressionKind::Array))
-            .one(map(character_literal, ExpressionKind::Character))
-            .one(map(string_literal, ExpressionKind::String))
-            .one(map(expr_closure, ExpressionKind::Closure))
-            .one(map(expr_return, ExpressionKind::Return))
-            .one(map(expr_value, ExpressionKind::Value))
+            .one(map(expr_macro_call, Expression::MacroCall))
+            .one(map(expr_let, Expression::Let))
+            .one(map(expr_assign, Expression::Assign))
+            .one(map(expr_function_call, Expression::FunctionCall))
+            .one(map(expr_tuple, Expression::Tuple))
+            .one(map(expr_range, Expression::Range))
+            .one(map(expr_array, Expression::Array))
+            .one(map(character_literal, Expression::Character))
+            .one(map(string_literal, Expression::String))
+            .one(map(expr_closure, Expression::Closure))
+            .one(map(expr_return, Expression::Return))
+            .one(map(expr_value, Expression::Value))
             .finish()
     });
-    let mpt = pt;
-
-    let mut expression = Expression {
-        extent: ex(spt, mpt),
-        kind,
-    };
 
     let mut pt = pt;
     loop {
@@ -1198,63 +1271,49 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
         pt = pt2;
         match tail {
             Some(ExpressionTail::Binary { op, rhs }) => {
-                expression = Expression {
+                expression = Expression::Binary(Binary {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::Binary(Binary {
-                        op: op,
-                        lhs: Box::new(expression),
-                        rhs: rhs,
-                    })
-                }
+                    op: op,
+                    lhs: Box::new(expression),
+                    rhs: rhs,
+                })
             }
             Some(ExpressionTail::FieldAccess { field }) => {
-                expression = Expression {
+                expression = Expression::FieldAccess(FieldAccess {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::FieldAccess(FieldAccess {
-                        value: Box::new(expression),
-                        field: field,
-                    })
-                }
+                    value: Box::new(expression),
+                    field: field,
+                })
             }
             Some(ExpressionTail::Call { args }) => {
-                expression = Expression {
+                expression = Expression::Call(Call {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::Call(Call {
-                        target: Box::new(expression),
-                        args: args
-                    })
-                }
+                    target: Box::new(expression),
+                    args: args
+                })
             }
             Some(ExpressionTail::MethodCall { name, turbofish, args }) => {
-                expression = Expression {
+                expression = Expression::MethodCall(MethodCall {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::MethodCall(MethodCall {
-                        receiver: Box::new(expression),
-                        name: name,
-                        turbofish: turbofish,
-                        args: args
-                    })
-                }
+                    receiver: Box::new(expression),
+                    name: name,
+                    turbofish: turbofish,
+                    args: args
+                })
             }
             Some(ExpressionTail::Range { rhs }) => {
-                expression = Expression {
+                expression = Expression::Range(Range {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::Range(Range {
-                        lhs: Some(Box::new(expression)),
-                        rhs
-                    })
-                }
-
+                    lhs: Some(Box::new(expression)),
+                    rhs
+                })
             }
             Some(ExpressionTail::Slice { range }) => {
-                expression = Expression {
+                expression = Expression::Slice(Slice {
                     extent: ex(spt, pt),
-                    kind: ExpressionKind::Slice(Slice {
-                        target: Box::new(expression),
-                        range
-                    })
-                }
-
+                    target: Box::new(expression),
+                    range
+                })
             }
             None => break,
         }
@@ -1265,10 +1324,11 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
 
 fn expr_macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroCall> {
     sequence!(pm, pt, {
+        spt  = point;
         name = ident;
         _x   = literal("!");
         args = expr_macro_call_args;
-    }, |_, _| MacroCall { name, args })
+    }, |_, pt| MacroCall { extent: ex(spt, pt), name, args })
 }
 
 fn expr_macro_call_args<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -1296,6 +1356,7 @@ fn expr_macro_call_square<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 
 fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
     sequence!(pm, pt, {
+        spt     = point;
         _x      = literal("let");
         _x      = whitespace;
         pattern = pattern;
@@ -1303,7 +1364,7 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
         typ     = optional(expr_let_type);
         _x      = optional(whitespace);
         value   = optional(expr_let_rhs);
-    }, |_, _| Let { pattern, typ, value: value.map(Box::new) })
+    }, |_, pt| Let { extent: ex(spt, pt), pattern, typ, value: value.map(Box::new) })
 }
 
 fn expr_let_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
@@ -1324,12 +1385,13 @@ fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expressi
 
 fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assign> {
     sequence!(pm, pt, {
+        spt   = point;
         name  = ident;
         _x    = optional(whitespace);
         _x    = literal("=");
         _x    = optional(whitespace);
         value = expression;
-    }, |_, _| Assign { name, value: Box::new(value) })
+    }, |_, pt| Assign { extent: ex(spt, pt), name, value: Box::new(value) })
 }
 
 fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
@@ -1395,16 +1457,18 @@ fn expr_followed_by_block_simple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Prog
         _x        = optional(whitespace);
         body      = block;
     }, |_, _| {
-        let condition = Expression {
-            extent: ex(spt, mpt),
-            kind: ExpressionKind::Value(Value { name: condition, literal: None }),
-        };
+        let condition = Expression::Value(Value {
+                extent: ex(spt, mpt),
+                name: condition,
+                literal: None,
+            });
         (condition, body)
     })
 }
 
 fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop> {
     sequence!(pm, pt, {
+        spt          = point;
         _x           = literal("for");
         _x           = whitespace;
         pattern      = pattern;
@@ -1412,19 +1476,26 @@ fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop
         _x           = literal("in");
         _x           = whitespace;
         (iter, body) = expr_followed_by_block;
-    }, |_, _| ForLoop { pattern, iter: Box::new(iter), body: Box::new(body) })
+    }, |_, pt| ForLoop {
+        extent: ex(spt, pt),
+        pattern,
+        iter: Box::new(iter),
+        body: Box::new(body),
+    })
 }
 
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
     sequence!(pm, pt, {
+        spt  = point;
         _x   = literal("loop");
         _x   = optional(whitespace);
         body = block;
-    }, |_, _| Loop { body: Box::new(body) })
+    }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body) })
 }
 
 fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
     sequence!(pm, pt, {
+        spt  = point;
         _x   = literal("match");
         _x   = whitespace;
         head = expression;
@@ -1432,7 +1503,7 @@ fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
         _x   = literal("{");
         arms = zero_or_more(match_arm);
         _x   = literal("}");
-    }, |_, _| Match { head: Box::new(head), arms })
+    }, |_, pt| Match { extent: ex(spt, pt), head: Box::new(head), arms })
 }
 
 fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
@@ -1452,33 +1523,37 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
 
 fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
     sequence!(pm, pt, {
+        spt     = point;
         _x      = literal("(");
         members = zero_or_more(comma_tail(expression));
         _x      = literal(")");
-    }, |_, _| Tuple { members })
+    }, |_, pt| Tuple { extent: ex(spt, pt), members })
 }
 
 fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
     sequence!(pm, pt, {
+        spt = point;
         _x  = literal("..");
         rhs = optional(expression);
-    }, |_, _| Range { lhs: None, rhs: rhs.map(Box::new) } )
+    }, |_, pt| Range { extent: ex(spt, pt), lhs: None, rhs: rhs.map(Box::new) } )
 }
 
 fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
     sequence!(pm, pt, {
+        spt     = point;
         _x      = literal("[");
         members = zero_or_more(comma_tail(expression));
         _x      = literal("]");
-    }, |_, _| Array { members })
+    }, |_, pt| Array { extent: ex(spt, pt), members })
 }
 
 fn character_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Character> {
     sequence!(pm, pt, {
+        spt   = point;
         _x    = literal("'");
         value = ext(char_char);
         _x    = literal("'");
-    }, |_, _| Character { value })
+    }, |_, pt| Character { extent: ex(spt, pt), value })
 }
 
 fn char_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
@@ -1510,10 +1585,11 @@ fn string_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String
 
 fn string_literal_normal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
     sequence!(pm, pt, {
+        spt   = point;
         _x    = literal("\"");
         value = ext(str_char);
         _x    = literal("\"");
-    }, |_, _| String { value })
+    }, |_, pt| String { extent: ex(spt, pt), value })
 }
 
 fn str_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
@@ -1538,11 +1614,12 @@ fn str_char<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, &'s str> {
 
 fn string_literal_raw<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
     sequence!(pm, pt, {
+        spt   = point;
         _x    = literal("r");
-        h = zero_or_more(literal("#"));
-        _x = literal(r#"""#);
+        h     = zero_or_more(literal("#"));
+        _x    = literal(r#"""#);
         value = ext(raw_raw(h.len()));
-    }, |_, _| String { value })
+    }, |_, pt| String { extent: ex(spt, pt), value })
 }
 
 fn raw_raw<'s>(hashes: usize) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, &'s str> {
@@ -1566,13 +1643,19 @@ fn raw_raw<'s>(hashes: usize) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress
 
 fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure> {
     sequence!(pm, pt, {
+        spt  = point;
         mov  = optional(literal("move"));
         _x   = optional(whitespace);
         _x   = literal("|");
         args = zero_or_more(comma_tail(expr_closure_arg));
         _x   = literal("|");
         body = expression;
-    }, |_, _| Closure { is_move: mov.is_some(), args, body: Box::new(body) })
+    }, |_, pt| Closure {
+        extent: ex(spt, pt),
+        is_move: mov.is_some(),
+        args,
+        body: Box::new(body),
+    })
 }
 
 fn expr_closure_arg<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ClosureArg> {
@@ -1606,10 +1689,11 @@ fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
     sequence!(pm, pt, {
+        spt     = point;
         name    = pathed_ident;
         _x      = optional(whitespace);
         literal = optional(expr_value_struct_literal);
-    }, |_, _| Value { name, literal } )
+    }, |_, pt| Value { extent: ex(spt, pt), name, literal } )
 }
 
 fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructLiteralField>> {
@@ -1630,10 +1714,11 @@ fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Pr
         _x    = optional(whitespace);
         value = optional(expr_value_struct_literal_field_value);
     }, |_, _| {
-        let value = value.unwrap_or_else(|| Expression {
+        let value = value.unwrap_or_else(|| Expression::Value(Value {
             extent: ex(spt, mpt),
-            kind: ExpressionKind::Value(Value { name: name.into(), literal: None }),
-        });
+            name: name.into(),
+            literal: None,
+        }));
         StructLiteralField { name, value }
     })
 }
@@ -1648,11 +1733,12 @@ fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>)
 
 fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionCall> {
     sequence!(pm, pt, {
+        spt  = point;
         name = pathed_ident;
         _x   = literal("(");
         args = zero_or_more(comma_tail(expression));
         _x   = literal(")");
-    }, |_, _| FunctionCall { name, args })
+    }, |_, pt| FunctionCall { extent: ex(spt, pt), name, args })
 }
 
 fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
@@ -2519,13 +2605,13 @@ mod test {
         let p = qp(block, "{ if a {} }");
         let p = unwrap_progress(p);
         assert!(p.statements.is_empty());
-        assert_eq!(p.expression.unwrap().extent, (2, 9));
+        assert_eq!(p.expression.unwrap().extent(), (2, 9));
     }
 
     #[test]
     fn statement_match_no_semicolon() {
         let p = qp(statement, "match a { _ => () }");
-        assert_eq!(unwrap_progress(p).implicit().unwrap().extent, (0, 19))
+        assert_eq!(unwrap_progress(p).implicit().unwrap().extent(), (0, 19))
     }
 
     #[test]
@@ -2537,55 +2623,55 @@ mod test {
     #[test]
     fn expr_true() {
         let p = qp(expression, "true");
-        assert_eq!(unwrap_progress(p).extent, (0, 4))
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
     fn expr_let_explicit_type() {
         let p = qp(expression, "let foo: bool");
-        assert_eq!(unwrap_progress(p).extent, (0, 13))
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
     fn expr_let_mut() {
         let p = qp(expression, "let mut pm = Master::new()");
-        assert_eq!(unwrap_progress(p).extent, (0, 26))
+        assert_eq!(unwrap_progress(p).extent(), (0, 26))
     }
 
     #[test]
     fn expr_let_no_value() {
         let p = qp(expression, "let pm");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
     fn expr_assign() {
         let p = qp(expression, "a = b");
-        assert_eq!(unwrap_progress(p).extent, (0, 5))
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
     fn expr_value_with_path() {
         let p = qp(expression, "Master::new()");
-        assert_eq!(unwrap_progress(p).extent, (0, 13))
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
     fn expr_field_access() {
         let p = qp(expression, "foo.bar");
-        assert_eq!(unwrap_progress(p).extent, (0, 7))
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
     fn expr_field_access_multiple() {
         let p = qp(expression, "foo.bar.baz");
-        assert_eq!(unwrap_progress(p).extent, (0, 11))
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
     fn expr_function_call() {
         let p = qp(expression, "foo()");
-        assert_eq!(unwrap_progress(p).extent, (0, 5))
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
@@ -2597,247 +2683,247 @@ mod test {
     #[test]
     fn expr_function_call_with_args() {
         let p = qp(expression, "foo(true)");
-        assert_eq!(unwrap_progress(p).extent, (0, 9))
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
     }
 
     #[test]
     fn expr_method_call() {
         let p = qp(expression, "foo.bar()");
-        assert_eq!(unwrap_progress(p).extent, (0, 9))
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
     }
 
     #[test]
     fn expr_method_call_multiple() {
         let p = qp(expression, "foo.bar().baz()");
-        assert_eq!(unwrap_progress(p).extent, (0, 15))
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
     fn expr_method_call_multiple_spaced() {
         let p = qp(expression, "foo.bar()\n    .baz()");
-        assert_eq!(unwrap_progress(p).extent, (0, 20))
+        assert_eq!(unwrap_progress(p).extent(), (0, 20))
     }
 
     #[test]
     fn expr_method_call_with_turbofish() {
         let p = qp(expression, "foo.bar::<u8>()");
-        assert_eq!(unwrap_progress(p).extent, (0, 15))
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
     fn expr_method_call_with_turbofish_nested() {
         let p = qp(expression, "e.into_iter().collect::<BTreeSet<_>>()");
-        assert_eq!(unwrap_progress(p).extent, (0, 38))
+        assert_eq!(unwrap_progress(p).extent(), (0, 38))
     }
 
     #[test]
     fn expr_call_of_expr() {
         let p = qp(expression, "{foo}()");
-        assert_eq!(unwrap_progress(p).extent, (0, 7))
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
     fn expr_for_loop() {
         let p = qp(expression, "for (a, b) in c {}");
-        assert_eq!(unwrap_progress(p).extent, (0, 18))
+        assert_eq!(unwrap_progress(p).extent(), (0, 18))
     }
 
     #[test]
     fn expr_loop() {
         let p = qp(expression, "loop {}");
-        assert_eq!(unwrap_progress(p).extent, (0, 7))
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
     fn expr_match() {
         let p = qp(expression, "match foo { _ => () }");
-        assert_eq!(unwrap_progress(p).extent, (0, 21))
+        assert_eq!(unwrap_progress(p).extent(), (0, 21))
     }
 
     #[test]
     fn expr_tuple() {
         let p = qp(expression, "(1, 2)");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
     fn expr_block() {
         let p = qp(expression, "{}");
-        assert_eq!(unwrap_progress(p).extent, (0, 2))
+        assert_eq!(unwrap_progress(p).extent(), (0, 2))
     }
 
     #[test]
     fn expr_if_() {
         let p = qp(expression, "if a {}");
-        assert_eq!(unwrap_progress(p).extent, (0, 7))
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
     fn expr_if_else() {
         let p = qp(expression, "if a {} else {}");
-        assert_eq!(unwrap_progress(p).extent, (0, 15))
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
     fn expr_if_else_if() {
         let p = qp(expression, "if a {} else if b {}");
-        assert_eq!(unwrap_progress(p).extent, (0, 20))
+        assert_eq!(unwrap_progress(p).extent(), (0, 20))
     }
 
     #[test]
     fn expr_binary_op() {
         let p = qp(expression, "a < b");
-        assert_eq!(unwrap_progress(p).extent, (0, 5))
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
     fn expr_binary_multiple() {
         let p = qp(expression, "1 + 2 + 3");
-        assert_eq!(unwrap_progress(p).extent, (0, 9))
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
     }
 
     #[test]
     fn expr_binary_op_two_char() {
         let p = qp(expression, "a >= b");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
     fn expr_binary_op_equality() {
         let p = qp(expression, "a == b != c");
-        assert_eq!(unwrap_progress(p).extent, (0, 11))
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
     fn expr_binary_op_boolean_logic() {
         let p = qp(expression, "a && b || c");
-        assert_eq!(unwrap_progress(p).extent, (0, 11))
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
     fn expr_braced_true() {
         let p = qp(expression, "{ true }");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn expr_macro_call_with_nested_parens() {
         let p = qp(expression, "foo!(())");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn expr_macro_call_with_square_brackets() {
         let p = qp(expression, "vec![]");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
     fn expr_range_both() {
         let p = qp(expression, "1..2");
-        assert_eq!(unwrap_progress(p).extent, (0, 4))
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
     fn expr_range_left() {
         let p = qp(expression, "3..");
-        assert_eq!(unwrap_progress(p).extent, (0, 3))
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
     }
 
     #[test]
     fn expr_range_right() {
         let p = qp(expression, "..4");
-        assert_eq!(unwrap_progress(p).extent, (0, 3))
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
     }
 
     #[test]
     fn expr_range_none() {
         let p = qp(expression, "..");
-        assert_eq!(unwrap_progress(p).extent, (0, 2))
+        assert_eq!(unwrap_progress(p).extent(), (0, 2))
     }
 
     #[test]
     fn expr_value_struct_literal() {
         let p = qp(expression, "Point { a: 1 }");
-        assert_eq!(unwrap_progress(p).extent, (0, 14))
+        assert_eq!(unwrap_progress(p).extent(), (0, 14))
     }
 
     #[test]
     fn expr_value_struct_literal_shortahnd() {
         let p = qp(expression, "Point { a }");
-        assert_eq!(unwrap_progress(p).extent, (0, 11))
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
     fn expr_closure() {
         let p = qp(expression, "|a| a");
-        assert_eq!(unwrap_progress(p).extent, (0, 5))
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
     fn expr_closure_multiple() {
         let p = qp(expression, "|a, b| a + b");
-        assert_eq!(unwrap_progress(p).extent, (0, 12))
+        assert_eq!(unwrap_progress(p).extent(), (0, 12))
     }
 
     #[test]
     fn expr_closure_explicit_type() {
         let p = qp(expression, "|a: u8| a");
-        assert_eq!(unwrap_progress(p).extent, (0, 9))
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
     }
 
     #[test]
     fn expr_closure_move() {
         let p = qp(expression, "move || 42");
-        assert_eq!(unwrap_progress(p).extent, (0, 10))
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
     }
 
     #[test]
     fn expr_return() {
         let p = qp(expression, "return 1");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn expr_array() {
         let p = qp(expression, "[1, 1]");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
     fn expr_char_literal() {
         let p = qp(expression, "'a'");
-        assert_eq!(unwrap_progress(p).extent, (0, 3))
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
     }
 
     #[test]
     fn expr_char_literal_escape() {
         let p = qp(expression, r"'\''");
-        assert_eq!(unwrap_progress(p).extent, (0, 4))
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
     fn expr_string_literal() {
         let p = qp(expression, r#""a""#);
-        assert_eq!(unwrap_progress(p).extent, (0, 3))
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
     }
 
     #[test]
     fn expr_string_literal_escape() {
         let p = qp(expression, r#""\"""#);
-        assert_eq!(unwrap_progress(p).extent, (0, 4))
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
     fn expr_string_literal_raw() {
         let p = qp(expression, r###"r#"foo"#"###);
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn expr_slice_index() {
         let p = qp(expression, "a[..2]");
-        assert_eq!(unwrap_progress(p).extent, (0, 6))
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
