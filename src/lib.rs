@@ -220,8 +220,22 @@ pub struct TypeCore {
 
 #[derive(Debug, Visit)]
 pub enum TypeGenerics {
-    Function(Extent),
-    Angle(Extent),
+    Function(TypeGenericsFunction),
+    Angle(TypeGenericsAngle),
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeGenericsFunction {
+    extent: Extent,
+    types: Vec<Type>,
+    return_type: Option<Box<Type>>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeGenericsAngle {
+    extent: Extent,
+    lifetimes: Vec<Lifetime>,
+    types: Vec<Type>,
 }
 
 #[derive(Debug, Copy, Clone, Visit)]
@@ -842,6 +856,8 @@ pub trait Visitor {
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_core(&mut self, &TypeCore) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
+    fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
+    fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_use(&mut self, &Use) {}
@@ -2418,26 +2434,30 @@ fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGene
         .finish()
 }
 
-fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
+fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGenericsFunction> {
     sequence!(pm, pt, {
+        spt = point;
         _x = literal("(");
-        _x = optional(one_or_more(comma_tail(typ)));
+        types = zero_or_more(comma_tail(typ));
         _x = literal(")");
         _x = optional(whitespace);
-        _x = optional(function_return_type);
-    }, |_, pt| ex(spt, pt))
+        return_type = optional(function_return_type);
+    }, |_, pt| TypeGenericsFunction {
+        extent: ex(spt, pt),
+        types,
+        return_type: return_type.map(Box::new)
+    })
 }
 
-fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
+fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGenericsAngle> {
     sequence!(pm, pt, {
-        _x = literal("<");
-        _x = optional(whitespace);
-        _x = optional(one_or_more(comma_tail(lifetime)));
-        _x = optional(one_or_more(comma_tail(typ)));
-        _x = literal(">");
-    }, |_, pt| ex(spt, pt))
+        spt       = point;
+        _x        = literal("<");
+        _x        = optional(whitespace);
+        lifetimes = zero_or_more(comma_tail(lifetime));
+        types     = zero_or_more(comma_tail(typ));
+        _x        = literal(">");
+    }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types })
 }
 
 fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
