@@ -13,6 +13,7 @@ extern crate serde_derive;
 extern crate lazy_static;
 
 extern crate rocket;
+extern crate rocket_contrib;
 
 use std::fs::File;
 use std::io::Read;
@@ -21,6 +22,7 @@ use std::collections::HashMap;
 use strata::{Algebra, ValidExtent};
 
 use rocket::response::content;
+use rocket_contrib::JSON;
 
 lazy_static! {
     static ref SOURCE: String = {
@@ -46,29 +48,44 @@ lazy_static! {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Done {
     functions: Vec<strata::ValidExtent>,
-    idents: Vec<strata::ValidExtent>, // mismatched type!
+    idents: Vec<strata::ValidExtent>, // mismatched type usize / u64!
 }
 
-#[get("/<id>")]
-fn index(id: &str) -> content::Plain<String> {
-    let key = INDEX.get(id).map_or(&[][..], Vec::as_slice);
-
-    let query = strata::Containing::new(DONE.functions.as_slice(), key);
-
-    let mut s = String::new();
-    for x in query.iter_tau() {
-        s.push_str(&SOURCE[(x.0 as usize)..(x.1 as usize)]);
-    }
-
-    // DONE.functions
-    // let ident = DONE.idents[id];
-    // let ident = &SOURCE[ident.0..ident.1];
-
-
-
-    content::Plain(s)
+#[derive(Debug, Serialize)]
+struct Homepage {
+    source: String,
 }
+
+#[derive(Debug, Serialize)]
+struct Ex {
+    extents: Vec<ValidExtent>,
+}
+
+#[get("/idents/<ident>")]
+fn idents(ident: &str) -> JSON<Ex> {
+    let idents = INDEX.get(ident).cloned().unwrap_or_else(Vec::new);
+    JSON(Ex { extents: idents })
+}
+
+#[get("/")]
+fn index() -> JSON<Homepage> {
+    JSON(Homepage { source: SOURCE.clone() })
+}
+
+// fn index2(id: &str) -> content::Plain<String> {
+//     let key = INDEX.get(id).map_or(&[][..], Vec::as_slice);
+
+//     let query = strata::Containing::new(DONE.functions.as_slice(), key);
+
+//     let mut s = String::new();
+//     for x in query.iter_tau() {
+//         s.push_str(&SOURCE[(x.0 as usize)..(x.1 as usize)]);
+//     }
+
+//     content::Plain(s)
+// }
 
 fn main() {
-    rocket::ignite().mount("/", routes![index]).launch();
+    println!("Indexed {} idents", INDEX.len());
+    rocket::ignite().mount("/", routes![index, idents]).launch();
 }
