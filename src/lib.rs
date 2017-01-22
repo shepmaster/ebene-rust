@@ -262,12 +262,6 @@ impl From<Ident> for PathedIdent {
     }
 }
 
-fn ex(start: Point, end: Point) -> Extent {
-    let ex = (start.offset, end.offset);
-    assert!(ex.1 >= ex.0, "{} does not come before {}", ex.1, ex.0);
-    ex
-}
-
 #[derive(Debug, Visit)]
 pub struct Struct {
     extent: Extent,
@@ -303,16 +297,36 @@ pub enum EnumVariantBody {
     Struct(Extent),
 }
 
-#[derive(Debug)]
-enum Argument {
-    SelfArgument,
-    Named { name: Ident, typ: Type }
+#[derive(Debug, Visit)]
+pub enum Argument {
+    SelfArgument(SelfArgument),
+    Named(NamedArgument),
 }
 
-#[derive(Debug)]
-enum TraitImplArgument {
-    SelfArgument,
-    Named { name: Option<Ident>, typ: Type }
+#[derive(Debug, Visit)]
+pub struct SelfArgument {
+    extent: Extent,
+    is_reference: Option<Extent>,
+    is_mutable: Option<Extent>,
+    name: Ident,
+}
+
+#[derive(Debug, Visit)]
+pub struct NamedArgument {
+    name: Ident,
+    typ: Type,
+}
+
+#[derive(Debug, Visit)]
+pub enum TraitImplArgument {
+    SelfArgument(SelfArgument),
+    Named(TraitImplArgumentNamed),
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitImplArgumentNamed {
+    name: Option<Ident>,
+    typ: Type,
 }
 
 #[derive(Debug, Visit)]
@@ -666,7 +680,7 @@ pub struct PatternWildcard {
     extent: Extent,
 }
 
-#[derive(Debug,Visit)]
+#[derive(Debug, Visit)]
 pub struct PatternCharacter {
     extent: Extent,
     value: Character,
@@ -793,6 +807,7 @@ impl Visit for Extent {
 }
 
 pub trait Visitor {
+    fn visit_argument(&mut self, &Argument) {}
     fn visit_array(&mut self, &Array) {}
     fn visit_assign(&mut self, &Assign) {}
     fn visit_attribute(&mut self, &Attribute) {}
@@ -829,6 +844,7 @@ pub trait Visitor {
     fn visit_match_arm(&mut self, &MatchArm) {}
     fn visit_method_call(&mut self, &MethodCall) {}
     fn visit_module(&mut self, &Module) {}
+    fn visit_named_argument(&mut self, &NamedArgument) {}
     fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
@@ -839,6 +855,7 @@ pub trait Visitor {
     fn visit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn visit_range(&mut self, &Range) {}
     fn visit_return(&mut self, &Return) {}
+    fn visit_self_argument(&mut self, &SelfArgument) {}
     fn visit_slice(&mut self, &Slice) {}
     fn visit_statement(&mut self, &Statement) {}
     fn visit_string(&mut self, &String) {}
@@ -847,6 +864,8 @@ pub trait Visitor {
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_top_level(&mut self, &TopLevel) {}
     fn visit_trait(&mut self, &Trait) {}
+    fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
+    fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
     fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn visit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn visit_trait_member(&mut self, &TraitMember) {}
@@ -856,8 +875,8 @@ pub trait Visitor {
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_core(&mut self, &TypeCore) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
-    fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
+    fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_use(&mut self, &Use) {}
@@ -1141,6 +1160,12 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     }))
 }
 
+fn ex(start: Point, end: Point) -> Extent {
+    let ex = (start.offset, end.offset);
+    assert!(ex.1 >= ex.0, "{} does not come before {}", ex.1, ex.0);
+    ex
+}
+
 fn ext<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
     where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
@@ -1231,23 +1256,28 @@ fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, G
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
     sequence!(pm, pt, {
         _x       = literal("(");
-        self_arg = optional(map(self_argument, |_| Argument::SelfArgument));
+        self_arg = optional(map(self_argument, Argument::SelfArgument));
         args     = zero_or_more_append(self_arg, comma_tail(function_argument));
         _x       = literal(")");
     }, move |_, _| args)
 }
 
-fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
-    let spt = pt;
+fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArgument> {
     sequence!(pm, pt, {
-        _x = optional(literal("&"));
-        _x = optional(whitespace);
-        _x = optional(literal("mut"));
-        _x = optional(whitespace);
-        _x = literal("self");
-        _x = optional(literal(","));
-        _x = optional(whitespace);
-    }, |_, pt| ex(spt, pt))
+        spt          = point;
+        is_reference = optional(ext(literal("&")));
+        _x           = optional(whitespace);
+        is_mutable   = optional(ext(literal("mut")));
+        _x           = optional(whitespace);
+        name         = ext(literal("self"));
+        _x           = optional(literal(","));
+        _x           = optional(whitespace);
+    }, |_, pt| SelfArgument {
+        extent: ex(spt, pt),
+        is_reference,
+        is_mutable,
+        name: Ident { extent: name }
+    })
 }
 
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
@@ -1256,7 +1286,7 @@ fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Arg
         _x   = literal(":");
         _x   = optional(whitespace);
         typ  = typ;
-    }, |_, _| Argument::Named { name, typ })
+    }, |_, _| Argument::Named(NamedArgument { name, typ }))
 }
 
 fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
@@ -2200,7 +2230,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
 fn trait_impl_function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<TraitImplArgument>> {
     sequence!(pm, pt, {
         _x       = literal("(");
-        self_arg = optional(map(self_argument, |_| TraitImplArgument::SelfArgument));
+        self_arg = optional(map(self_argument, TraitImplArgument::SelfArgument));
         args     = zero_or_more_append(self_arg, comma_tail(trait_impl_function_argument));
         _x       = literal(")");
     }, move |_, _| args)
@@ -2210,7 +2240,7 @@ fn trait_impl_function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progr
     sequence!(pm, pt, {
         name = optional(trait_impl_function_argument_name);
         typ  = typ;
-    }, |_, _| TraitImplArgument::Named { name, typ })
+    }, |_, _| TraitImplArgument::Named(TraitImplArgumentNamed { name, typ }))
 }
 
 fn trait_impl_function_argument_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
