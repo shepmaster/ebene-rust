@@ -3,7 +3,9 @@ import ReactDOM from 'react-dom';
 import './index.css';
 
 const Code = ({ source }) => (
-  <pre><code>{ source }</code></pre>
+  <pre className="layers-layer">
+    <code>{ source }</code>
+  </pre>
 );
 
 function *flattenExtents(extents) {
@@ -50,7 +52,7 @@ const Layer = ({ source, extents }) => {
   }
 
   return (
-    <pre>
+    <pre className="layers-layer layers-highlight">
       <code>
         { pieces }
       </code>
@@ -58,29 +60,30 @@ const Layer = ({ source, extents }) => {
   );
 };
 
-const Page = ({ source, extents }) => (
+const Result = ({ source, extents }) => (
   <div className="layers">
     <Code source={source} />
     <Layer source={source} extents={extents} />
   </div>
 );
 
+const Page = ({ results }) => {
+  const renderedResults = results.map(({ text, highlight }, i) => (
+    <li key={i}><Result source={text} extents={highlight} /></li>
+  ));
+
+  return <ol className="results">{ renderedResults }</ol>;
+};
 
 function doRender() {
   const query = (window.location.hash || '#peresil').slice(1);
 
-  const source = fetch("http://127.0.0.1:8080/api")
+  const searchResults = fetch(`http://127.0.0.1:8080/api/search?q=${query}`)
     .then(r => r.json());
 
-  const extents = fetch(`http://127.0.0.1:8080/api/idents/${query}`)
-    .then(r => r.json());
-
-  const data = Promise.all([source, extents])
-    .then(([source, extents]) => ({ source: source.source, extents: extents.extents }));
-
-  data.then(({ source, extents }) => {
+  searchResults.then(({ results }) => {
     ReactDOM.render(
-      <Page source={source} extents={extents} />,
+      <Page results={results} />,
       document.getElementById('app')
     );
   });

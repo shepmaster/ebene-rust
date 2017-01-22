@@ -1,4 +1,5 @@
-#![feature(plugin)]
+#![feature(field_init_shorthand)]
+#![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 
 extern crate strata;
@@ -16,12 +17,10 @@ extern crate rocket;
 extern crate rocket_contrib;
 
 use std::fs::File;
-use std::io::Read;
 use std::collections::HashMap;
 
 use strata::{Algebra, ValidExtent};
 
-use rocket::response::content;
 use rocket_contrib::JSON;
 
 lazy_static! {
@@ -46,6 +45,14 @@ struct Indexed {
     idents: Vec<strata::ValidExtent>, // mismatched type usize / u64!
 }
 
+impl std::ops::Index<strata::ValidExtent> for Indexed {
+    type Output = str;
+
+    fn index(&self, extent: ValidExtent) -> &str {
+        &self.source[(extent.0 as usize)..(extent.1 as usize)]
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct Homepage {
     source: String,
@@ -67,20 +74,45 @@ fn index() -> JSON<Homepage> {
     JSON(Homepage { source: INDEX.source.clone() })
 }
 
-// fn index2(id: &str) -> content::Plain<String> {
-//     let key = IDENT_INDEX.get(id).map_or(&[][..], Vec::as_slice);
+#[derive(Debug, Deserialize, FromForm)]
+struct Query {
+    q: String,
+}
 
-//     let query = strata::Containing::new(INDEX.functions.as_slice(), key);
+#[derive(Debug, Serialize)]
+struct SearchResult {
+    results: Vec<Function>,
+}
 
-//     let mut s = String::new();
-//     for x in query.iter_tau() {
-//         s.push_str(&INDEX.source[(x.0 as usize)..(x.1 as usize)]);
-//     }
+#[derive(Debug, Serialize)]
+struct Function {
+    text: String,
+    highlight: Vec<ValidExtent>,
+}
 
-//     content::Plain(s)
-// }
+#[get("/search?<query>")]
+fn search(query: Query) -> JSON<SearchResult> {
+    let ident_extents = IDENT_INDEX.get(&query.q).map_or(&[][..], Vec::as_slice);
+    let matching_functions = strata::Containing::new(INDEX.functions.as_slice(), ident_extents);
+
+    let mut results = Vec::new();
+    for function_extent in matching_functions.iter_tau() {
+        let function_text = &INDEX[function_extent];
+        let function_extent_range = &[function_extent][..]; // TODO: impl Algebra for (u64, u64)?
+
+        let highlighted_idents = strata::ContainedIn::new(ident_extents, function_extent_range);
+        let offset_highlight_extents = highlighted_idents.iter_tau().map(|(s, e)| {
+            // TODO: add an offset method?
+            (s - function_extent.0, e - function_extent.0)
+        }).collect();
+
+        results.push(Function { text: function_text.to_owned(), highlight: offset_highlight_extents });
+    }
+
+    JSON(SearchResult { results })
+}
 
 fn main() {
     println!("Indexed {} idents", IDENT_INDEX.len());
-    rocket::ignite().mount("/", routes![index, idents]).launch();
+    rocket::ignite().mount("/", routes![index, idents, search]).launch();
 }

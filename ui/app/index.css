@@ -2,8 +2,19 @@
     position: relative;
 }
 
-.layers > * {
+.layers-layer {
+    margin: 0;
+}
+
+.layers-highlight {
     position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+
+    /* Don't bother showing this text */
+    color: rgba(0, 0, 0, 0);
 }
 
 .highlight {
