@@ -215,7 +215,13 @@ pub struct TypeCore {
     extent: Extent,
     is_impl: Option<Extent>,
     name: PathedIdent,
-    generics: Option<Extent>,
+    generics: Option<TypeGenerics>,
+}
+
+#[derive(Debug, Visit)]
+pub enum TypeGenerics {
+    Function(Extent),
+    Angle(Extent),
 }
 
 #[derive(Debug, Copy, Clone, Visit)]
@@ -835,6 +841,7 @@ pub trait Visitor {
     fn visit_type(&mut self, &Type) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_core(&mut self, &TypeCore) {}
+    fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_use(&mut self, &Use) {}
@@ -2404,10 +2411,10 @@ fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     }, |_, _| ex(spt, pt))
 }
 
-fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGenerics> {
     pm.alternate(pt)
-        .one(typ_generics_fn)
-        .one(typ_generics_angle)
+        .one(map(typ_generics_fn, TypeGenerics::Function))
+        .one(map(typ_generics_angle, TypeGenerics::Angle))
         .finish()
 }
 
