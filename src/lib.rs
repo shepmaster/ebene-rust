@@ -142,37 +142,38 @@ pub struct Use {
 #[derive(Debug, Visit)]
 pub struct Function {
     pub extent: Extent,
-    #[visit(ignore)]
     pub header: FunctionHeader,
     body: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct FunctionHeader {
     extent: Extent,
     visibility: Option<Visibility>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
+    #[visit(ignore)]
     arguments: Vec<Argument>,
     return_type: Option<Type>,
     wheres: Vec<Where>,
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct TraitImplFunctionHeader {
     extent: Extent,
     visibility: Option<Visibility>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
+    #[visit(ignore)]
     arguments: Vec<TraitImplArgument>,
     return_type: Option<Type>,
     wheres: Vec<Where>,
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug)]
-struct GenericDeclarations {
+#[derive(Debug, Visit)]
+pub struct GenericDeclarations {
     lifetimes: Vec<Lifetime>,
     types: Vec<Generic>,
 }
@@ -220,11 +221,10 @@ fn ex(start: Point, end: Point) -> Extent {
 pub struct Struct {
     extent: Extent,
     name: Ident,
-    #[visit(ignore)]
     fields: Vec<StructField>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct StructField {
     extent: Extent,
     attributes: Vec<Attribute>,
@@ -236,19 +236,18 @@ pub struct StructField {
 pub struct Enum {
     extent: Extent,
     name: Ident,
-    #[visit(ignore)]
     variants: Vec<EnumVariant>,
 }
 
-#[derive(Debug)]
-struct EnumVariant {
+#[derive(Debug, Visit)]
+pub struct EnumVariant {
     extent: Extent,
     name: Ident,
     body: Option<EnumVariantBody>,
 }
 
-#[derive(Debug)]
-enum EnumVariantBody {
+#[derive(Debug, Visit)]
+pub enum EnumVariantBody {
     Tuple(Extent),
     Struct(Extent),
 }
@@ -265,8 +264,8 @@ enum TraitImplArgument {
     Named { name: Option<Ident>, typ: Type }
 }
 
-#[derive(Debug)]
-struct Where {
+#[derive(Debug, Visit)]
+pub struct Where {
     extent: Extent,
     name: Type,
     bounds: Vec<Type>,
@@ -417,12 +416,11 @@ pub struct FieldAccess {
 pub struct Value {
     extent: Extent,
     name: PathedIdent,
-    #[visit(ignore)]
     literal: Option<Vec<StructLiteralField>>,
 }
 
-#[derive(Debug)]
-struct StructLiteralField {
+#[derive(Debug, Visit)]
+pub struct StructLiteralField {
     name: Ident,
     value: Expression,
 }
@@ -487,13 +485,13 @@ pub struct If {
 pub struct Match {
     extent: Extent,
     head: Box<Expression>,
-    #[visit(ignore)]
     arms: Vec<MatchArm>,
 }
 
-#[derive(Debug)]
-struct MatchArm {
+#[derive(Debug, Visit)]
+pub struct MatchArm {
     extent: Extent,
+    #[visit(ignore)]
     pattern: Vec<Pattern>,
     body: Expression,
 }
@@ -535,12 +533,11 @@ pub struct Closure {
     extent: Extent,
     #[visit(ignore)]
     is_move: bool,
-    #[visit(ignore)]
     args: Vec<ClosureArg>,
     body: Box<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct ClosureArg {
     name: Ident,
     typ: Option<Type>,
@@ -596,20 +593,18 @@ struct PatternStructField {
 pub struct Trait {
     extent: Extent,
     name: Ident,
-    #[visit(ignore)]
     generics: Option<GenericDeclarations>,
-    #[visit(ignore)]
     members: Vec<TraitMember>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub enum TraitMember {
     Function(TraitImplFunction),
     Attribute(Attribute),
     Whitespace(Vec<Whitespace>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct TraitImplFunction {
     extent: Extent,
     header: TraitImplFunctionHeader,
@@ -619,25 +614,22 @@ pub struct TraitImplFunction {
 #[derive(Debug, Visit)]
 pub struct Impl {
     extent: Extent,
-    #[visit(ignore)]
     generics: Option<GenericDeclarations>,
     trait_name: Option<Type>,
     type_name: Type,
-    #[visit(ignore)]
     wheres: Vec<Where>,
-    #[visit(ignore)]
     body: Vec<ImplMember>,
 }
 
-#[derive(Debug)]
-enum ImplMember {
+#[derive(Debug, Visit)]
+pub enum ImplMember {
     Function(ImplFunction),
     Attribute(Attribute),
     Whitespace(Vec<Whitespace>),
 }
 
-#[derive(Debug)]
-struct ImplFunction {
+#[derive(Debug, Visit)]
+pub struct ImplFunction {
     extent: Extent,
     header: FunctionHeader,
     body: Block,
@@ -663,7 +655,7 @@ pub struct Module {
     body: Vec<TopLevel>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Visit)]
 pub struct Visibility {
     extent: Extent,
 }
@@ -718,50 +710,63 @@ impl Visit for Extent {
 }
 
 pub trait Visitor {
-    fn visit_pathedident(&mut self, &PathedIdent) {}
     fn visit_array(&mut self, &Array) {}
     fn visit_assign(&mut self, &Assign) {}
+    fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
+    fn visit_block(&mut self, &Block) {}
     fn visit_call(&mut self, &Call) {}
     fn visit_character(&mut self, &Character) {}
     fn visit_closure(&mut self, &Closure) {}
-    fn visit_fieldaccess(&mut self, &FieldAccess) {}
-    fn visit_forloop(&mut self, &ForLoop) {}
-    fn visit_functioncall(&mut self, &FunctionCall) {}
-    fn visit_if(&mut self, &If) {}
-    fn visit_let(&mut self, &Let) {}
-    fn visit_loop(&mut self, &Loop) {}
-    fn visit_macrocall(&mut self, &MacroCall) {}
-    fn visit_match(&mut self, &Match) {}
-    fn visit_methodcall(&mut self, &MethodCall) {}
-    fn visit_range(&mut self, &Range) {}
-    fn visit_return(&mut self, &Return) {}
-    fn visit_slice(&mut self, &Slice) {}
-    fn visit_string(&mut self, &String) {}
-    fn visit_tuple(&mut self, &Tuple) {}
-    fn visit_value(&mut self, &Value) {}
-
-
-    fn visit_attribute(&mut self, &Attribute) {}
-    fn visit_block(&mut self, &Block) {}
+    fn visit_closurearg(&mut self, &ClosureArg) {}
     fn visit_comment(&mut self, &Comment) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_enum(&mut self, &Enum) {}
+    fn visit_enumvariant(&mut self, &EnumVariant) {}
+    fn visit_enumvariantbody(&mut self, &EnumVariantBody) {}
     fn visit_expression(&mut self, &Expression) {}
+    fn visit_fieldaccess(&mut self, &FieldAccess) {}
+    fn visit_forloop(&mut self, &ForLoop) {}
     fn visit_function(&mut self, &Function) {}
+    fn visit_functioncall(&mut self, &FunctionCall) {}
+    fn visit_functionheader(&mut self, &FunctionHeader) {}
     fn visit_generic(&mut self, &Generic) {}
+    fn visit_genericdeclarations(&mut self, &GenericDeclarations) {}
     fn visit_ident(&mut self, &Ident) {}
+    fn visit_if(&mut self, &If) {}
     fn visit_impl(&mut self, &Impl) {}
+    fn visit_implfunction(&mut self, &ImplFunction) {}
+    fn visit_implmember(&mut self, &ImplMember) {}
+    fn visit_let(&mut self, &Let) {}
     fn visit_lifetime(&mut self, &Lifetime) {}
+    fn visit_loop(&mut self, &Loop) {}
+    fn visit_macrocall(&mut self, &MacroCall) {}
     fn visit_macrorules(&mut self, &MacroRules) {}
+    fn visit_match(&mut self, &Match) {}
+    fn visit_matcharm(&mut self, &MatchArm) {}
+    fn visit_methodcall(&mut self, &MethodCall) {}
     fn visit_module(&mut self, &Module) {}
+    fn visit_pathedident(&mut self, &PathedIdent) {}
+    fn visit_range(&mut self, &Range) {}
+    fn visit_return(&mut self, &Return) {}
+    fn visit_slice(&mut self, &Slice) {}
     fn visit_statement(&mut self, &Statement) {}
+    fn visit_string(&mut self, &String) {}
     fn visit_struct(&mut self, &Struct) {}
+    fn visit_structfield(&mut self, &StructField) {}
+    fn visit_structliteralfield(&mut self, &StructLiteralField) {}
     fn visit_toplevel(&mut self, &TopLevel) {}
     fn visit_trait(&mut self, &Trait) {}
+    fn visit_traitimplfunction(&mut self, &TraitImplFunction) {}
+    fn visit_traitimplfunctionheader(&mut self, &TraitImplFunctionHeader) {}
+    fn visit_traitmember(&mut self, &TraitMember) {}
+    fn visit_tuple(&mut self, &Tuple) {}
     fn visit_type(&mut self, &Type) {}
     fn visit_typealias(&mut self, &TypeAlias) {}
     fn visit_use(&mut self, &Use) {}
+    fn visit_value(&mut self, &Value) {}
+    fn visit_visibility(&mut self, &Visibility) {}
+    fn visit_where(&mut self, &Where) {}
     fn visit_whitespace(&mut self, &Whitespace) {}
 }
 
