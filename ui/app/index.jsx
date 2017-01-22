@@ -6,18 +6,53 @@ const Code = ({ source }) => (
   <pre><code>{ source }</code></pre>
 );
 
+function *flattenExtents(extents) {
+  for (const [start, end] of extents) {
+    yield start;
+    yield end;
+  }
+}
+
+function *sourceCutpoints(source, extents) {
+  yield 0;
+  yield *flattenExtents(extents);
+  yield source.length;
+}
+
+function *highlightedSourceWindows(source, extents) {
+  const p = sourceCutpoints(source, extents);
+  let start = undefined;
+  let end = undefined;
+  let highlight = false;
+
+  for (const i of p) {
+    start = end;
+    end = i;
+    if (start === undefined || end == undefined) { continue; }
+
+    const s = source.slice(start, end);
+    yield [highlight, s];
+    highlight = !highlight;
+  }
+}
+
 const Layer = ({ source, extents }) => {
-  const [start, end] = extents[0];
-  let head = source.slice(0, start);
-  let middle = source.slice(start, end);
-  let tail = source.slice(end);
+  const pieces = [];
+  let count = 0;
+
+  for (const [highlight, text] of highlightedSourceWindows(source, extents)) {
+    if (highlight) {
+      pieces.push(<span key={count} className="highlight">{ text }</span>);
+    } else {
+      pieces.push(text);
+    }
+    count++;
+  }
 
   return (
     <pre>
       <code>
-        { head }
-        <span className="highlight">{ middle }</span>
-        { tail }
+        { pieces }
       </code>
     </pre>
   );
