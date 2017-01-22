@@ -204,7 +204,13 @@ pub struct Ident {
 pub struct PathedIdent {
     extent: Extent,
     idents: Vec<Ident>,
-    turbofish: Option<Extent>,
+    turbofish: Option<Turbofish>,
+}
+
+#[derive(Debug, Visit)]
+pub struct Turbofish {
+    extent: Extent,
+    types: Vec<Type>,
 }
 
 impl From<Ident> for PathedIdent {
@@ -447,7 +453,7 @@ pub struct MethodCall {
     extent: Extent,
     receiver: Box<Expression>,
     name: Ident,
-    turbofish: Option<Extent>,
+    turbofish: Option<Turbofish>,
     args: Vec<Expression>,
 }
 
@@ -556,7 +562,7 @@ enum ExpressionTail {
     Binary { op: Extent, rhs: Box<Expression> },
     FieldAccess { field: Ident },
     Call { args: Vec<Expression> },
-    MethodCall { name: Ident, turbofish: Option<Extent>, args: Vec<Expression> },
+    MethodCall { name: Ident, turbofish: Option<Turbofish>, args: Vec<Expression> },
     Range { rhs: Option<Box<Expression>> },
     Slice { range: Box<Expression> },
 }
@@ -802,6 +808,7 @@ pub trait Visitor {
     fn visit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn visit_trait_member(&mut self, &TraitMember) {}
     fn visit_tuple(&mut self, &Tuple) {}
+    fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_use(&mut self, &Use) {}
@@ -1891,12 +1898,13 @@ fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident>
     }, |_, _| ident)
 }
 
-fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> {
     sequence!(pm, pt, {
+        spt   = point;
         _x    = literal("::<");
-        types = ext(one_or_more(comma_tail(typ)));
+        types = zero_or_more(comma_tail(typ));
         _x    = literal(">");
-    }, |_, _| types)
+    }, |_, pt| Turbofish { extent: ex(spt, pt), types: types })
 }
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
