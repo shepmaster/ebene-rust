@@ -2,17 +2,6 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import './index.css';
 
-const source = fetch("http://127.0.0.1:8080/api")
-      .then(r => r.json());
-
-const query = (window.location.hash || '#peresil').slice(1);
-
-const extents = fetch(`http://127.0.0.1:8080/api/idents/${query}`)
-      .then(r => r.json());
-
-const data = Promise.all([source, extents])
-      .then(([source, extents]) => ({ source: source.source, extents: extents.extents }));
-
 const Code = ({ source }) => (
   <pre><code>{ source }</code></pre>
 );
@@ -41,9 +30,26 @@ const Page = ({ source, extents }) => (
   </div>
 );
 
-data.then(({ source, extents }) => {
-  ReactDOM.render(
-    <Page source={source} extents={extents} />,
-    document.getElementById('app')
-  );
-});
+
+function doRender() {
+  const query = (window.location.hash || '#peresil').slice(1);
+
+  const source = fetch("http://127.0.0.1:8080/api")
+    .then(r => r.json());
+
+  const extents = fetch(`http://127.0.0.1:8080/api/idents/${query}`)
+    .then(r => r.json());
+
+  const data = Promise.all([source, extents])
+    .then(([source, extents]) => ({ source: source.source, extents: extents.extents }));
+
+  data.then(({ source, extents }) => {
+    ReactDOM.render(
+      <Page source={source} extents={extents} />,
+      document.getElementById('app')
+    );
+  });
+}
+
+window.onhashchange = doRender;
+doRender();
