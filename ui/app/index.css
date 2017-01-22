@@ -1,0 +1,11 @@
+.layers {
+    position: relative;
+}
+
+.layers > * {
+    position: absolute;
+}
+
+.highlight {
+    background-color: rgba(255, 0, 0, 0.5);
+}
