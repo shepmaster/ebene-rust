@@ -43,6 +43,20 @@ struct Indexed {
     source: String,
     functions: Vec<strata::ValidExtent>,
     idents: Vec<strata::ValidExtent>, // mismatched type usize / u64!
+    enums: Vec<strata::ValidExtent>,
+    structs: Vec<strata::ValidExtent>,
+}
+
+impl Indexed {
+    fn layer_for(&self, name: &str) -> Result<&[strata::ValidExtent], ()> {
+        match name {
+            "function" => Ok(&self.functions),
+            "ident" => Ok(&self.idents),
+            "enum" => Ok(&self.enums),
+            "struct" => Ok(&self.structs),
+            _ => Err(()),
+        }
+    }
 }
 
 impl std::ops::Index<strata::ValidExtent> for Indexed {
@@ -77,15 +91,16 @@ fn index() -> JSON<Homepage> {
 #[derive(Debug, Deserialize, FromForm)]
 struct Query {
     q: String,
+    within: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SearchResults {
+    results: Vec<SearchResult>,
 }
 
 #[derive(Debug, Serialize)]
 struct SearchResult {
-    results: Vec<Function>,
-}
-
-#[derive(Debug, Serialize)]
-struct Function {
     text: String,
     highlight: Vec<ValidExtent>,
 }
@@ -95,24 +110,27 @@ fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
 }
 
 #[get("/search?<query>")]
-fn search(query: Query) -> JSON<SearchResult> {
+fn search(query: Query) -> JSON<SearchResults> {
     let ident_extents = IDENT_INDEX.get(&query.q).map_or(&[][..], Vec::as_slice);
-    let matching_functions = strata::Containing::new(INDEX.functions.as_slice(), ident_extents);
+
+    let container_extents = INDEX.layer_for(&query.within).expect("Unknown layer");
+
+    let matching_container = strata::Containing::new(container_extents, ident_extents);
 
     let mut results = Vec::new();
-    for function_extent in matching_functions.iter_tau() {
-        let function_text = &INDEX[function_extent];
-        let function_extent_range = &[function_extent][..]; // TODO: impl Algebra for (u64, u64)?
+    for container_extent in matching_container.iter_tau() {
+        let container_text = &INDEX[container_extent];
+        let container_extent_range = &[container_extent][..]; // TODO: impl Algebra for (u64, u64)?
 
-        let highlighted_idents = strata::ContainedIn::new(ident_extents, function_extent_range);
+        let highlighted_idents = strata::ContainedIn::new(ident_extents, container_extent_range);
         let offset_highlight_extents = highlighted_idents.iter_tau().map(|ex| {
-            offset_backwards(ex, function_extent.0)
+            offset_backwards(ex, container_extent.0)
         }).collect();
 
-        results.push(Function { text: function_text.to_owned(), highlight: offset_highlight_extents });
+        results.push(SearchResult { text: container_text.to_owned(), highlight: offset_highlight_extents });
     }
 
-    JSON(SearchResult { results })
+    JSON(SearchResults { results })
 }
 
 fn main() {

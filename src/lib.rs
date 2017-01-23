@@ -263,7 +263,7 @@ impl From<Ident> for PathedIdent {
 
 #[derive(Debug, Visit)]
 pub struct Struct {
-    extent: Extent,
+    pub extent: Extent,
     name: Ident,
     fields: Vec<StructField>,
 }
@@ -278,7 +278,7 @@ pub struct StructField {
 
 #[derive(Debug, Visit)]
 pub struct Enum {
-    extent: Extent,
+    pub extent: Extent,
     name: Ident,
     variants: Vec<EnumVariant>,
 }

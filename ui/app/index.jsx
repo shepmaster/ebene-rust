@@ -75,23 +75,41 @@ const ResultList = ({ results }) => {
   return <ol className="results">{ renderedResults }</ol>;
 };
 
-const Page = ({ results, onQueryChange }) => (
+const Page = ({ results, onQueryChange, onContainerChange }) => (
   <div>
-    <input onChange={e => onQueryChange(e.target.value)} />
+    <input onChange={e => onQueryChange(e.target.value)}></input>
+    <select onChange={e => onContainerChange(e.target.value)}>
+      <option value="function">Function</option>
+      <option value="enum">Enum</option>
+      <option value="struct">Struct</option>
+    </select>
     <ResultList results={results} />
   </div>
 );
 
-function doRender(query) {
-  const searchResults = fetch(`http://127.0.0.1:8080/api/search?q=${query}`)
+var query = 'peresil';
+var within = 'function';
+
+function updateQuery(v) {
+  query = v;
+  doRender();
+}
+
+function updateWithin(v) {
+  within = v;
+  doRender();
+}
+
+function doRender() {
+  const searchResults = fetch(`http://127.0.0.1:8080/api/search?q=${query}&within=${within}`)
     .then(r => r.json());
 
   searchResults.then(({ results }) => {
     ReactDOM.render(
-      <Page results={results} onQueryChange={doRender} />,
+      <Page results={results} onQueryChange={updateQuery} onContainerChange={updateWithin} />,
       document.getElementById('app')
     );
   });
 }
 
-doRender('peresil');
+doRender();

@@ -8,13 +8,15 @@ use std::fs::File;
 use std::env;
 use std::io::prelude::*;
 
-use strata_rs::{Visit, Visitor, Function};
+use strata_rs::{Visit, Visitor};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct IndexedFile {
     source: String,
     functions: Vec<strata_rs::Extent>,
     idents: Vec<strata_rs::Extent>,
+    enums: Vec<strata_rs::Extent>,
+    structs: Vec<strata_rs::Extent>,
 }
 
 impl Visitor for IndexedFile {
@@ -22,8 +24,16 @@ impl Visitor for IndexedFile {
         self.idents.push(ident.extent);
     }
 
-    fn visit_function(&mut self, function: &Function) {
+    fn visit_function(&mut self, function: &strata_rs::Function) {
         self.functions.push(function.extent);
+    }
+
+    fn visit_enum(&mut self, e: &strata_rs::Enum) {
+        self.enums.push(e.extent);
+    }
+
+    fn visit_struct(&mut self, s: &strata_rs::Struct) {
+        self.structs.push(s.extent);
     }
 }
 
