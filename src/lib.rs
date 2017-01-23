@@ -186,6 +186,7 @@ pub struct MacroRules {
 #[derive(Debug, Visit)]
 pub struct Generic {
     extent: Extent,
+    name: Ident,
 }
 
 #[derive(Debug, Visit)]
@@ -1217,7 +1218,7 @@ fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Prog
 }
 
 fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
-    ident(pm, pt).map(|ex| Generic { extent: ex.extent })
+    ident(pm, pt).map(|name| Generic { extent: name.extent, name })
 }
 
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
