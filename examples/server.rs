@@ -90,6 +90,10 @@ struct Function {
     highlight: Vec<ValidExtent>,
 }
 
+fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
+    (extent.0 - offset, extent.1 - offset)
+}
+
 #[get("/search?<query>")]
 fn search(query: Query) -> JSON<SearchResult> {
     let ident_extents = IDENT_INDEX.get(&query.q).map_or(&[][..], Vec::as_slice);
@@ -101,9 +105,8 @@ fn search(query: Query) -> JSON<SearchResult> {
         let function_extent_range = &[function_extent][..]; // TODO: impl Algebra for (u64, u64)?
 
         let highlighted_idents = strata::ContainedIn::new(ident_extents, function_extent_range);
-        let offset_highlight_extents = highlighted_idents.iter_tau().map(|(s, e)| {
-            // TODO: add an offset method?
-            (s - function_extent.0, e - function_extent.0)
+        let offset_highlight_extents = highlighted_idents.iter_tau().map(|ex| {
+            offset_backwards(ex, function_extent.0)
         }).collect();
 
         results.push(Function { text: function_text.to_owned(), highlight: offset_highlight_extents });
