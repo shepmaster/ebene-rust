@@ -67,7 +67,7 @@ const Result = ({ source, extents }) => (
   </div>
 );
 
-const Page = ({ results }) => {
+const ResultList = ({ results }) => {
   const renderedResults = results.map(({ text, highlight }, i) => (
     <li key={i}><Result source={text} extents={highlight} /></li>
   ));
@@ -75,19 +75,23 @@ const Page = ({ results }) => {
   return <ol className="results">{ renderedResults }</ol>;
 };
 
-function doRender() {
-  const query = (window.location.hash || '#peresil').slice(1);
+const Page = ({ results, onQueryChange }) => (
+  <div>
+    <input onChange={e => onQueryChange(e.target.value)} />
+    <ResultList results={results} />
+  </div>
+);
 
+function doRender(query) {
   const searchResults = fetch(`http://127.0.0.1:8080/api/search?q=${query}`)
     .then(r => r.json());
 
   searchResults.then(({ results }) => {
     ReactDOM.render(
-      <Page results={results} />,
+      <Page results={results} onQueryChange={doRender} />,
       document.getElementById('app')
     );
   });
 }
 
-window.onhashchange = doRender;
-doRender();
+doRender('peresil');
