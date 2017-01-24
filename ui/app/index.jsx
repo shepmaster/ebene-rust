@@ -87,7 +87,7 @@ const Page = ({ results, onQueryChange, onContainerChange }) => (
   </div>
 );
 
-var query = 'peresil';
+var query = '';
 var within = 'function';
 
 function updateQuery(v) {

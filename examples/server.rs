@@ -90,7 +90,7 @@ fn index() -> JSON<Homepage> {
 
 #[derive(Debug, Deserialize, FromForm)]
 struct Query {
-    q: String,
+    q: Option<String>,
     within: String,
 }
 
@@ -110,25 +110,42 @@ fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
 }
 
 #[get("/search?<query>")]
-fn search(query: Query) -> JSON<SearchResults> {
-    let ident_extents = IDENT_INDEX.get(&query.q).map_or(&[][..], Vec::as_slice);
-
-    let container_extents = INDEX.layer_for(&query.within).expect("Unknown layer");
-
-    let matching_container = strata::Containing::new(container_extents, ident_extents);
-
-    let mut results = Vec::new();
-    for container_extent in matching_container.iter_tau() {
-        let container_text = &INDEX[container_extent];
-        let container_extent_range = &[container_extent][..]; // TODO: impl Algebra for (u64, u64)?
-
-        let highlighted_idents = strata::ContainedIn::new(ident_extents, container_extent_range);
-        let offset_highlight_extents = highlighted_idents.iter_tau().map(|ex| {
-            offset_backwards(ex, container_extent.0)
-        }).collect();
-
-        results.push(SearchResult { text: container_text.to_owned(), highlight: offset_highlight_extents });
+fn search(mut query: Query) -> JSON<SearchResults> {
+    if query.q.as_ref().map_or(true, String::is_empty) {
+        query.q = None;
     }
+
+    // TODO: Figure out deduplication;
+    let results = match query.q {
+        Some(ref q) => {
+            let ident_extents = IDENT_INDEX.get(q).map_or(&[][..], Vec::as_slice);
+
+            let container_extents = INDEX.layer_for(&query.within).expect("Unknown layer");
+
+            let matching_container = strata::Containing::new(container_extents, ident_extents);
+
+            matching_container.iter_tau().map(|container_extent| {
+                let container_text = &INDEX[container_extent];
+
+                let container_extent_range = &[container_extent][..]; // TODO: impl Algebra for (u64, u64)?
+                let highlighted_idents = strata::ContainedIn::new(ident_extents, container_extent_range);
+                let offset_highlight_extents = highlighted_idents.iter_tau().map(|ex| {
+                    offset_backwards(ex, container_extent.0)
+                }).collect();
+
+                SearchResult { text: container_text.to_owned(), highlight: offset_highlight_extents }
+            }).collect()
+        }
+        None => {
+            let container_extents = INDEX.layer_for(&query.within).expect("Unknown layer");
+            let matching_container = container_extents;
+            matching_container.iter_tau().map(|container_extent| {
+                let container_text = &INDEX[container_extent];
+
+                SearchResult { text: container_text.to_owned(), highlight: Vec::new() }
+            }).collect()
+        }
+    };
 
     JSON(SearchResults { results })
 }
