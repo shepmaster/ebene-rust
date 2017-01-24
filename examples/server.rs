@@ -20,7 +20,7 @@ extern crate rocket_contrib;
 extern crate quick_error;
 
 use std::fs::File;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use strata::{Algebra, ValidExtent};
 
@@ -41,15 +41,9 @@ lazy_static! {
         let f = File::open("self.json").expect("no open file");
         serde_json::de::from_reader(f).expect("no parse")
     };
-    static ref IDENT_INDEX: HashMap<String, Vec<ValidExtent>> = {
-        let mut index = HashMap::new();
-        for ex in &INDEX.idents {
-            let s = INDEX.source[(ex.0 as usize)..(ex.1 as usize)].to_owned();
-            index.entry(s).or_insert_with(Vec::new).push(ex.clone());
-        }
-        index
-    };
 }
+
+const IDENT_TERM_NAME: &'static str = "ident";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Indexed {
@@ -58,6 +52,7 @@ struct Indexed {
     idents: Vec<strata::ValidExtent>, // mismatched type usize / u64!
     enums: Vec<strata::ValidExtent>,
     structs: Vec<strata::ValidExtent>,
+    terms: BTreeMap<String, BTreeMap<String, Vec<strata::ValidExtent>>>,
 }
 
 impl Indexed {
@@ -69,6 +64,13 @@ impl Indexed {
             "struct" => Some(&self.structs),
             _ => None,
         }
+    }
+
+    fn term_for(&self, name: &str, value: &str) -> Option<&[strata::ValidExtent]> {
+        self.terms.get(name)
+            .map(|x| {
+                x.get(value).map_or(&[][..], Vec::as_slice)
+            })
     }
 }
 
@@ -98,11 +100,9 @@ fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
                 .ok_or_else(|| Error::UnknownLayer(name))
         }
         StructuredQuery::Terminal { name, value } => {
-            if name == "ident" {
-                Ok(Box::new(IDENT_INDEX.get(&value).map_or(&[][..], Vec::as_slice)))
-            } else {
-                Err(Error::UnknownTerminal(name))
-            }
+            INDEX.term_for(&name, &value)
+                .map(|e| Box::new(e) as Box<Algebra>)
+                .ok_or_else(|| Error::UnknownTerminal(name))
         }
     }
 }
@@ -119,7 +119,7 @@ struct Ex {
 
 #[get("/idents/<ident>")]
 fn idents(ident: &str) -> JSON<Ex> {
-    let idents = IDENT_INDEX.get(ident).cloned().unwrap_or_else(Vec::new);
+    let idents = INDEX.term_for(IDENT_TERM_NAME, ident).map_or_else(Vec::new, |s| s.to_owned());
     JSON(Ex { extents: idents })
 }
 
@@ -216,6 +216,6 @@ fn search(query: Query) -> JSON<SearchResults> {
 }
 
 fn main() {
-    println!("Indexed {} idents", IDENT_INDEX.len());
+    println!("Indexed {:?} idents", INDEX.terms.get(IDENT_TERM_NAME).map(|s| s.len()));
     rocket::ignite().mount("/", routes![index, idents, search]).launch();
 }

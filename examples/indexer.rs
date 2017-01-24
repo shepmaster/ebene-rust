@@ -7,6 +7,7 @@ extern crate serde_derive;
 use std::fs::File;
 use std::env;
 use std::io::prelude::*;
+use std::collections::{BTreeMap, BTreeSet};
 
 use strata_rs::{Visit, Visitor};
 
@@ -17,6 +18,28 @@ struct IndexedFile {
     idents: Vec<strata_rs::Extent>,
     enums: Vec<strata_rs::Extent>,
     structs: Vec<strata_rs::Extent>,
+    terms: BTreeMap<String, BTreeMap<String, BTreeSet<strata_rs::Extent>>>,
+}
+
+impl IndexedFile {
+    fn finalize(&mut self) {
+        let mut ident_terms = BTreeMap::new();
+
+        for &ex in &self.idents {
+            let s = self[ex].to_owned();
+            ident_terms.entry(s).or_insert_with(BTreeSet::new).insert(ex);
+        }
+
+        self.terms.insert("ident".into(), ident_terms);
+    }
+}
+
+impl std::ops::Index<strata_rs::Extent> for IndexedFile {
+    type Output = str;
+
+    fn index(&self, extent: strata_rs::Extent) -> &str {
+        &self.source[extent.0..extent.1]
+    }
 }
 
 impl Visitor for IndexedFile {
@@ -49,6 +72,8 @@ fn main() {
     for i in &file {
         i.visit(&mut d);
     }
+
+    d.finalize();
 
     let mut out = std::io::stdout();
     serde_json::ser::to_writer(&mut out, &d).expect("Nope");
