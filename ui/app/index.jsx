@@ -75,7 +75,7 @@ const ResultList = ({ results }) => {
   return <ol className="results">{ renderedResults }</ol>;
 };
 
-const Page = ({ results, onQueryChange, onContainerChange }) => (
+const SimpleInput = ({ onQueryChange, onContainerChange }) => (
   <div>
     <input onChange={e => onQueryChange(e.target.value)}></input>
     <select onChange={e => onContainerChange(e.target.value)}>
@@ -83,12 +83,47 @@ const Page = ({ results, onQueryChange, onContainerChange }) => (
       <option value="enum">Enum</option>
       <option value="struct">Struct</option>
     </select>
+  </div>
+);
+
+const AdvancedInput = ({ onAdvancedQueryChange, onAdvancedHighlightChange }) => (
+  <div className="advanced-input">
+    <textarea className="advanced-input__query" onChange={e => onAdvancedQueryChange(e.target.value)}></textarea>
+    <textarea className="advanced-input__highlight" onChange={e => onAdvancedHighlightChange(e.target.value)}></textarea>
+  </div>
+);
+
+const Input = ({ advanced, onQueryChange, onContainerChange, onAdvancedQueryChange, onAdvancedHighlightChange }) => {
+  if (advanced) {
+    return (
+      <AdvancedInput onAdvancedQueryChange={onAdvancedQueryChange}
+                     onAdvancedHighlightChange={onAdvancedHighlightChange} />
+    );
+  } else {
+    return (
+      <SimpleInput onQueryChange={onQueryChange}
+                   onContainerChange={onContainerChange} />
+    );
+  }
+};
+
+const Page = ({ results, advanced, toggleAdvanced, onQueryChange, onContainerChange, onAdvancedQueryChange, onAdvancedHighlightChange }) => (
+  <div>
+    <button onClick={toggleAdvanced}>Mode</button>
+    <Input advanced={advanced}
+           onQueryChange={onQueryChange}
+           onContainerChange={onContainerChange}
+           onAdvancedQueryChange={onAdvancedQueryChange}
+           onAdvancedHighlightChange={onAdvancedHighlightChange} />
     <ResultList results={results} />
   </div>
 );
 
 var query = '';
 var within = 'function';
+var advanced = false;
+var advancedQuery = '{"Layer": {"name": "function"}}';
+var advancedHighlight = '{"Terminal": {"name": "ident", "value": "pm"}}';
 
 function updateQuery(v) {
   query = v;
@@ -100,25 +135,44 @@ function updateWithin(v) {
   doRender();
 }
 
+function toggleAdvanced() {
+  advanced = !advanced;
+  doRender();
+}
+
+function updateAdvancedQuery(v) {
+  advancedQuery = v;
+  doRender();
+}
+
+function updateAdvancedHighlight(v) {
+  advancedHighlight = v;
+  doRender();
+}
+
 function doRender() {
   var url = `http://127.0.0.1:8080/api/search?`;
 
-  if (query !== '') {
-    const structuredQuery = {
-      Containing: [
-        { Layer: { name: within } },
-        { Terminal: { name: "ident", value: query } },
-      ],
-    };
-
-    url += `q=${JSON.stringify(structuredQuery)}`;
-
-    const structuredHighlight = { Terminal: { name: "ident", value: query } };
-
-    url += `&h=${JSON.stringify(structuredHighlight)}`;
+  if (advanced) {
+    url += `q=${advancedQuery}&h=${advancedHighlight}`;
   } else {
-    const structuredQuery = { Layer: { name: within } };
-    url += `q=${JSON.stringify(structuredQuery)}`;
+    if (query !== '') {
+      const structuredQuery = {
+        Containing: [
+          { Layer: { name: within } },
+          { Terminal: { name: "ident", value: query } },
+        ],
+      };
+
+      url += `q=${JSON.stringify(structuredQuery)}`;
+
+      const structuredHighlight = { Terminal: { name: "ident", value: query } };
+
+      url += `&h=${JSON.stringify(structuredHighlight)}`;
+    } else {
+      const structuredQuery = { Layer: { name: within } };
+      url += `q=${JSON.stringify(structuredQuery)}`;
+    }
   }
 
   const searchResults = fetch(url)
@@ -126,7 +180,13 @@ function doRender() {
 
   searchResults.then(({ results }) => {
     ReactDOM.render(
-      <Page results={results} onQueryChange={updateQuery} onContainerChange={updateWithin} />,
+      <Page advanced={advanced}
+            results={results}
+            toggleAdvanced={toggleAdvanced}
+            onQueryChange={updateQuery}
+            onContainerChange={updateWithin}
+            onAdvancedQueryChange={updateAdvancedQuery}
+            onAdvancedHighlightChange={updateAdvancedHighlight} />,
       document.getElementById('app')
     );
   });
