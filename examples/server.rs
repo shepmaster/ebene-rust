@@ -67,6 +67,28 @@ impl std::ops::Index<strata::ValidExtent> for Indexed {
     }
 }
 
+fn compile(q: StructuredQuery) -> Box<Algebra> {
+    match q {
+        StructuredQuery::Containing(lhs, rhs) => {
+            let lhs = compile(*lhs);
+            let rhs = compile(*rhs);
+            Box::new(strata::Containing::new(lhs, rhs))
+        }
+        StructuredQuery::ContainedIn(lhs, rhs) => {
+            let lhs = compile(*lhs);
+            let rhs = compile(*rhs);
+            Box::new(strata::ContainedIn::new(lhs, rhs))
+        }
+        StructuredQuery::Layer { name } => {
+            Box::new(INDEX.layer_for(&name).expect("No layer!"))
+        }
+        StructuredQuery::Terminal { name, value } => {
+            assert_eq!(name, "ident");
+            Box::new(IDENT_INDEX.get(&value).map_or(&[][..], Vec::as_slice))
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct Homepage {
     source: String,
@@ -88,13 +110,37 @@ fn index() -> JSON<Homepage> {
     JSON(Homepage { source: INDEX.source.clone() })
 }
 
-#[derive(Debug, Deserialize, FromForm)]
+#[derive(Debug, FromForm)]
 struct Query {
-    q: Option<String>,
-    within: String,
+    // renaming attributes?
+    q: Option<JsonString<StructuredQuery>>,
+    h: Option<JsonString<StructuredQuery>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct JsonString<T>(T);
+
+impl<'v, T> rocket::request::FromFormValue<'v> for JsonString<T>
+    where T: serde::Deserialize,
+{
+    type Error = serde_json::Error;
+
+    fn from_form_value(form_value: &'v str) -> Result<Self, Self::Error> {
+        use rocket::http::uri::URI;
+        let form_value = URI::percent_decode(form_value.as_bytes()).expect("NO UTF-8");
+        serde_json::from_str(&form_value).map(JsonString)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+enum StructuredQuery {
+    Containing(Box<StructuredQuery>, Box<StructuredQuery>),
+    ContainedIn(Box<StructuredQuery>, Box<StructuredQuery>),
+    Layer { name: String },
+    Terminal { name: String, value: String },
+}
+
+#[derive(Debug, Default, Serialize)]
 struct SearchResults {
     results: Vec<SearchResult>,
 }
@@ -110,42 +156,30 @@ fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
 }
 
 #[get("/search?<query>")]
-fn search(mut query: Query) -> JSON<SearchResults> {
-    if query.q.as_ref().map_or(true, String::is_empty) {
-        query.q = None;
-    }
-
-    // TODO: Figure out deduplication;
-    let results = match query.q {
-        Some(ref q) => {
-            let ident_extents = IDENT_INDEX.get(q).map_or(&[][..], Vec::as_slice);
-
-            let container_extents = INDEX.layer_for(&query.within).expect("Unknown layer");
-
-            let matching_container = strata::Containing::new(container_extents, ident_extents);
-
-            matching_container.iter_tau().map(|container_extent| {
-                let container_text = &INDEX[container_extent];
-
-                let container_extent_range = &[container_extent][..]; // TODO: impl Algebra for (u64, u64)?
-                let highlighted_idents = strata::ContainedIn::new(ident_extents, container_extent_range);
-                let offset_highlight_extents = highlighted_idents.iter_tau().map(|ex| {
-                    offset_backwards(ex, container_extent.0)
-                }).collect();
-
-                SearchResult { text: container_text.to_owned(), highlight: offset_highlight_extents }
-            }).collect()
-        }
-        None => {
-            let container_extents = INDEX.layer_for(&query.within).expect("Unknown layer");
-            let matching_container = container_extents;
-            matching_container.iter_tau().map(|container_extent| {
-                let container_text = &INDEX[container_extent];
-
-                SearchResult { text: container_text.to_owned(), highlight: Vec::new() }
-            }).collect()
-        }
+fn search(query: Query) -> JSON<SearchResults> {
+    let q = match query.q {
+        Some(q) => q.0,
+        None => return JSON(SearchResults::default()),
     };
+
+    let container_query = compile(q);
+    let highlight_query = query.h.map(|h| compile(h.0));
+
+    let results = container_query.iter_tau().map(|container_extent| {
+        let container_text = &INDEX[container_extent];
+
+        let highlight_extents = highlight_query.as_ref().map(|highlight_query| {
+            let container_extent_range = &[container_extent][..]; // TODO: impl Algebra for (u64, u64)?;
+
+            let this_result_highlights = strata::ContainedIn::new(highlight_query, container_extent_range);
+
+            this_result_highlights.iter_tau().map(|ex| {
+                offset_backwards(ex, container_extent.0)
+            }).collect()
+        }).unwrap_or_else(Default::default);
+
+        SearchResult { text: container_text.to_owned(), highlight: highlight_extents }
+    }).collect();
 
     JSON(SearchResults { results })
 }
