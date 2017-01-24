@@ -11,21 +11,26 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use strata_rs::{Visit, Visitor};
 
+// This is a bit inefficient:
+// 1. We add identifiers to the layers, but probably don't want to search that.
+// 1. We have to do a lot of extra allocation for all the `entry` calls
+// We could split this into two types, performing the finalize step at conversion
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct IndexedFile {
     source: String,
-    functions: Vec<strata_rs::Extent>,
-    idents: Vec<strata_rs::Extent>,
-    enums: Vec<strata_rs::Extent>,
-    structs: Vec<strata_rs::Extent>,
+    layers: BTreeMap<String, BTreeSet<strata_rs::Extent>>,
     terms: BTreeMap<String, BTreeMap<String, BTreeSet<strata_rs::Extent>>>,
 }
 
 impl IndexedFile {
+    fn add_extent(&mut self, layer: &str, extent: strata_rs::Extent) {
+        self.layers.entry(layer.into()).or_insert_with(BTreeSet::new).insert(extent);
+    }
+
     fn finalize(&mut self) {
         let mut ident_terms = BTreeMap::new();
 
-        for &ex in &self.idents {
+        for &ex in self.layers.get("ident").expect("No identifiers present") {
             let s = self[ex].to_owned();
             ident_terms.entry(s).or_insert_with(BTreeSet::new).insert(ex);
         }
@@ -44,19 +49,19 @@ impl std::ops::Index<strata_rs::Extent> for IndexedFile {
 
 impl Visitor for IndexedFile {
     fn visit_ident(&mut self, ident: &strata_rs::Ident) {
-        self.idents.push(ident.extent);
+        self.add_extent("ident", ident.extent);
     }
 
     fn visit_function(&mut self, function: &strata_rs::Function) {
-        self.functions.push(function.extent);
+        self.add_extent("function", function.extent);
     }
 
     fn visit_enum(&mut self, e: &strata_rs::Enum) {
-        self.enums.push(e.extent);
+        self.add_extent("enum", e.extent);
     }
 
     fn visit_struct(&mut self, s: &strata_rs::Struct) {
-        self.structs.push(s.extent);
+        self.add_extent("struct", s.extent);
     }
 }
 

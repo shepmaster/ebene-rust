@@ -45,25 +45,17 @@ lazy_static! {
 
 const IDENT_TERM_NAME: &'static str = "ident";
 
+// This struct has mismatched "extent" types with the indexer...
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Indexed {
     source: String,
-    functions: Vec<strata::ValidExtent>,
-    idents: Vec<strata::ValidExtent>, // mismatched type usize / u64!
-    enums: Vec<strata::ValidExtent>,
-    structs: Vec<strata::ValidExtent>,
+    layers: BTreeMap<String, Vec<strata::ValidExtent>>,
     terms: BTreeMap<String, BTreeMap<String, Vec<strata::ValidExtent>>>,
 }
 
 impl Indexed {
     fn layer_for(&self, name: &str) -> Option<&[strata::ValidExtent]> {
-        match name {
-            "function" => Some(&self.functions),
-            "ident" => Some(&self.idents),
-            "enum" => Some(&self.enums),
-            "struct" => Some(&self.structs),
-            _ => None,
-        }
+        self.layers.get(name).map(Vec::as_slice)
     }
 
     fn term_for(&self, name: &str, value: &str) -> Option<&[strata::ValidExtent]> {
