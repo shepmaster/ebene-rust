@@ -99,25 +99,37 @@ fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct Homepage {
-    source: String,
+#[get("/dev/source")]
+fn dev_source() -> JSON<String> {
+    JSON(INDEX.source.clone())
 }
 
-#[derive(Debug, Serialize)]
-struct Ex {
-    extents: Vec<ValidExtent>,
+#[get("/dev/layers")]
+fn dev_layers() -> JSON<Vec<String>> {
+    JSON(INDEX.layers.keys().map(Clone::clone).collect())
 }
 
-#[get("/idents/<ident>")]
-fn idents(ident: &str) -> JSON<Ex> {
-    let idents = INDEX.term_for(IDENT_TERM_NAME, ident).map_or_else(Vec::new, |s| s.to_owned());
-    JSON(Ex { extents: idents })
+#[get("/dev/layers/<layer>")]
+fn dev_layer(layer: &str) -> Option<JSON<Vec<ValidExtent>>> {
+    INDEX.layers.get(layer).map(|l| JSON(l.to_owned()))
 }
 
-#[get("/")]
-fn index() -> JSON<Homepage> {
-    JSON(Homepage { source: INDEX.source.clone() })
+#[get("/dev/terms/")]
+fn dev_terms() -> JSON<Vec<String>> {
+    JSON(INDEX.terms.keys().map(Clone::clone).collect())
+}
+
+#[get("/dev/terms/<kind>")]
+fn dev_terms_kinds(kind: &str) -> Option<JSON<Vec<String>>> {
+    INDEX.terms.get(kind)
+        .map(|k| JSON(k.keys().map(Clone::clone).collect()))
+}
+
+#[get("/dev/terms/<kind>/<term>")]
+fn dev_terms_kind(kind: &str, term: &str) -> Option<JSON<Vec<ValidExtent>>> {
+    INDEX.terms.get(kind)
+        .and_then(|k| k.get(term))
+        .map(|t| JSON(t.to_owned()))
 }
 
 #[derive(Debug, FromForm)]
@@ -209,5 +221,5 @@ fn search(query: Query) -> JSON<SearchResults> {
 
 fn main() {
     println!("Indexed {:?} idents", INDEX.terms.get(IDENT_TERM_NAME).map(|s| s.len()));
-    rocket::ignite().mount("/", routes![index, idents, search]).launch();
+    rocket::ignite().mount("/", routes![dev_source, dev_layers, dev_layer, dev_terms, dev_terms_kinds, dev_terms_kind, search]).launch();
 }
