@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 lazy_static = "0.2.2"
+quick-error = "1.1.0"
 rocket = "0.1.5"
 rocket_codegen = "0.1.5"
 rocket_contrib = "0.1.5"

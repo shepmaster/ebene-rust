@@ -16,12 +16,25 @@ extern crate lazy_static;
 extern crate rocket;
 extern crate rocket_contrib;
 
+#[macro_use]
+extern crate quick_error;
+
 use std::fs::File;
 use std::collections::HashMap;
 
 use strata::{Algebra, ValidExtent};
 
 use rocket_contrib::JSON;
+
+use quick_error::ResultExt;
+
+quick_error! {
+    #[derive(Debug, Clone, PartialEq)]
+    enum Error {
+        UnknownLayer(name: String)
+        UnknownTerminal(name: String)
+    }
+}
 
 lazy_static! {
     static ref INDEX: Indexed = {
@@ -48,13 +61,13 @@ struct Indexed {
 }
 
 impl Indexed {
-    fn layer_for(&self, name: &str) -> Result<&[strata::ValidExtent], ()> {
+    fn layer_for(&self, name: &str) -> Option<&[strata::ValidExtent]> {
         match name {
-            "function" => Ok(&self.functions),
-            "ident" => Ok(&self.idents),
-            "enum" => Ok(&self.enums),
-            "struct" => Ok(&self.structs),
-            _ => Err(()),
+            "function" => Some(&self.functions),
+            "ident" => Some(&self.idents),
+            "enum" => Some(&self.enums),
+            "struct" => Some(&self.structs),
+            _ => None,
         }
     }
 }
@@ -67,24 +80,29 @@ impl std::ops::Index<strata::ValidExtent> for Indexed {
     }
 }
 
-fn compile(q: StructuredQuery) -> Box<Algebra> {
+fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
     match q {
         StructuredQuery::Containing(lhs, rhs) => {
-            let lhs = compile(*lhs);
-            let rhs = compile(*rhs);
-            Box::new(strata::Containing::new(lhs, rhs))
+            let lhs = compile(*lhs)?;
+            let rhs = compile(*rhs)?;
+            Ok(Box::new(strata::Containing::new(lhs, rhs)))
         }
         StructuredQuery::ContainedIn(lhs, rhs) => {
-            let lhs = compile(*lhs);
-            let rhs = compile(*rhs);
-            Box::new(strata::ContainedIn::new(lhs, rhs))
+            let lhs = compile(*lhs)?;
+            let rhs = compile(*rhs)?;
+            Ok(Box::new(strata::ContainedIn::new(lhs, rhs)))
         }
         StructuredQuery::Layer { name } => {
-            Box::new(INDEX.layer_for(&name).expect("No layer!"))
+            INDEX.layer_for(&name)
+                .map(|e| Box::new(e) as Box<Algebra>)
+                .ok_or_else(|| Error::UnknownLayer(name))
         }
         StructuredQuery::Terminal { name, value } => {
-            assert_eq!(name, "ident");
-            Box::new(IDENT_INDEX.get(&value).map_or(&[][..], Vec::as_slice))
+            if name == "ident" {
+                Ok(Box::new(IDENT_INDEX.get(&value).map_or(&[][..], Vec::as_slice)))
+            } else {
+                Err(Error::UnknownTerminal(name))
+            }
         }
     }
 }
@@ -117,18 +135,31 @@ struct Query {
     h: Option<JsonString<StructuredQuery>>,
 }
 
+quick_error! {
+    #[derive(Debug)]
+    enum JsonStringError {
+        NotUtf8(err: std::str::Utf8Error, val: String) {
+            context(val: &'a str, err: std::str::Utf8Error) -> (err, val.to_owned())
+        }
+        NotDecodable(err: serde_json::Error, val: String) {
+            context(val: String, err: serde_json::Error) -> (err, val)
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct JsonString<T>(T);
 
 impl<'v, T> rocket::request::FromFormValue<'v> for JsonString<T>
     where T: serde::Deserialize,
 {
-    type Error = serde_json::Error;
+    type Error = JsonStringError;
 
     fn from_form_value(form_value: &'v str) -> Result<Self, Self::Error> {
         use rocket::http::uri::URI;
-        let form_value = URI::percent_decode(form_value.as_bytes()).expect("NO UTF-8");
-        serde_json::from_str(&form_value).map(JsonString)
+        let form_value = URI::percent_decode(form_value.as_bytes()).context(form_value)?;
+        let form_value = serde_json::from_str(&form_value).context(form_value.into_owned())?;
+        Ok(JsonString(form_value))
     }
 }
 
@@ -162,8 +193,8 @@ fn search(query: Query) -> JSON<SearchResults> {
         None => return JSON(SearchResults::default()),
     };
 
-    let container_query = compile(q);
-    let highlight_query = query.h.map(|h| compile(h.0));
+    let container_query = compile(q).expect("can't compile query");
+    let highlight_query = query.h.map(|h| compile(h.0).expect("Can't compile highlight"));
 
     let results = container_query.iter_tau().map(|container_extent| {
         let container_text = &INDEX[container_extent];
