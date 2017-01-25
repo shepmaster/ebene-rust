@@ -22,6 +22,14 @@ struct IndexedFile {
     terms: BTreeMap<String, BTreeMap<String, BTreeSet<strata_rs::Extent>>>,
 }
 
+// TODO: This was extracted from `strata`; should be made public
+fn find_invalid_gc_list_pair(extents: &[strata_rs::Extent]) -> Option<(strata_rs::Extent, strata_rs::Extent)> {
+    extents
+        .windows(2)
+        .map(|window| (window[0], window[1]))
+        .find(|&(a, b)| b.0 <= a.0 || b.1 <= a.1)
+}
+
 impl IndexedFile {
     fn add_extent(&mut self, layer: &str, extent: strata_rs::Extent) {
         self.layers.entry(layer.into()).or_insert_with(BTreeSet::new).insert(extent);
@@ -33,6 +41,13 @@ impl IndexedFile {
         for &ex in self.layers.get("ident").expect("No identifiers present") {
             let s = self[ex].to_owned();
             ident_terms.entry(s).or_insert_with(BTreeSet::new).insert(ex);
+        }
+
+        for (layer_name, layer_extents) in &self.layers {
+            let layer_extents: Vec<_> = layer_extents.iter().cloned().collect();
+            if let Some(bad) = find_invalid_gc_list_pair(&layer_extents) {
+                println!("WARNING: Layer {} has invalid extents: {:?}", layer_name, bad);
+            }
         }
 
         self.terms.insert("ident".into(), ident_terms);
