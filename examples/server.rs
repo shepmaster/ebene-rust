@@ -86,6 +86,31 @@ fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
             let rhs = compile(*rhs)?;
             Ok(Box::new(strata::ContainedIn::new(lhs, rhs)))
         }
+        StructuredQuery::NotContaining(lhs, rhs) => {
+            let lhs = compile(*lhs)?;
+            let rhs = compile(*rhs)?;
+            Ok(Box::new(strata::NotContaining::new(lhs, rhs)))
+        }
+        StructuredQuery::NotContainedIn(lhs, rhs) => {
+            let lhs = compile(*lhs)?;
+            let rhs = compile(*rhs)?;
+            Ok(Box::new(strata::NotContainedIn::new(lhs, rhs)))
+        }
+        StructuredQuery::BothOf(lhs, rhs) => {
+            let lhs = compile(*lhs)?;
+            let rhs = compile(*rhs)?;
+            Ok(Box::new(strata::BothOf::new(lhs, rhs)))
+        }
+        StructuredQuery::OneOf(lhs, rhs) => {
+            let lhs = compile(*lhs)?;
+            let rhs = compile(*rhs)?;
+            Ok(Box::new(strata::OneOf::new(lhs, rhs)))
+        }
+        StructuredQuery::FollowedBy(lhs, rhs) => {
+            let lhs = compile(*lhs)?;
+            let rhs = compile(*rhs)?;
+            Ok(Box::new(strata::FollowedBy::new(lhs, rhs)))
+        }
         StructuredQuery::Layer { name } => {
             INDEX.layer_for(&name)
                 .map(|e| Box::new(e) as Box<Algebra>)
@@ -136,7 +161,7 @@ fn dev_terms_kind(kind: &str, term: &str) -> Option<JSON<Vec<ValidExtent>>> {
 struct Query {
     // renaming attributes?
     q: Option<JsonString<StructuredQuery>>,
-    h: Option<JsonString<StructuredQuery>>,
+    h: Option<JsonString<Vec<StructuredQuery>>>,
 }
 
 quick_error! {
@@ -171,6 +196,11 @@ impl<'v, T> rocket::request::FromFormValue<'v> for JsonString<T>
 enum StructuredQuery {
     Containing(Box<StructuredQuery>, Box<StructuredQuery>),
     ContainedIn(Box<StructuredQuery>, Box<StructuredQuery>),
+    NotContaining(Box<StructuredQuery>, Box<StructuredQuery>),
+    NotContainedIn(Box<StructuredQuery>, Box<StructuredQuery>),
+    BothOf(Box<StructuredQuery>, Box<StructuredQuery>),
+    OneOf(Box<StructuredQuery>, Box<StructuredQuery>),
+    FollowedBy(Box<StructuredQuery>, Box<StructuredQuery>),
     Layer { name: String },
     Terminal { name: String, value: String },
 }
@@ -183,7 +213,7 @@ struct SearchResults {
 #[derive(Debug, Serialize)]
 struct SearchResult {
     text: String,
-    highlight: Vec<ValidExtent>,
+    highlights: Vec<Vec<ValidExtent>>,
 }
 
 fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
@@ -198,12 +228,14 @@ fn search(query: Query) -> JSON<SearchResults> {
     };
 
     let container_query = compile(q).expect("can't compile query");
-    let highlight_query = query.h.map(|h| compile(h.0).expect("Can't compile highlight"));
+    let highlights = query.h.map_or_else(Vec::new, |h| h.0);
+    let highlight_queries: Result<Vec<_>, _> = highlights.into_iter().map(compile).collect();
+    let highlight_queries = highlight_queries.expect("Can't compile highlights");
 
     let results = container_query.iter_tau().map(|container_extent| {
         let container_text = &INDEX[container_extent];
 
-        let highlight_extents = highlight_query.as_ref().map(|highlight_query| {
+        let highlights_extents = highlight_queries.iter().map(|highlight_query| {
             let container_extent_range = &[container_extent][..]; // TODO: impl Algebra for (u64, u64)?;
 
             let this_result_highlights = strata::ContainedIn::new(highlight_query, container_extent_range);
@@ -211,9 +243,9 @@ fn search(query: Query) -> JSON<SearchResults> {
             this_result_highlights.iter_tau().map(|ex| {
                 offset_backwards(ex, container_extent.0)
             }).collect()
-        }).unwrap_or_else(Default::default);
+        }).collect();
 
-        SearchResult { text: container_text.to_owned(), highlight: highlight_extents }
+        SearchResult { text: container_text.to_owned(), highlights: highlights_extents }
     }).collect();
 
     JSON(SearchResults { results })

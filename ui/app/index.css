@@ -17,6 +17,26 @@
     color: rgba(0, 0, 0, 0);
 }
 
-.highlight {
+.layers-highlight-0 .highlight {
     background-color: rgba(255, 0, 0, 0.5);
+}
+
+.layers-highlight-1 .highlight {
+    background-color: rgba(0, 255, 0, 0.5);
+}
+
+.layers-highlight-2 .highlight {
+    background-color: rgba(0, 0, 255, 0.5);
+}
+
+.layers-highlight-3 .highlight {
+    background-color: rgba(255, 255, 0, 0.5);
+}
+
+.layers-highlight-4 .highlight {
+    background-color: rgba(0, 255, 255, 0.5);
+}
+
+.layers-highlight-5 .highlight {
+    background-color: rgba(255, 0, 255, 0.5);
 }

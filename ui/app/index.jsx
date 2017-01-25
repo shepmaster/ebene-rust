@@ -38,7 +38,7 @@ function *highlightedSourceWindows(source, extents) {
   }
 }
 
-const Layer = ({ source, extents }) => {
+const Layer = ({ source, extents, index }) => {
   const pieces = [];
   let count = 0;
 
@@ -52,7 +52,7 @@ const Layer = ({ source, extents }) => {
   }
 
   return (
-    <pre className="layers-layer layers-highlight">
+    <pre className={`layers-layer layers-highlight layers-highlight-${index}`}>
       <code>
         { pieces }
       </code>
@@ -60,16 +60,22 @@ const Layer = ({ source, extents }) => {
   );
 };
 
-const Result = ({ source, extents }) => (
-  <div className="layers">
-    <Code source={source} />
-    <Layer source={source} extents={extents} />
-  </div>
-);
+const Result = ({ source, highlights }) => {
+  const layers = highlights.map((highlight, i) => (
+    <Layer key={i} source={source} extents={highlight} index={i} />
+  ));
+
+  return (
+    <div className="layers">
+      <Code source={source} />
+      { layers }
+    </div>
+  );
+};
 
 const ResultList = ({ results }) => {
-  const renderedResults = results.map(({ text, highlight }, i) => (
-    <li key={i}><Result source={text} extents={highlight} /></li>
+  const renderedResults = results.map(({ text, highlights }, i) => (
+    <li key={i}><Result source={text} highlights={highlights} /></li>
   ));
 
   return <ol className="results">{ renderedResults }</ol>;
@@ -166,7 +172,7 @@ function doRender() {
 
       url += `q=${JSON.stringify(structuredQuery)}`;
 
-      const structuredHighlight = { Terminal: { name: "ident", value: query } };
+      const structuredHighlight = [{ Terminal: { name: "ident", value: query } }];
 
       url += `&h=${JSON.stringify(structuredHighlight)}`;
     } else {
