@@ -880,6 +880,84 @@ pub trait Visitor {
     fn visit_visibility(&mut self, &Visibility) {}
     fn visit_where(&mut self, &Where) {}
     fn visit_whitespace(&mut self, &Whitespace) {}
+
+    fn exit_argument(&mut self, &Argument) {}
+    fn exit_array(&mut self, &Array) {}
+    fn exit_assign(&mut self, &Assign) {}
+    fn exit_attribute(&mut self, &Attribute) {}
+    fn exit_binary(&mut self, &Binary) {}
+    fn exit_block(&mut self, &Block) {}
+    fn exit_call(&mut self, &Call) {}
+    fn exit_character(&mut self, &Character) {}
+    fn exit_closure(&mut self, &Closure) {}
+    fn exit_closure_arg(&mut self, &ClosureArg) {}
+    fn exit_comment(&mut self, &Comment) {}
+    fn exit_crate(&mut self, &Crate) {}
+    fn exit_enum(&mut self, &Enum) {}
+    fn exit_enum_variant(&mut self, &EnumVariant) {}
+    fn exit_enum_variant_body(&mut self, &EnumVariantBody) {}
+    fn exit_expression(&mut self, &Expression) {}
+    fn exit_field_access(&mut self, &FieldAccess) {}
+    fn exit_for_loop(&mut self, &ForLoop) {}
+    fn exit_function(&mut self, &Function) {}
+    fn exit_function_call(&mut self, &FunctionCall) {}
+    fn exit_function_header(&mut self, &FunctionHeader) {}
+    fn exit_generic(&mut self, &Generic) {}
+    fn exit_generic_declarations(&mut self, &GenericDeclarations) {}
+    fn exit_ident(&mut self, &Ident) {}
+    fn exit_if(&mut self, &If) {}
+    fn exit_impl(&mut self, &Impl) {}
+    fn exit_impl_function(&mut self, &ImplFunction) {}
+    fn exit_impl_member(&mut self, &ImplMember) {}
+    fn exit_let(&mut self, &Let) {}
+    fn exit_lifetime(&mut self, &Lifetime) {}
+    fn exit_loop(&mut self, &Loop) {}
+    fn exit_macro_call(&mut self, &MacroCall) {}
+    fn exit_macro_rules(&mut self, &MacroRules) {}
+    fn exit_match(&mut self, &Match) {}
+    fn exit_match_arm(&mut self, &MatchArm) {}
+    fn exit_method_call(&mut self, &MethodCall) {}
+    fn exit_module(&mut self, &Module) {}
+    fn exit_named_argument(&mut self, &NamedArgument) {}
+    fn exit_pathed_ident(&mut self, &PathedIdent) {}
+    fn exit_pattern(&mut self, &Pattern) {}
+    fn exit_pattern_character(&mut self, &PatternCharacter) {}
+    fn exit_pattern_ident(&mut self, &PatternIdent) {}
+    fn exit_pattern_struct(&mut self, &PatternStruct) {}
+    fn exit_pattern_struct_field(&mut self, &PatternStructField) {}
+    fn exit_pattern_tuple(&mut self, &PatternTuple) {}
+    fn exit_pattern_wildcard(&mut self, &PatternWildcard) {}
+    fn exit_range(&mut self, &Range) {}
+    fn exit_return(&mut self, &Return) {}
+    fn exit_self_argument(&mut self, &SelfArgument) {}
+    fn exit_slice(&mut self, &Slice) {}
+    fn exit_statement(&mut self, &Statement) {}
+    fn exit_string(&mut self, &String) {}
+    fn exit_struct(&mut self, &Struct) {}
+    fn exit_struct_field(&mut self, &StructField) {}
+    fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
+    fn exit_top_level(&mut self, &TopLevel) {}
+    fn exit_trait(&mut self, &Trait) {}
+    fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
+    fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
+    fn exit_trait_impl_function(&mut self, &TraitImplFunction) {}
+    fn exit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
+    fn exit_trait_member(&mut self, &TraitMember) {}
+    fn exit_tuple(&mut self, &Tuple) {}
+    fn exit_turbofish(&mut self, &Turbofish) {}
+    fn exit_type(&mut self, &Type) {}
+    fn exit_type_alias(&mut self, &TypeAlias) {}
+    fn exit_type_core(&mut self, &TypeCore) {}
+    fn exit_type_generics(&mut self, &TypeGenerics) {}
+    fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
+    fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
+    fn exit_type_inner(&mut self, &TypeInner) {}
+    fn exit_type_reference(&mut self, &TypeReference) {}
+    fn exit_use(&mut self, &Use) {}
+    fn exit_value(&mut self, &Value) {}
+    fn exit_visibility(&mut self, &Visibility) {}
+    fn exit_where(&mut self, &Where) {}
+    fn exit_whitespace(&mut self, &Whitespace) {}
 }
 
 // --------------------------------------------------

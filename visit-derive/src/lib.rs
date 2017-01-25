@@ -39,8 +39,9 @@ fn camelcase_to_snake_case(camelcase: &str) -> String {
 
 fn impl_visit(ast: &syn::MacroInput) -> quote::Tokens {
     let name = &ast.ident;
-    let method_name = camelcase_to_snake_case(&name.to_string());
-    let method_name: quote::Ident = format!("visit{}", method_name).into();
+    let method_name_base = camelcase_to_snake_case(&name.to_string());
+    let method_name: quote::Ident = format!("visit{}", method_name_base).into();
+    let exit_method_name: quote::Ident = format!("exit{}", method_name_base).into();
 
     let visit_fields = impl_visit_fields(ast);
 
@@ -51,6 +52,7 @@ fn impl_visit(ast: &syn::MacroInput) -> quote::Tokens {
             {
                 v.#method_name(self);
                 #visit_fields;
+                v.#exit_method_name(self);
             }
         }
     }
