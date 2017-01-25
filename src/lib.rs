@@ -351,7 +351,7 @@ pub enum Statement {
 
 impl Statement {
     #[allow(dead_code)]
-    fn extent(&self) -> Extent {
+    pub fn extent(&self) -> Extent {
         use Statement::*;
         match *self {
             Explicit(ref e) |
@@ -411,7 +411,7 @@ pub enum Expression {
 }
 
 impl Expression {
-    fn extent(&self) -> Extent {
+    pub fn extent(&self) -> Extent {
         match *self {
             Expression::Block(ref x) => x.extent,
 

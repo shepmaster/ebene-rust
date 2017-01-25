@@ -63,6 +63,14 @@ impl Visitor for IndexedFile {
     fn visit_struct(&mut self, s: &strata_rs::Struct) {
         self.add_extent("struct", s.extent);
     }
+
+    fn visit_statement(&mut self, s: &strata_rs::Statement) {
+        self.add_extent("statement", s.extent());
+    }
+
+    fn visit_expression(&mut self, e: &strata_rs::Expression) {
+        self.add_extent("expression", e.extent());
+    }
 }
 
 fn main() {
