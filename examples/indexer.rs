@@ -20,6 +20,8 @@ struct IndexedFile {
     source: String,
     layers: BTreeMap<String, BTreeSet<strata_rs::Extent>>,
     terms: BTreeMap<String, BTreeMap<String, BTreeSet<strata_rs::Extent>>>,
+    stmt_depth: usize,
+    expr_depth: usize,
 }
 
 // TODO: This was extracted from `strata`; should be made public
@@ -31,7 +33,9 @@ fn find_invalid_gc_list_pair(extents: &[strata_rs::Extent]) -> Option<(strata_rs
 }
 
 impl IndexedFile {
-    fn add_extent(&mut self, layer: &str, extent: strata_rs::Extent) {
+    fn add_extent<S>(&mut self, layer: S, extent: strata_rs::Extent)
+        where S: Into<String>,
+    {
         self.layers.entry(layer.into()).or_insert_with(BTreeSet::new).insert(extent);
     }
 
@@ -80,11 +84,23 @@ impl Visitor for IndexedFile {
     }
 
     fn visit_statement(&mut self, s: &strata_rs::Statement) {
-        self.add_extent("statement", s.extent());
+        let name = format!("statement-{}", self.stmt_depth);
+        self.add_extent(name, s.extent());
+        self.stmt_depth +=1
+    }
+
+    fn exit_statement(&mut self, _: &strata_rs::Statement) {
+        self.stmt_depth -= 1;
     }
 
     fn visit_expression(&mut self, e: &strata_rs::Expression) {
-        self.add_extent("expression", e.extent());
+        let name = format!("expression-{}", self.expr_depth);
+        self.add_extent(name, e.extent());
+        self.expr_depth += 1;
+    }
+
+    fn exit_expression(&mut self, _: &strata_rs::Expression) {
+        self.expr_depth -= 1;
     }
 }
 
