@@ -656,6 +656,7 @@ pub enum Pattern {
     Tuple(PatternTuple),
     Wildcard(PatternWildcard),
     Character(PatternCharacter),
+    Reference(PatternReference),
 }
 
 impl Pattern {
@@ -666,7 +667,8 @@ impl Pattern {
             Pattern::Tuple(PatternTuple { extent, .. }) |
             Pattern::Struct(PatternStruct { extent, .. }) |
             Pattern::Wildcard(PatternWildcard { extent, .. }) |
-            Pattern::Character(PatternCharacter { extent, .. }) => extent
+            Pattern::Character(PatternCharacter { extent, .. }) |
+            Pattern::Reference(PatternReference { extent, .. }) => extent
         }
     }
 }
@@ -708,6 +710,12 @@ pub struct PatternWildcard {
 pub struct PatternCharacter {
     extent: Extent,
     value: Character,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternReference {
+    extent: Extent,
+    pattern: Box<Pattern>,
 }
 
 #[derive(Debug, Visit)]
@@ -875,6 +883,7 @@ pub trait Visitor {
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
+    fn visit_pattern_reference(&mut self, &PatternReference) {}
     fn visit_pattern_struct(&mut self, &PatternStruct) {}
     fn visit_pattern_struct_field(&mut self, &PatternStructField) {}
     fn visit_pattern_tuple(&mut self, &PatternTuple) {}
@@ -956,6 +965,7 @@ pub trait Visitor {
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
+    fn exit_pattern_reference(&mut self, &PatternReference) {}
     fn exit_pattern_struct(&mut self, &PatternStruct) {}
     fn exit_pattern_struct_field(&mut self, &PatternStructField) {}
     fn exit_pattern_tuple(&mut self, &PatternTuple) {}
@@ -2102,6 +2112,7 @@ fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
         .one(map(pattern_ident, Pattern::Ident))
         .one(map(pattern_tuple, Pattern::Tuple))
         .one(map(pattern_char, Pattern::Character))
+        .one(map(pattern_reference, Pattern::Reference))
         .finish()
 }
 
@@ -2181,6 +2192,15 @@ fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternC
     let spt = pt;
     let (pt, value) = try_parse!(character_literal(pm, pt));
     Progress::success(pt, PatternCharacter { extent: ex(spt, pt), value })
+}
+
+fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternReference> {
+    sequence!(pm, pt, {
+        spt     = point;
+        _x      = literal("&");
+        _x      = optional(whitespace);
+        pattern = pattern;
+    }, |_, pt| PatternReference { extent: ex(spt, pt), pattern: Box::new(pattern) })
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
@@ -3243,6 +3263,12 @@ mod test {
     fn pattern_with_char_literal() {
         let p = qp(pattern, "'a'");
         assert_eq!(unwrap_progress(p).extent(), (0, 3))
+    }
+
+    #[test]
+    fn pattern_with_reference() {
+        let p = qp(pattern, "&a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 2))
     }
 
     #[test]
