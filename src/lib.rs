@@ -408,6 +408,7 @@ pub enum Expression {
     MethodCall(MethodCall),
     Number(Number),
     Range(Range),
+    Reference(Reference),
     Return(Return),
     Slice(Slice),
     String(String),
@@ -437,6 +438,7 @@ impl Expression {
             Expression::MethodCall(MethodCall { extent, .. }) |
             Expression::Number(Number { extent, .. }) => extent,
             Expression::Range(Range { extent, .. }) |
+            Expression::Reference(Reference { extent, .. }) |
             Expression::Return(Return { extent, .. }) |
             Expression::Slice(Slice { extent, .. }) |
             Expression::String(String { extent, .. }) |
@@ -613,6 +615,13 @@ pub struct Closure {
 pub struct ClosureArg {
     name: Ident,
     typ: Option<Type>,
+}
+
+#[derive(Debug, Visit)]
+pub struct Reference {
+    extent: Extent,
+    mutable: Option<Extent>,
+    value: Box<Expression>,
 }
 
 #[derive(Debug, Visit)]
@@ -862,6 +871,7 @@ pub trait Visitor {
     fn visit_pattern_tuple(&mut self, &PatternTuple) {}
     fn visit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn visit_range(&mut self, &Range) {}
+    fn visit_reference(&mut self, &Reference) {}
     fn visit_return(&mut self, &Return) {}
     fn visit_self_argument(&mut self, &SelfArgument) {}
     fn visit_slice(&mut self, &Slice) {}
@@ -941,6 +951,7 @@ pub trait Visitor {
     fn exit_pattern_tuple(&mut self, &PatternTuple) {}
     fn exit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn exit_range(&mut self, &Range) {}
+    fn exit_reference(&mut self, &Reference) {}
     fn exit_return(&mut self, &Return) {}
     fn exit_self_argument(&mut self, &SelfArgument) {}
     fn exit_slice(&mut self, &Slice) {}
@@ -1455,6 +1466,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_closure, Expression::Closure))
             .one(map(expr_return, Expression::Return))
             .one(map(expr_number, Expression::Number))
+            .one(map(expr_reference, Expression::Reference))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -1885,6 +1897,16 @@ fn expr_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> 
     let idx = pt.s.chars().take_while(|&c| c.is_digit(10)).map(|c| c.len_utf8()).sum();
 
     split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound).map(|extent| Number { extent })
+}
+
+fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Reference> {
+    sequence!(pm, pt, {
+        spt     = point;
+        _x      = literal("&");
+        _x      = optional(whitespace);
+        mutable = optional(ext(literal("mut")));
+        value   = expression;
+    }, |_, pt| Reference { extent: ex(spt, pt), mutable, value: Box::new(value) } )
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
@@ -3135,6 +3157,18 @@ mod test {
     fn expr_slice_index() {
         let p = qp(expression, "a[..2]");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn expr_reference() {
+        let p = qp(expression, "&foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_reference_mut() {
+        let p = qp(expression, "&mut foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
