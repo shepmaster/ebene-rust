@@ -397,6 +397,7 @@ pub enum Expression {
     Call(Call),
     Character(Character),
     Closure(Closure),
+    Dereference(Dereference),
     FieldAccess(FieldAccess),
     ForLoop(ForLoop),
     FunctionCall(FunctionCall),
@@ -427,6 +428,7 @@ impl Expression {
             Expression::Call(Call { extent, .. }) |
             Expression::Character(Character { extent, .. }) |
             Expression::Closure(Closure { extent, .. }) |
+            Expression::Dereference(Dereference { extent, .. }) |
             Expression::FieldAccess(FieldAccess { extent, .. }) |
             Expression::ForLoop(ForLoop { extent, .. }) |
             Expression::FunctionCall(FunctionCall { extent, .. }) |
@@ -621,6 +623,12 @@ pub struct ClosureArg {
 pub struct Reference {
     extent: Extent,
     mutable: Option<Extent>,
+    value: Box<Expression>,
+}
+
+#[derive(Debug, Visit)]
+pub struct Dereference {
+    extent: Extent,
     value: Box<Expression>,
 }
 
@@ -835,6 +843,7 @@ pub trait Visitor {
     fn visit_closure_arg(&mut self, &ClosureArg) {}
     fn visit_comment(&mut self, &Comment) {}
     fn visit_crate(&mut self, &Crate) {}
+    fn visit_dereference(&mut self, &Dereference) {}
     fn visit_enum(&mut self, &Enum) {}
     fn visit_enum_variant(&mut self, &EnumVariant) {}
     fn visit_enum_variant_body(&mut self, &EnumVariantBody) {}
@@ -915,6 +924,7 @@ pub trait Visitor {
     fn exit_closure_arg(&mut self, &ClosureArg) {}
     fn exit_comment(&mut self, &Comment) {}
     fn exit_crate(&mut self, &Crate) {}
+    fn exit_dereference(&mut self, &Dereference) {}
     fn exit_enum(&mut self, &Enum) {}
     fn exit_enum_variant(&mut self, &EnumVariant) {}
     fn exit_enum_variant_body(&mut self, &EnumVariantBody) {}
@@ -1467,6 +1477,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_return, Expression::Return))
             .one(map(expr_number, Expression::Number))
             .one(map(expr_reference, Expression::Reference))
+            .one(map(expr_dereference, Expression::Dereference))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -1907,6 +1918,15 @@ fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Refere
         mutable = optional(ext(literal("mut")));
         value   = expression;
     }, |_, pt| Reference { extent: ex(spt, pt), mutable, value: Box::new(value) } )
+}
+
+fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dereference> {
+    sequence!(pm, pt, {
+        spt     = point;
+        _x      = literal("*");
+        _x      = optional(whitespace);
+        value   = expression;
+    }, |_, pt| Dereference { extent: ex(spt, pt), value: Box::new(value) } )
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
@@ -3169,6 +3189,12 @@ mod test {
     fn expr_reference_mut() {
         let p = qp(expression, "&mut foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_dereference() {
+        let p = qp(expression, "*foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
