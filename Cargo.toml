@@ -12,6 +12,7 @@ rocket_contrib = "0.1.5"
 serde = "0.8.22"
 serde_derive = "0.8.22"
 serde_json = "0.8.6"
+unicode-xid = "0.0.4"
 
 [dependencies.peresil]
 path = "../sxd/peresil"

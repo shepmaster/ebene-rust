@@ -9,7 +9,10 @@ extern crate visit_derive;
 #[macro_use]
 extern crate peresil;
 
+extern crate unicode_xid;
+
 use std::collections::BTreeSet;
+use unicode_xid::UnicodeXID;
 
 // define what you want to parse; likely a string
 // create an error type
@@ -23,6 +26,7 @@ type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 enum Error {
     Literal(&'static str),
     IdentNotFound,
+    NumberNotFound,
     UnterminatedRawString,
 }
 
@@ -402,6 +406,7 @@ pub enum Expression {
     MacroCall(MacroCall),
     Match(Match),
     MethodCall(MethodCall),
+    Number(Number),
     Range(Range),
     Return(Return),
     Slice(Slice),
@@ -430,6 +435,7 @@ impl Expression {
             Expression::MacroCall(MacroCall { extent, .. }) |
             Expression::Match(Match { extent, .. }) |
             Expression::MethodCall(MethodCall { extent, .. }) |
+            Expression::Number(Number { extent, .. }) => extent,
             Expression::Range(Range { extent, .. }) |
             Expression::Return(Return { extent, .. }) |
             Expression::Slice(Slice { extent, .. }) |
@@ -473,6 +479,11 @@ pub struct FieldAccess {
     extent: Extent,
     value: Box<Expression>,
     field: Ident
+}
+
+#[derive(Debug, Visit)]
+pub struct Number {
+    extent: Extent,
 }
 
 #[derive(Debug, Visit)]
@@ -841,6 +852,7 @@ pub trait Visitor {
     fn visit_method_call(&mut self, &MethodCall) {}
     fn visit_module(&mut self, &Module) {}
     fn visit_named_argument(&mut self, &NamedArgument) {}
+    fn visit_number(&mut self, &Number) {}
     fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
@@ -919,6 +931,7 @@ pub trait Visitor {
     fn exit_method_call(&mut self, &MethodCall) {}
     fn exit_module(&mut self, &Module) {}
     fn exit_named_argument(&mut self, &NamedArgument) {}
+    fn exit_number(&mut self, &Number) {}
     fn exit_pathed_ident(&mut self, &PathedIdent) {}
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
@@ -961,15 +974,6 @@ pub trait Visitor {
 }
 
 // --------------------------------------------------
-
-// TODO: extract to peresil?
-fn parse_until<'s, P>(pt: Point<'s>, p: P) -> (Point<'s>, Extent)
-    where P: std::str::pattern::Pattern<'s>
-{
-    let end = pt.s.find(p).unwrap_or(pt.s.len());
-    let k = &pt.s[end..];
-    (Point { s: k, offset: pt.offset + end }, (pt.offset, pt.offset + end))
-}
 
 // TODO: extract to peresil?
 fn parse_until2<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
@@ -1271,18 +1275,29 @@ fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRule
 }
 
 fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
-    let spt = pt;
-    let (pt, ex) = parse_until(pt, |c| {
-        [
-            '[', ']', '(', ')', '<', '>', '{', '}',
-            '!', ' ', ':', ',', ';', '/', '.', '=',
-            '|', '\'', '"', '#',
-        ].contains(&c)
-    });
-    if pt.offset <= spt.offset {
-        Progress::failure(pt, Error::IdentNotFound)
+    let mut ci = pt.s.chars();
+    let mut idx = 0;
+
+    if let Some(c) = ci.next() {
+        if UnicodeXID::is_xid_start(c) || c == '_' {
+            idx += c.len_utf8();
+
+            idx += ci.take_while(|&c| UnicodeXID::is_xid_continue(c)).map(|c| c.len_utf8()).sum();
+        }
+    }
+
+    split_point_at_non_zero_offset(pt, idx, Error::IdentNotFound).map(|extent| Ident { extent })
+}
+
+fn split_point_at_non_zero_offset<'s>(pt: Point<'s>, idx: usize, e: Error) -> Progress<'s, Extent> {
+    if idx == 0 {
+        Progress::failure(pt, e)
     } else {
-        Progress::success(pt, Ident { extent: ex })
+        let (_matched, tail) = pt.s.split_at(idx);
+        let end = pt.offset + idx;
+        let end_pt = Point { s: tail, offset: end };
+
+        Progress::success(end_pt, (pt.offset, end))
     }
 }
 
@@ -1439,6 +1454,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(string_literal, Expression::String))
             .one(map(expr_closure, Expression::Closure))
             .one(map(expr_return, Expression::Return))
+            .one(map(expr_number, Expression::Number))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -1863,6 +1879,12 @@ fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
     block(pm, pt).map(Box::new)
+}
+
+fn expr_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
+    let idx = pt.s.chars().take_while(|&c| c.is_digit(10)).map(|c| c.len_utf8()).sum();
+
+    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound).map(|extent| Number { extent })
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
@@ -2810,6 +2832,12 @@ mod test {
     }
 
     #[test]
+    fn expr_number() {
+        let p = qp(expression, "123");
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
+    }
+
+    #[test]
     fn expr_let_explicit_type() {
         let p = qp(expression, "let foo: bool");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
@@ -3252,6 +3280,12 @@ mod test {
     fn comment_region() {
         let p = qp(comment, "/* hello */");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn ident_with_leading_underscore() {
+        let p = qp(ident, "_foo");
+        assert_eq!(unwrap_progress(p).extent, (0, 4))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
