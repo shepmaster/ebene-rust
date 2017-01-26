@@ -152,7 +152,7 @@ pub struct Function {
 
 #[derive(Debug, Visit)]
 pub struct FunctionHeader {
-    extent: Extent,
+    pub extent: Extent,
     visibility: Option<Visibility>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,

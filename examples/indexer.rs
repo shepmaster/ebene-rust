@@ -21,6 +21,7 @@ struct Indexing {
 
     layer_enum: BTreeSet<strata_rs::Extent>,
     layer_function: BTreeSet<strata_rs::Extent>,
+    layer_function_header: BTreeSet<strata_rs::Extent>,
     layer_struct: BTreeSet<strata_rs::Extent>,
 
     layers_expression: Vec<BTreeSet<strata_rs::Extent>>,
@@ -46,6 +47,10 @@ impl Visitor for Indexing {
 
     fn visit_function(&mut self, function: &strata_rs::Function) {
         self.layer_function.insert(function.extent);
+    }
+
+    fn visit_function_header(&mut self, header: &strata_rs::FunctionHeader) {
+        self.layer_function_header.insert(header.extent);
     }
 
     fn visit_enum(&mut self, e: &strata_rs::Enum) {
@@ -118,6 +123,7 @@ impl From<Indexing> for IndexedFile {
 
             layer_enum,
             layer_function,
+            layer_function_header,
             layer_struct,
 
             layers_expression,
@@ -129,6 +135,7 @@ impl From<Indexing> for IndexedFile {
         let mut layers = BTreeMap::new();
         layers.insert("enum".into(), layer_enum);
         layers.insert("function".into(), layer_function);
+        layers.insert("function-header".into(), layer_function_header);
         layers.insert("struct".into(), layer_struct);
 
         for (i, layer) in layers_expression.into_iter().enumerate() {
