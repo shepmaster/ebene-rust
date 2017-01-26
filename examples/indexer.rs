@@ -1,3 +1,5 @@
+#![feature(field_init_shorthand)]
+
 extern crate strata_rs;
 extern crate serde;
 extern crate serde_json;
@@ -11,17 +13,81 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use strata_rs::{Visit, Visitor};
 
-// This is a bit inefficient:
-// 1. We add identifiers to the layers, but probably don't want to search that.
-// 1. We have to do a lot of extra allocation for all the `entry` calls
-// We could split this into two types, performing the finalize step at conversion
+#[derive(Debug, Default)]
+struct Indexing {
+    source: String,
+
+    term_ident: BTreeMap<String, BTreeSet<strata_rs::Extent>>,
+
+    layer_enum: BTreeSet<strata_rs::Extent>,
+    layer_function: BTreeSet<strata_rs::Extent>,
+    layer_struct: BTreeSet<strata_rs::Extent>,
+
+    layers_expression: Vec<BTreeSet<strata_rs::Extent>>,
+    layers_statement: Vec<BTreeSet<strata_rs::Extent>>,
+
+    stmt_depth: usize,
+    expr_depth: usize,
+}
+
+impl std::ops::Index<strata_rs::Extent> for Indexing {
+    type Output = str;
+
+    fn index(&self, extent: strata_rs::Extent) -> &str {
+        &self.source[extent.0..extent.1]
+    }
+}
+
+impl Visitor for Indexing {
+    fn visit_ident(&mut self, ident: &strata_rs::Ident) {
+        let s = self[ident.extent].to_owned();
+        self.term_ident.entry(s).or_insert_with(BTreeSet::new).insert(ident.extent);
+    }
+
+    fn visit_function(&mut self, function: &strata_rs::Function) {
+        self.layer_function.insert(function.extent);
+    }
+
+    fn visit_enum(&mut self, e: &strata_rs::Enum) {
+        self.layer_enum.insert(e.extent);
+    }
+
+    fn visit_struct(&mut self, s: &strata_rs::Struct) {
+        self.layer_struct.insert(s.extent);
+    }
+
+    fn visit_statement(&mut self, s: &strata_rs::Statement) {
+        while self.layers_statement.len() <= self.stmt_depth {
+            self.layers_statement.push(BTreeSet::new());
+        }
+        self.layers_statement[self.stmt_depth].insert(s.extent());
+
+        self.stmt_depth +=1
+    }
+
+    fn exit_statement(&mut self, _: &strata_rs::Statement) {
+        self.stmt_depth -= 1;
+    }
+
+    fn visit_expression(&mut self, e: &strata_rs::Expression) {
+        while self.layers_expression.len() <= self.expr_depth {
+            self.layers_expression.push(BTreeSet::new());
+        }
+        self.layers_expression[self.expr_depth].insert(e.extent());
+
+        self.expr_depth += 1;
+    }
+
+    fn exit_expression(&mut self, _: &strata_rs::Expression) {
+        self.expr_depth -= 1;
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct IndexedFile {
     source: String,
     layers: BTreeMap<String, BTreeSet<strata_rs::Extent>>,
     terms: BTreeMap<String, BTreeMap<String, BTreeSet<strata_rs::Extent>>>,
-    stmt_depth: usize,
-    expr_depth: usize,
 }
 
 // TODO: This was extracted from `strata`; should be made public
@@ -33,74 +99,49 @@ fn find_invalid_gc_list_pair(extents: &[strata_rs::Extent]) -> Option<(strata_rs
 }
 
 impl IndexedFile {
-    fn add_extent<S>(&mut self, layer: S, extent: strata_rs::Extent)
-        where S: Into<String>,
-    {
-        self.layers.entry(layer.into()).or_insert_with(BTreeSet::new).insert(extent);
-    }
-
-    fn finalize(&mut self) {
-        let mut ident_terms = BTreeMap::new();
-
-        for &ex in self.layers.get("ident").expect("No identifiers present") {
-            let s = self[ex].to_owned();
-            ident_terms.entry(s).or_insert_with(BTreeSet::new).insert(ex);
-        }
-
+    fn validate(&self) {
         for (layer_name, layer_extents) in &self.layers {
             let layer_extents: Vec<_> = layer_extents.iter().cloned().collect();
             if let Some(bad) = find_invalid_gc_list_pair(&layer_extents) {
                 println!("WARNING: Layer {} has invalid extents: {:?}", layer_name, bad);
             }
         }
-
-        self.terms.insert("ident".into(), ident_terms);
     }
 }
 
-impl std::ops::Index<strata_rs::Extent> for IndexedFile {
-    type Output = str;
+impl From<Indexing> for IndexedFile {
+    fn from(other: Indexing) -> IndexedFile {
+        let Indexing {
+            source,
 
-    fn index(&self, extent: strata_rs::Extent) -> &str {
-        &self.source[extent.0..extent.1]
-    }
-}
+            term_ident,
 
-impl Visitor for IndexedFile {
-    fn visit_ident(&mut self, ident: &strata_rs::Ident) {
-        self.add_extent("ident", ident.extent);
-    }
+            layer_enum,
+            layer_function,
+            layer_struct,
 
-    fn visit_function(&mut self, function: &strata_rs::Function) {
-        self.add_extent("function", function.extent);
-    }
+            layers_expression,
+            layers_statement,
 
-    fn visit_enum(&mut self, e: &strata_rs::Enum) {
-        self.add_extent("enum", e.extent);
-    }
+            ..
+        } = other;
 
-    fn visit_struct(&mut self, s: &strata_rs::Struct) {
-        self.add_extent("struct", s.extent);
-    }
+        let mut layers = BTreeMap::new();
+        layers.insert("enum".into(), layer_enum);
+        layers.insert("function".into(), layer_function);
+        layers.insert("struct".into(), layer_struct);
 
-    fn visit_statement(&mut self, s: &strata_rs::Statement) {
-        let name = format!("statement-{}", self.stmt_depth);
-        self.add_extent(name, s.extent());
-        self.stmt_depth +=1
-    }
+        for (i, layer) in layers_expression.into_iter().enumerate() {
+            layers.insert(format!("expression-{}", i), layer);
+        }
+        for (i, layer) in layers_statement.into_iter().enumerate() {
+            layers.insert(format!("statement-{}", i), layer);
+        }
 
-    fn exit_statement(&mut self, _: &strata_rs::Statement) {
-        self.stmt_depth -= 1;
-    }
+        let mut terms = BTreeMap::new();
+        terms.insert("ident".into(), term_ident);
 
-    fn visit_expression(&mut self, e: &strata_rs::Expression) {
-        let name = format!("expression-{}", self.expr_depth);
-        self.add_extent(name, e.extent());
-        self.expr_depth += 1;
-    }
-
-    fn exit_expression(&mut self, _: &strata_rs::Expression) {
-        self.expr_depth -= 1;
+        IndexedFile { source, terms, layers }
     }
 }
 
@@ -110,14 +151,15 @@ fn main() {
     let mut s = String::new();
     f.read_to_string(&mut s).expect("Can't read");
     let file = strata_rs::parse_rust_file(&s).expect("Failed");
-    let mut d = IndexedFile::default();
+    let mut d = Indexing::default();
     d.source = s;
 
     for i in &file {
         i.visit(&mut d);
     }
 
-    d.finalize();
+    let d: IndexedFile = d.into();
+    d.validate();
 
     let mut out = std::io::stdout();
     serde_json::ser::to_writer(&mut out, &d).expect("Nope");
