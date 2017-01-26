@@ -316,7 +316,7 @@ pub struct SelfArgument {
 
 #[derive(Debug, Visit)]
 pub struct NamedArgument {
-    name: Ident,
+    name: Pattern,
     typ: Type,
 }
 
@@ -328,7 +328,7 @@ pub enum TraitImplArgument {
 
 #[derive(Debug, Visit)]
 pub struct TraitImplArgumentNamed {
-    name: Option<Ident>,
+    name: Option<Pattern>,
     typ: Type,
 }
 
@@ -615,7 +615,7 @@ pub struct Closure {
 
 #[derive(Debug, Visit)]
 pub struct ClosureArg {
-    name: Ident,
+    name: Pattern,
     typ: Option<Type>,
 }
 
@@ -1374,7 +1374,7 @@ fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArg
 
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
     sequence!(pm, pt, {
-        name = ident;
+        name = pattern;
         _x   = literal(":");
         _x   = optional(whitespace);
         typ  = typ;
@@ -1887,7 +1887,7 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
 
 fn expr_closure_arg<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ClosureArg> {
     sequence!(pm, pt, {
-        name = ident;
+        name = pattern;
         typ  = optional(expr_closure_arg_type);
     }, |_, _| ClosureArg { name, typ })
 }
@@ -2373,9 +2373,9 @@ fn trait_impl_function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progr
     }, |_, _| TraitImplArgument::Named(TraitImplArgumentNamed { name, typ }))
 }
 
-fn trait_impl_function_argument_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+fn trait_impl_function_argument_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     sequence!(pm, pt, {
-        name = ident;
+        name = pattern;
         _x   = literal(":");
         _x   = optional(whitespace);
     }, |_, _| name)
@@ -2724,6 +2724,12 @@ mod test {
     }
 
     #[test]
+    fn top_level_trait_with_members_with_patterns() {
+        let p = qp(top_level, "trait Foo { fn bar(&self, &a: &u8) -> u8; }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 43))
+    }
+
+    #[test]
     fn top_level_trait_with_members_with_body() {
         let p = qp(top_level, "trait Foo { fn bar(&self) -> u8 { 42 } }");
         assert_eq!(unwrap_progress(p).extent(), (0, 40))
@@ -2841,6 +2847,12 @@ mod test {
     fn fn_with_arguments() {
         let p = qp(function_header, "fn foo(a: u8, b: u8)");
         assert_eq!(unwrap_progress(p).extent, (0, 20))
+    }
+
+    #[test]
+    fn fn_with_arguments_with_patterns() {
+        let p = qp(function_header, "fn foo(&a: &u8)");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
@@ -3143,6 +3155,12 @@ mod test {
     fn expr_closure_explicit_type() {
         let p = qp(expression, "|a: u8| a");
         assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn expr_closure_pattern() {
+        let p = qp(expression, "|&a| a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
