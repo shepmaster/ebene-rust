@@ -20,9 +20,9 @@ const Terminal = ({ id, name, value, onTerminalNameChange, onTerminalValueChange
   </div>
 );
 
-const Containing = ({ lhs, rhs, ...other }) => (
+const binaryComponent = (label) => ({ lhs, rhs, ...other }) => (
   <div>
-    <b>Containing</b>
+    <b>{label}</b>
     <QueryBuilder {...other} {...lhs} />
     <QueryBuilder {...other} {...rhs} />
   </div>
@@ -31,7 +31,13 @@ const Containing = ({ lhs, rhs, ...other }) => (
 const mapKindToComponent = {
   'Layer': Layer,
   'Terminal': Terminal,
-  'Containing': Containing,
+  'Containing': binaryComponent('Containing'),
+  'ContainedIn': binaryComponent('ContainedIn'),
+  'NotContaining': binaryComponent('NotContaining'),
+  'NotContainedIn': binaryComponent('NotContainedIn'),
+  'OneOf': binaryComponent('OneOf'),
+  'BothOf': binaryComponent('BothOf'),
+  'FollowedBy': binaryComponent('FollowedBy'),
 };
 
 const QueryBuilder = (props) => {

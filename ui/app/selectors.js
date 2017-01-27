@@ -23,6 +23,12 @@ function selectTreeQueryForApi(state) {
     let { kind, ...rest } = queryList[id];
     switch (kind) {
     case 'Containing':
+    case 'ContainedIn':
+    case 'NotContaining':
+    case 'NotContainedIn':
+    case 'OneOf':
+    case 'BothOf':
+    case 'FollowedBy':
       return { [kind]: [treeify(rest.lhs), treeify(rest.rhs)] };
     default:
       return { [kind]: rest };
@@ -40,6 +46,12 @@ export function selectTreeQuery(state) {
 
     switch (thisQuery.kind) {
     case 'Containing':
+    case 'ContainedIn':
+    case 'NotContaining':
+    case 'NotContainedIn':
+    case 'OneOf':
+    case 'BothOf':
+    case 'FollowedBy':
       return { ...thisQuery, id, lhs: treeify(thisQuery.lhs), rhs: treeify(thisQuery.rhs) };
     default:
       return { ...thisQuery, id };
