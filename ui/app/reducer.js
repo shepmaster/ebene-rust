@@ -52,7 +52,18 @@ function structuredQueryReducer(state = initialStructuredQuery, action) {
   switch (action.type) {
   case constants.STRUCTURED_QUERY_KIND_UPDATE: {
     const { kind } = action;
-    return { ...state, [id]: { ...old, kind } };
+    if (old.lhs === undefined || old.rhs === undefined) {
+      const lhs = Object.keys(state).length;
+      const rhs = lhs + 1;
+      return {
+        ...state,
+        [lhs]: { kind: 'Nothing' },
+        [rhs]: { kind: 'Nothing' },
+        [id]: { ...old, kind, lhs, rhs }
+      };
+    } else {
+      return { ...state, [id]: { ...old, kind } };
+    }
   }
   case constants.LAYER_NAME_UPDATE: {
     const { name } = action;

@@ -76,6 +76,9 @@ impl std::ops::Index<strata::ValidExtent> for Indexed {
 
 fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
     match q {
+        StructuredQuery::Nothing => {
+            Ok(Box::new(strata::Empty))
+        }
         StructuredQuery::Containing(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
@@ -194,6 +197,7 @@ impl<'v, T> rocket::request::FromFormValue<'v> for JsonString<T>
 
 #[derive(Debug, Serialize, Deserialize)]
 enum StructuredQuery {
+    Nothing,
     Containing(Box<StructuredQuery>, Box<StructuredQuery>),
     ContainedIn(Box<StructuredQuery>, Box<StructuredQuery>),
     NotContaining(Box<StructuredQuery>, Box<StructuredQuery>),
