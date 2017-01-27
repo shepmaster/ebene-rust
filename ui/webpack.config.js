@@ -28,9 +28,8 @@ module.exports = {
         },
       },
       {
-        test: /\.css$/,
-        // include: paths,
-        use: ['style-loader', 'css-loader'],
+        test: /\.scss$/,
+        loaders: ["style-loader", "css-loader", "sass-loader"]
       },
     ],
   },
