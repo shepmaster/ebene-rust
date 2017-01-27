@@ -1,44 +1,23 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { Provider } from 'react-redux';
-import { createStore } from 'redux';
+import { createStore, applyMiddleware, compose } from 'redux';
+import createSagaMiddleware from 'redux-saga';
 
 import Page from './Page';
 import reducer from './reducer';
+import saga from './sagas';
 
 import './index.scss';
 
-const devtools = window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__();
-const store = createStore(reducer, devtools);
+const sagaMiddleware = createSagaMiddleware();
 
-// function doRender() {
-//   var url = `http://127.0.0.1:8080/api/search?`;
+const composeEnhancers = window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ || compose;
+const store = createStore(reducer, {}, composeEnhancers(
+  applyMiddleware(sagaMiddleware)
+));
 
-//   if (advanced) {
-//     url += `q=${advancedQuery}&h=${advancedHighlight}`;
-//   } else {
-//     if (query !== '') {
-//       const structuredQuery = {
-//         Containing: [
-//           { Layer: { name: within } },
-//           { Terminal: { name: "ident", value: query } },
-//         ],
-//       };
-
-//       url += `q=${JSON.stringify(structuredQuery)}`;
-
-//       const structuredHighlight = [{ Terminal: { name: "ident", value: query } }];
-
-//       url += `&h=${JSON.stringify(structuredHighlight)}`;
-//     } else {
-//       const structuredQuery = { Layer: { name: within } };
-//       url += `q=${JSON.stringify(structuredQuery)}`;
-//     }
-//   }
-
-//   const searchResults = fetch(url)
-//     .then(r => r.json());
-// }
+sagaMiddleware.run(saga);
 
 ReactDOM.render(
   <Provider store={store}>

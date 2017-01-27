@@ -23,3 +23,8 @@ export const updateAdvancedHighlight = (highlight) => ({
   type: constants.ADVANCED_HIGHLIGHT_UPDATE,
   highlight,
 });
+
+export const updateQueryResults = (results) => ({
+  type: constants.QUERY_RESULTS_SUCCESS,
+  results,
+});

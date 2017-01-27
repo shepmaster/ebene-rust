@@ -23,7 +23,7 @@ function simpleReducer(state = initialSimpleState, action) {
 
 const initialAdvState = {
   query: '{"Layer": {"name": "function"}}',
-  highlight: '{"Terminal": {"name": "ident", "value": "pm"}}',
+  highlight: '[{"Terminal": {"name": "ident", "value": "pm"}}]',
 };
 
 function advancedReducer(state = initialAdvState, action) {
@@ -51,7 +51,12 @@ function isAdvancedReducer(state = false, action) {
 }
 
 function resultsReducer(state = [], action) {
-  return state;
+  switch (action.type) {
+  case constants.QUERY_RESULTS_SUCCESS:
+    return action.results;
+  default:
+    return state;
+  }
 }
 
 export default combineReducers({
