@@ -1,26 +1,6 @@
 import { combineReducers } from 'redux';
 import constants from './constants';
 
-const initialSimpleState = {
-  query: '',
-  within: 'function',
-};
-
-function simpleReducer(state = initialSimpleState, action) {
-  switch (action.type) {
-  case constants.QUERY_TERM_UPDATE: {
-    const { query } = action;
-    return { ...state, query };
-  }
-  case constants.QUERY_WITHIN_UPDATE: {
-    const { within } = action;
-    return { ...state, within };
-  }
-  default:
-    return state;
-  }
-}
-
 const initialAdvState = {
   query: '{"Layer": {"name": "function"}}',
   highlight: '[{"Terminal": {"name": "ident", "value": "pm"}}]',
@@ -59,9 +39,37 @@ function resultsReducer(state = [], action) {
   }
 }
 
+const initialStructuredQuery = {
+  0: { kind: 'Containing', lhs: 1, rhs: 2 },
+  1: { kind: 'Layer', name: 'function' },
+  2: { kind: 'Terminal', name: 'ident', value: 'pm' },
+};
+
+function structuredQueryReducer(state = initialStructuredQuery, action) {
+  const { id } = action;
+  const old = state[id];
+
+  switch (action.type) {
+  case constants.LAYER_NAME_UPDATE: {
+    const { name } = action;
+    return { ...state, [id]: { ...old, name } };
+  }
+  case constants.TERMINAL_NAME_UPDATE: {
+    const { name } = action;
+    return { ...state, [id]: { ...old, name } };
+  }
+  case constants.TERMINAL_VALUE_UPDATE: {
+    const { value } = action;
+    return { ...state, [id]: { ...old, value } };
+  }
+  default:
+    return state;
+  }
+}
+
 export default combineReducers({
-  simple: simpleReducer,
   advanced: advancedReducer,
+  structuredQuery: structuredQueryReducer,
   isAdvanced: isAdvancedReducer,
   results: resultsReducer,
 });

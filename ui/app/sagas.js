@@ -16,8 +16,9 @@ function* performSearch(action) {
 }
 
 export default function* mySaga() {
-  yield takeEvery(constants.QUERY_TERM_UPDATE, performSearch);
-  yield takeEvery(constants.QUERY_WITHIN_UPDATE, performSearch);
   yield takeEvery(constants.ADVANCED_QUERY_UPDATE, performSearch);
   yield takeEvery(constants.ADVANCED_HIGHLIGHT_UPDATE, performSearch);
+  yield takeEvery(constants.LAYER_NAME_UPDATE, performSearch);
+  yield takeEvery(constants.TERMINAL_NAME_UPDATE, performSearch);
+  yield takeEvery(constants.TERMINAL_VALUE_UPDATE, performSearch);
 }

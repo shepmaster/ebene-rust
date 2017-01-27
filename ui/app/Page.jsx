@@ -1,13 +1,13 @@
 import React from 'react';
 import { connect } from 'react-redux';
 
-import SimpleInput from './SimpleInput';
 import AdvancedInput from './AdvancedInput';
+import QueryBuilder from './QueryBuilder';
 import ResultList from './ResultList';
 import { toggleAdvanced } from './actions';
 
 const Input = ({ isAdvanced }) => (
-  isAdvanced ? <AdvancedInput /> : <SimpleInput />
+  isAdvanced ? <AdvancedInput /> : <QueryBuilder />
 );
 
 const Page = ({ isAdvanced, results, toggleAdvanced }) => (
