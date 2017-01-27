@@ -19,6 +19,11 @@ export const updateQueryResults = (results) => ({
   results,
 });
 
+export const queryFailed = (message) => ({
+  type: constants.QUERY_RESULTS_FAILURE,
+  message,
+});
+
 export const updateLayerName = (id, name) => ({
   type: constants.LAYER_NAME_UPDATE,
   id, name,
