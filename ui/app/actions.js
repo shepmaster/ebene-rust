@@ -24,6 +24,11 @@ export const queryFailed = (message) => ({
   message,
 });
 
+export const updateStructuredQueryKind = (id, kind) => ({
+  type: constants.STRUCTURED_QUERY_KIND_UPDATE,
+  id, kind,
+});
+
 export const updateLayerName = (id, name) => ({
   type: constants.LAYER_NAME_UPDATE,
   id, name,

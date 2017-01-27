@@ -50,6 +50,10 @@ function structuredQueryReducer(state = initialStructuredQuery, action) {
   const old = state[id];
 
   switch (action.type) {
+  case constants.STRUCTURED_QUERY_KIND_UPDATE: {
+    const { kind } = action;
+    return { ...state, [id]: { ...old, kind } };
+  }
   case constants.LAYER_NAME_UPDATE: {
     const { name } = action;
     return { ...state, [id]: { ...old, name } };

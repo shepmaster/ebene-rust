@@ -2,7 +2,7 @@ import React from 'react';
 import { connect } from 'react-redux';
 
 import { selectTreeQuery } from './selectors';
-import { updateLayerName, updateTerminalName, updateTerminalValue } from './actions';
+import { updateStructuredQueryKind, updateLayerName, updateTerminalName, updateTerminalValue } from './actions';
 
 const Layer = ({ id, name, onLayerChange }) => (
   <div>
@@ -20,25 +20,35 @@ const Terminal = ({ id, name, value, onTerminalNameChange, onTerminalValueChange
   </div>
 );
 
-const binaryComponent = (label) => ({ lhs, rhs, ...other }) => (
-  <div>
-    <b>{label}</b>
-    <QueryBuilder {...other} {...lhs} />
-    <QueryBuilder {...other} {...rhs} />
-  </div>
-);
+const BinaryComponent = ({ id, kind, lhs, rhs, onKindChange, ...other }) => {
+  const options = componentKinds.map((name, i) => (
+    <option key={i} value={name}>{name}</option>
+  ));
+
+  return (
+    <div>
+      <select value={kind} onChange={e => onKindChange(id, e.target.value)}>
+        { options }
+      </select>
+      <QueryBuilder {...other} {...lhs} />
+      <QueryBuilder {...other} {...rhs} />
+    </div>
+  );
+};
 
 const mapKindToComponent = {
   'Layer': Layer,
   'Terminal': Terminal,
-  'Containing': binaryComponent('Containing'),
-  'ContainedIn': binaryComponent('ContainedIn'),
-  'NotContaining': binaryComponent('NotContaining'),
-  'NotContainedIn': binaryComponent('NotContainedIn'),
-  'OneOf': binaryComponent('OneOf'),
-  'BothOf': binaryComponent('BothOf'),
-  'FollowedBy': binaryComponent('FollowedBy'),
+  'Containing': BinaryComponent,
+  'ContainedIn': BinaryComponent,
+  'NotContaining': BinaryComponent,
+  'NotContainedIn': BinaryComponent,
+  'OneOf': BinaryComponent,
+  'BothOf': BinaryComponent,
+  'FollowedBy': BinaryComponent,
 };
+
+const componentKinds = Object.keys(mapKindToComponent);
 
 const QueryBuilder = (props) => {
   const Component = mapKindToComponent[props.kind];
@@ -48,6 +58,7 @@ const QueryBuilder = (props) => {
 const mapStateToProps = (state) => selectTreeQuery(state);
 
 const mapDispatchToProps = (dispatch) => ({
+  onKindChange: (id, k) => dispatch(updateStructuredQueryKind(id, k)),
   onLayerChange: (id, n) => dispatch(updateLayerName(id, n)),
   onTerminalNameChange: (id, n) => dispatch(updateTerminalName(id, n)),
   onTerminalValueChange: (id, v) => dispatch(updateTerminalValue(id, v)),
