@@ -1,7 +1,7 @@
 import React from 'react';
 import { connect } from 'react-redux';
 
-import { QueryBuilder } from './QueryBuilder';
+import QueryEditor from './QueryEditor';
 import { selectTreeQuery } from './selectors';
 import { updateHighlightKind, updateHighlightLayerName, updateHighlightTerminalName, updateHighlightTerminalValue } from './actions';
 
@@ -19,4 +19,4 @@ const mapDispatchToProps = (dispatch) => ({
 export default connect(
   mapStateToProps,
   mapDispatchToProps
-)(QueryBuilder);
+)(QueryEditor);
