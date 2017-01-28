@@ -10,4 +10,5 @@ export default mirrorCreator([
   'LAYER_NAME_UPDATE',
   'TERMINAL_NAME_UPDATE',
   'TERMINAL_VALUE_UPDATE',
+  'HIGHLIGHT_ADD',
 ]);

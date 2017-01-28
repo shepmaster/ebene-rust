@@ -44,6 +44,11 @@ export const updateTerminalValue = (id, value) => ({
   id, value
 });
 
+export const highlightAdd = (index) => ({
+  type: constants.HIGHLIGHT_ADD,
+  index
+});
+
 export const retarget = (action, target) => (...args) => {
   let createdAction = action(...args);
   createdAction.target = target;

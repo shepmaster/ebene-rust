@@ -4,8 +4,19 @@ import { bindActionCreators } from 'redux';
 
 import QueryEditor from './QueryEditor';
 import { selectTreeQuery } from './selectors';
-import { updateKind, updateLayerName, updateTerminalName, updateTerminalValue, retarget, retargetIndex } from './actions';
+import {
+  updateKind, updateLayerName, updateTerminalName, updateTerminalValue,
+  highlightAdd,
+  retarget, retargetIndex
+} from './actions';
 
+// Extracting `index` to prevent passing it down further
+const HighlightOneUnconnected = ({ index, onAddHighlight, ...props }) => (
+  <div>
+    <button onClick={onAddHighlight} />
+    <QueryEditor {...props} />
+  </div>
+);
 
 const targetMe = (action, index) => retarget(retargetIndex(action, index), 'highlight');
 
@@ -15,13 +26,14 @@ const mapDispatchToProps = (dispatch, { index }) => ({
     onLayerChange: targetMe(updateLayerName, index),
     onTerminalNameChange: targetMe(updateTerminalName, index),
     onTerminalValueChange: targetMe(updateTerminalValue, index),
-  }, dispatch)
+  }, dispatch),
+  onAddHighlight: () => dispatch(highlightAdd(index)),
 });
 
 const HighlightOne = connect(
   null,
   mapDispatchToProps
-)(QueryEditor);
+)(HighlightOneUnconnected);
 
 
 

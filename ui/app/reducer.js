@@ -1,6 +1,31 @@
 import { combineReducers } from 'redux';
 import constants from './constants';
 
+
+// --- Higher order reducers
+
+const initial = (reducer, initialState) => (state = initialState, action) => (
+  reducer(state, action)
+);
+
+const forTarget = (reducer, expectedTarget) => (state, action) => {
+  if (action.target == expectedTarget) {
+    return reducer(state, action);
+  } else {
+    return state;
+  }
+};
+
+const forTargetIndex = (reducer) => (state, action) => {
+  const index = action.targetIndex;
+  const result = reducer(state[index], action);
+  const newState = state.slice();
+  newState.splice(index, 1, result);
+  return newState;
+};
+
+// --- Regular reducers
+
 const initialAdvState = {
   query: '{"Layer": {"name": "function"}}',
   highlight: '[{"Terminal": {"name": "ident", "value": "pm"}}]',
@@ -45,9 +70,7 @@ const initialStructuredQuery = {
   2: { kind: 'Terminal', name: 'ident', value: 'pm' },
 };
 
-const initialStructuredHighlight = [{
-  0: { kind: 'Terminal', name: 'ident', value: 'pm' },
-}];
+const makeNothing = () => ({ kind: 'Nothing' });
 
 function structuredQueryReducer(state, action) {
   const { id, target } = action;
@@ -61,8 +84,8 @@ function structuredQueryReducer(state, action) {
       const rhs = lhs + 1;
       return {
         ...state,
-        [lhs]: { kind: 'Nothing' },
-        [rhs]: { kind: 'Nothing' },
+        [lhs]: makeNothing(),
+        [rhs]: makeNothing(),
         [id]: { ...old, kind, lhs, rhs }
       };
     } else {
@@ -86,30 +109,28 @@ function structuredQueryReducer(state, action) {
   }
 }
 
-const initial = (reducer, initialState) => (state = initialState, action) => (
-  reducer(state, action)
-);
+const initialStructuredHighlight = [{
+  0: { kind: 'Terminal', name: 'ident', value: 'pm' },
+}];
 
-const forTarget = (reducer, expectedTarget) => (state, action) => {
-  if (action.target == expectedTarget) {
-    return reducer(state, action);
-  } else {
-    return state;
+const structuredHighlightReducer = forTarget(forTargetIndex(structuredQueryReducer), 'highlight');
+function structuredHighlightsReducer(state = initialStructuredHighlight, action) {
+  switch (action.type) {
+  case constants.HIGHLIGHT_ADD: {
+    const { index } = action;
+    const newState = state.slice();
+    newState.splice(index + 1, 0, { 0: makeNothing() });
+    return newState;
   }
-};
-
-const forTargetIndex = (reducer) => (state, action) => {
-  const index = action.targetIndex;
-  const result = reducer(state[index], action);
-  const newState = state.slice();
-  newState.splice(index, 1, result);
-  return newState;
-};
+  default:
+    return structuredHighlightReducer(state, action);
+  }
+}
 
 export default combineReducers({
   advanced: advancedReducer,
   structuredQuery: initial(forTarget(structuredQueryReducer, 'query'), initialStructuredQuery),
-  structuredHighlights: initial(forTarget(forTargetIndex(structuredQueryReducer), 'highlight'), initialStructuredHighlight),
+  structuredHighlights: structuredHighlightsReducer,
   isAdvanced: isAdvancedReducer,
   results: resultsReducer,
 });
