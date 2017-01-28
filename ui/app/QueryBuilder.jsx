@@ -1,19 +1,22 @@
 import React from 'react';
 import { connect } from 'react-redux';
+import { bindActionCreators } from 'redux';
 
 import QueryEditor from './QueryEditor';
 import { selectTreeQuery } from './selectors';
-import { updateQueryKind, updateQueryLayerName, updateQueryTerminalName, updateQueryTerminalValue } from './actions';
+import { updateKind, updateLayerName, updateTerminalName, updateTerminalValue, retarget } from './actions';
 
 const mapStateToProps = (state) => selectTreeQuery(state.structuredQuery);
 
+const targetMe = (action) => retarget(action, 'query');
+
 const mapDispatchToProps = (dispatch) => ({
-  handlers: {
-    onKindChange: (id, k) => dispatch(updateQueryKind(id, k)),
-    onLayerChange: (id, n) => dispatch(updateQueryLayerName(id, n)),
-    onTerminalNameChange: (id, n) => dispatch(updateQueryTerminalName(id, n)),
-    onTerminalValueChange: (id, v) => dispatch(updateQueryTerminalValue(id, v)),
-  }
+  handlers: bindActionCreators({
+    onKindChange: targetMe(updateKind),
+    onLayerChange: targetMe(updateLayerName),
+    onTerminalNameChange: targetMe(updateTerminalName),
+    onTerminalValueChange: targetMe(updateTerminalValue),
+  }, dispatch)
 });
 
 export default connect(
