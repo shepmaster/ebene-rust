@@ -28,7 +28,7 @@ const forTargetIndex = (reducer) => (state, action) => {
 
 const initialAdvState = {
   query: '{"Layer": {"name": "function"}}',
-  highlight: '[{"Terminal": {"name": "ident", "value": "pm"}}]',
+  highlight: '[{"Term": {"name": "ident", "value": "pm"}}]',
 };
 
 function advancedReducer(state = initialAdvState, action) {
@@ -67,7 +67,7 @@ function resultsReducer(state = [], action) {
 const initialStructuredQuery = {
   0: { kind: 'Containing', lhs: 1, rhs: 2 },
   1: { kind: 'Layer', name: 'function' },
-  2: { kind: 'Terminal', name: 'ident', value: 'pm' },
+  2: { kind: 'Term', name: 'ident', value: 'pm' },
 };
 
 const makeNothing = () => ({ kind: 'Nothing' });
@@ -96,11 +96,11 @@ function structuredQueryReducer(state, action) {
     const { name } = action;
     return { ...state, [id]: { ...old, name } };
   }
-  case constants.TERMINAL_NAME_UPDATE: {
+  case constants.TERM_NAME_UPDATE: {
     const { name } = action;
     return { ...state, [id]: { ...old, name } };
   }
-  case constants.TERMINAL_VALUE_UPDATE: {
+  case constants.TERM_VALUE_UPDATE: {
     const { value } = action;
     return { ...state, [id]: { ...old, value } };
   }
@@ -110,7 +110,7 @@ function structuredQueryReducer(state, action) {
 }
 
 const initialStructuredHighlight = [{
-  0: { kind: 'Terminal', name: 'ident', value: 'pm' },
+  0: { kind: 'Term', name: 'ident', value: 'pm' },
 }];
 
 const structuredHighlightReducer = forTarget(forTargetIndex(structuredQueryReducer), 'highlight');

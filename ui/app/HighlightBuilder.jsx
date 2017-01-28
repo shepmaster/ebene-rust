@@ -5,7 +5,7 @@ import { bindActionCreators } from 'redux';
 import QueryEditor from './QueryEditor';
 import { selectTreeQuery } from './selectors';
 import {
-  updateKind, updateLayerName, updateTerminalName, updateTerminalValue,
+  updateKind, updateLayerName, updateTermName, updateTermValue,
   highlightAdd,
   retarget, retargetIndex
 } from './actions';
@@ -24,8 +24,8 @@ const mapDispatchToProps = (dispatch, { index }) => ({
   handlers: bindActionCreators({
     onKindChange: targetMe(updateKind, index),
     onLayerChange: targetMe(updateLayerName, index),
-    onTerminalNameChange: targetMe(updateTerminalName, index),
-    onTerminalValueChange: targetMe(updateTerminalValue, index),
+    onTermNameChange: targetMe(updateTermName, index),
+    onTermValueChange: targetMe(updateTermValue, index),
   }, dispatch),
   onAddHighlight: () => dispatch(highlightAdd(index)),
 });

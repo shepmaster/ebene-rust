@@ -4,7 +4,7 @@ import { bindActionCreators } from 'redux';
 
 import QueryEditor from './QueryEditor';
 import { selectTreeQuery } from './selectors';
-import { updateKind, updateLayerName, updateTerminalName, updateTerminalValue, retarget } from './actions';
+import { updateKind, updateLayerName, updateTermName, updateTermValue, retarget } from './actions';
 
 const mapStateToProps = (state) => selectTreeQuery(state.structuredQuery);
 
@@ -14,8 +14,8 @@ const mapDispatchToProps = (dispatch) => ({
   handlers: bindActionCreators({
     onKindChange: targetMe(updateKind),
     onLayerChange: targetMe(updateLayerName),
-    onTerminalNameChange: targetMe(updateTerminalName),
-    onTerminalValueChange: targetMe(updateTerminalValue),
+    onTermNameChange: targetMe(updateTermName),
+    onTermValueChange: targetMe(updateTermValue),
   }, dispatch)
 });
 

@@ -32,7 +32,7 @@ quick_error! {
     #[derive(Debug, Clone, PartialEq)]
     enum Error {
         UnknownLayer(name: String)
-        UnknownTerminal(name: String)
+        UnknownTerm(name: String)
     }
 }
 
@@ -119,10 +119,10 @@ fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
                 .map(|e| Box::new(e) as Box<Algebra>)
                 .ok_or_else(|| Error::UnknownLayer(name))
         }
-        StructuredQuery::Terminal { name, value } => {
+        StructuredQuery::Term { name, value } => {
             INDEX.term_for(&name, &value)
                 .map(|e| Box::new(e) as Box<Algebra>)
-                .ok_or_else(|| Error::UnknownTerminal(name))
+                .ok_or_else(|| Error::UnknownTerm(name))
         }
     }
 }
@@ -206,7 +206,7 @@ enum StructuredQuery {
     OneOf(Box<StructuredQuery>, Box<StructuredQuery>),
     FollowedBy(Box<StructuredQuery>, Box<StructuredQuery>),
     Layer { name: String },
-    Terminal { name: String, value: String },
+    Term { name: String, value: String },
 }
 
 #[derive(Debug, Default, Serialize)]

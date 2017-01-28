@@ -25,12 +25,12 @@ const Layer = ({ id, kind, name, handlers: { onKindChange, onLayerChange } }) =>
   </div>
 );
 
-const Terminal = ({ id, kind, name, value, handlers: { onKindChange, onTerminalNameChange, onTerminalValueChange } }) => (
+const Term = ({ id, kind, name, value, handlers: { onKindChange, onTermNameChange, onTermValueChange } }) => (
   <div>
     <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-    <input value={name} onChange={e => onTerminalNameChange(id, e.target.value)}></input>
+    <input value={name} onChange={e => onTermNameChange(id, e.target.value)}></input>
     :
-    <input value={value} onChange={e => onTerminalValueChange(id, e.target.value)}></input>
+    <input value={value} onChange={e => onTermValueChange(id, e.target.value)}></input>
   </div>
 );
 
@@ -51,7 +51,7 @@ const BinaryComponent = ({ id, kind, lhs, rhs, handlers }) => {
 const mapKindToComponent = {
   'Nothing': Nothing,
   'Layer': Layer,
-  'Terminal': Terminal,
+  'Term': Term,
   'Containing': BinaryComponent,
   'ContainedIn': BinaryComponent,
   'NotContaining': BinaryComponent,

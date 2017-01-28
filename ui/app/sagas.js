@@ -20,6 +20,6 @@ export default function* mySaga() {
   yield takeEvery(constants.ADVANCED_HIGHLIGHT_UPDATE, performSearch);
   yield takeEvery(constants.STRUCTURED_QUERY_KIND_UPDATE, performSearch);
   yield takeEvery(constants.LAYER_NAME_UPDATE, performSearch);
-  yield takeEvery(constants.TERMINAL_NAME_UPDATE, performSearch);
-  yield takeEvery(constants.TERMINAL_VALUE_UPDATE, performSearch);
+  yield takeEvery(constants.TERM_NAME_UPDATE, performSearch);
+  yield takeEvery(constants.TERM_VALUE_UPDATE, performSearch);
 }

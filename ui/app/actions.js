@@ -34,13 +34,13 @@ export const updateLayerName = (id, name) => ({
   id, name
 });
 
-export const updateTerminalName = (id, name) => ({
-  type: constants.TERMINAL_NAME_UPDATE,
+export const updateTermName = (id, name) => ({
+  type: constants.TERM_NAME_UPDATE,
   id, name
 });
 
-export const updateTerminalValue = (id, value) => ({
-  type: constants.TERMINAL_VALUE_UPDATE,
+export const updateTermValue = (id, value) => ({
+  type: constants.TERM_VALUE_UPDATE,
   id, value
 });
 
