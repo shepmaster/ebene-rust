@@ -8,6 +8,7 @@ import Page from './Page';
 import reducer from './reducer';
 import saga from './sagas';
 
+import 'normalize.css';
 import './index.scss';
 
 const sagaMiddleware = createSagaMiddleware();
