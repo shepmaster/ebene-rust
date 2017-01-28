@@ -6,8 +6,10 @@ import QueryBuilder from './QueryBuilder';
 import ResultList from './ResultList';
 import { toggleAdvanced } from './actions';
 
+import HighlightBuilder from './HighlightBuilder';
+
 const Input = ({ isAdvanced }) => (
-  isAdvanced ? <AdvancedInput /> : <QueryBuilder />
+  isAdvanced ? <AdvancedInput /> : <div><QueryBuilder /><HighlightBuilder /></div>
 );
 
 const Page = ({ isAdvanced, results, toggleAdvanced }) => (

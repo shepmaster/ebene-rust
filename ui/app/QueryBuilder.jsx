@@ -2,7 +2,7 @@ import React from 'react';
 import { connect } from 'react-redux';
 
 import { selectTreeQuery } from './selectors';
-import { updateStructuredQueryKind, updateLayerName, updateTerminalName, updateTerminalValue } from './actions';
+import { updateQueryKind, updateQueryLayerName, updateQueryTerminalName, updateQueryTerminalValue } from './actions';
 
 const SelectKind = ({ id, kind, onKindChange }) => {
   const options = componentKinds.map((name, i) => (
@@ -76,14 +76,16 @@ const QueryBuilder = (props) => {
   );
 };
 
-const mapStateToProps = (state) => selectTreeQuery(state);
+export { QueryBuilder };
+
+const mapStateToProps = (state) => selectTreeQuery(state.structuredQuery);
 
 const mapDispatchToProps = (dispatch) => ({
   handlers: {
-    onKindChange: (id, k) => dispatch(updateStructuredQueryKind(id, k)),
-    onLayerChange: (id, n) => dispatch(updateLayerName(id, n)),
-    onTerminalNameChange: (id, n) => dispatch(updateTerminalName(id, n)),
-    onTerminalValueChange: (id, v) => dispatch(updateTerminalValue(id, v)),
+    onKindChange: (id, k) => dispatch(updateQueryKind(id, k)),
+    onLayerChange: (id, n) => dispatch(updateQueryLayerName(id, n)),
+    onTerminalNameChange: (id, n) => dispatch(updateQueryTerminalName(id, n)),
+    onTerminalValueChange: (id, v) => dispatch(updateQueryTerminalValue(id, v)),
   }
 });
 

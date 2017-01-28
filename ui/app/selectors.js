@@ -7,8 +7,8 @@ export function selectQuery(state) {
     };
   }
 
-  const structuredQuery = selectTreeQueryForApi(state);
-  const structuredHighlight = [{ Terminal: { name: "ident", value: 'pm' } }];
+  const structuredQuery = selectTreeQueryForApi(state.structuredQuery);
+  const structuredHighlight = [selectTreeQueryForApi(state.structuredHighlight)];
 
   return {
     q: JSON.stringify(structuredQuery),
@@ -16,9 +16,7 @@ export function selectQuery(state) {
   };
 }
 
-function selectTreeQueryForApi(state) {
-  const queryList = state.structuredQuery;
-
+function selectTreeQueryForApi(queryList) {
   function treeify(id) {
     let { kind, ...rest } = queryList[id];
     switch (kind) {
@@ -38,9 +36,7 @@ function selectTreeQueryForApi(state) {
   return treeify(0);
 }
 
-export function selectTreeQuery(state) {
-  const queryList = state.structuredQuery;
-
+export function selectTreeQuery(queryList) {
   function treeify(id) {
     const thisQuery = queryList[id];
 
