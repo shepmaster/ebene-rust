@@ -8,7 +8,7 @@ export function selectQuery(state) {
   }
 
   const structuredQuery = selectTreeQueryForApi(state.structuredQuery);
-  const structuredHighlight = [selectTreeQueryForApi(state.structuredHighlight)];
+  const structuredHighlight = state.structuredHighlights.map(selectTreeQueryForApi);
 
   return {
     q: JSON.stringify(structuredQuery),

@@ -49,3 +49,9 @@ export const retarget = (action, target) => (...args) => {
   createdAction.target = target;
   return createdAction;
 };
+
+export const retargetIndex = (action, index) => (...args) => {
+  let createdAction = action(...args);
+  createdAction.targetIndex = index;
+  return createdAction;
+};

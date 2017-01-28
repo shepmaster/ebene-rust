@@ -4,22 +4,37 @@ import { bindActionCreators } from 'redux';
 
 import QueryEditor from './QueryEditor';
 import { selectTreeQuery } from './selectors';
-import { updateKind, updateLayerName, updateTerminalName, updateTerminalValue, retarget } from './actions';
+import { updateKind, updateLayerName, updateTerminalName, updateTerminalValue, retarget, retargetIndex } from './actions';
 
-const mapStateToProps = (state) => selectTreeQuery(state.structuredHighlight);
 
-const targetMe = (action) => retarget(action, 'highlight');
+const targetMe = (action, index) => retarget(retargetIndex(action, index), 'highlight');
 
-const mapDispatchToProps = (dispatch) => ({
+const mapDispatchToProps = (dispatch, { index }) => ({
   handlers: bindActionCreators({
-    onKindChange: targetMe(updateKind),
-    onLayerChange: targetMe(updateLayerName),
-    onTerminalNameChange: targetMe(updateTerminalName),
-    onTerminalValueChange: targetMe(updateTerminalValue),
+    onKindChange: targetMe(updateKind, index),
+    onLayerChange: targetMe(updateLayerName, index),
+    onTerminalNameChange: targetMe(updateTerminalName, index),
+    onTerminalValueChange: targetMe(updateTerminalValue, index),
   }, dispatch)
+});
+
+const HighlightOne = connect(
+  null,
+  mapDispatchToProps
+)(QueryEditor);
+
+
+
+const Highlights = ({ highlights }) => {
+  const rendered = highlights.map((h, i) => <HighlightOne key={i} index={i} {...h} />);
+  return <div>{rendered}</div>;
+};
+
+const mapStateToProps = (state) => ({
+  highlights: state.structuredHighlights.map(selectTreeQuery),
 });
 
 export default connect(
   mapStateToProps,
-  mapDispatchToProps
-)(QueryEditor);
+  null
+)(Highlights);
