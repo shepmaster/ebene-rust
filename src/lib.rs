@@ -584,6 +584,7 @@ pub struct MatchArm {
     extent: Extent,
     pattern: Vec<Pattern>,
     body: Expression,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1647,16 +1648,16 @@ fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
 fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
     let spt = pt;
     sequence!(pm, pt, {
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(Vec::new());
         pattern = one_or_more(tail("|", pattern));
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(ws);
         _       = literal("=>");
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(ws);
         body    = expression;
-        _x      = optional(whitespace);
-        _x      = optional(literal(","));
-        _x      = optional(whitespace);
-    }, |_, pt| MatchArm { extent: ex(spt, pt), pattern, body })
+        ws      = optional_whitespace(ws);
+        _       = optional(literal(","));
+        ws      = optional_whitespace(ws);
+    }, |_, pt| MatchArm { extent: ex(spt, pt), pattern, body, whitespace: ws })
 }
 
 fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
