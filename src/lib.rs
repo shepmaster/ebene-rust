@@ -124,6 +124,7 @@ pub struct Attribute {
 pub struct Lifetime {
     extent: Extent,
     name: Ident,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2585,9 +2586,9 @@ fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
     let spt = pt;
     sequence!(pm, pt, {
         _    = literal("'");
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(Vec::new());
         name = ident;
-    }, |_, pt| Lifetime { extent: ex(spt, pt), name })
+    }, |_, pt| Lifetime { extent: ex(spt, pt), name, whitespace: ws })
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Whitespace>> {
