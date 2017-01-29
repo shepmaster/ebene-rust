@@ -203,6 +203,7 @@ pub struct Type {
     extent: Extent,
     reference: Option<TypeReference>,
     inner: TypeInner,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2494,9 +2495,9 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     sequence!(pm, pt, {
         spt       = point;
         reference = optional(typ_ref);
-        _x        = optional(whitespace);
+        ws        = optional_whitespace(Vec::new());
         inner     = typ_inner;
-    }, |_, pt| Type { extent: ex(spt, pt), reference, inner })
+    }, |_, pt| Type { extent: ex(spt, pt), reference, inner, whitespace: ws })
 }
 
 fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference> {
