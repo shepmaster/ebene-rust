@@ -576,6 +576,7 @@ pub struct Match {
     extent: Extent,
     head: Box<Expression>,
     arms: Vec<MatchArm>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1634,13 +1635,13 @@ fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
     sequence!(pm, pt, {
         spt  = point;
         _    = literal("match");
-        _x   = whitespace;
+        ws   = append_whitespace(Vec::new());
         head = expression;
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(ws);
         _    = literal("{");
         arms = zero_or_more(match_arm);
         _    = literal("}");
-    }, |_, pt| Match { extent: ex(spt, pt), head: Box::new(head), arms })
+    }, |_, pt| Match { extent: ex(spt, pt), head: Box::new(head), arms, whitespace: ws })
 }
 
 fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
