@@ -640,6 +640,7 @@ pub struct Reference {
     extent: Extent,
     mutable: Option<Extent>,
     value: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1843,10 +1844,15 @@ fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Refere
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("&");
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(Vec::new());
         mutable = optional(ext(literal("mut")));
         value   = expression;
-    }, |_, pt| Reference { extent: ex(spt, pt), mutable, value: Box::new(value) } )
+    }, |_, pt| Reference {
+        extent: ex(spt, pt),
+        mutable,
+        value: Box::new(value),
+        whitespace: ws,
+    } )
 }
 
 fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dereference> {
