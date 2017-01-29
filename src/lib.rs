@@ -188,6 +188,7 @@ pub struct MacroRules {
     extent: Extent,
     name: Ident,
     body: Extent,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1183,9 +1184,9 @@ fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRule
     let spt = pt;
     sequence!(pm, pt, {
         _    = literal("macro_rules!");
-        _x   = whitespace;
+        ws   = append_whitespace(Vec::new());
         name = ident;
-        _x   = whitespace;
+        ws   = append_whitespace(ws);
         _    = literal("{");
         body = parse_nested_until('{', '}');
         _    = literal("}");
@@ -1193,6 +1194,7 @@ fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRule
         extent: ex(spt, pt),
         name,
         body,
+        whitespace: ws,
     })
 }
 
