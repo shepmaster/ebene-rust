@@ -239,6 +239,7 @@ pub struct TypeGenericsFunction {
     extent: Extent,
     types: Vec<Type>,
     return_type: Option<Box<Type>>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2558,12 +2559,13 @@ fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeG
         _  = literal("(");
         types = zero_or_more(tail(",", typ));
         _  = literal(")");
-        _x = optional(whitespace);
+        ws = optional_whitespace(Vec::new());
         return_type = optional(function_return_type);
     }, |_, pt| TypeGenericsFunction {
         extent: ex(spt, pt),
         types,
-        return_type: return_type.map(Box::new)
+        return_type: return_type.map(Box::new),
+        whitespace: ws,
     })
 }
 
