@@ -291,6 +291,7 @@ pub struct Enum {
     pub extent: Extent,
     name: Ident,
     variants: Vec<EnumVariant>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2214,19 +2215,15 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
     sequence!(pm, pt, {
         _x       = optional(visibility);
         _        = literal("enum");
-        _x       = whitespace;
+        ws       = whitespace;
         name     = ident;
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         _        = literal("{");
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         variants = zero_or_more(tail(",", enum_variant));
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         _        = literal("}");
-    }, |_, pt| Enum {
-        extent: ex(spt, pt),
-        name,
-        variants,
-    })
+    }, |_, pt| Enum { extent: ex(spt, pt), name, variants, whitespace: ws })
 }
 
 fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariant> {
