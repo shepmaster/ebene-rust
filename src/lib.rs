@@ -177,6 +177,7 @@ pub struct TraitImplFunctionHeader {
 
 #[derive(Debug, Visit)]
 pub struct GenericDeclarations {
+    pub extent: Extent,
     lifetimes: Vec<Lifetime>,
     types: Vec<Generic>,
 }
@@ -335,7 +336,7 @@ pub struct TraitImplArgumentNamed {
 
 #[derive(Debug, Visit)]
 pub struct Where {
-    extent: Extent,
+    pub extent: Extent,
     name: Type,
     bounds: Vec<Type>,
 }
@@ -1212,11 +1213,12 @@ fn split_point_at_non_zero_offset<'s>(pt: Point<'s>, idx: usize, e: Error) -> Pr
 
 fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
     sequence!(pm, pt, {
+        spt       = point;
         _x        = literal("<");
         lifetimes = zero_or_more(tail(",", lifetime));
         types     = zero_or_more(tail(",", generic_declaration));
         _x        = literal(">");
-    }, |_, _| GenericDeclarations { lifetimes, types })
+    }, |_, pt| GenericDeclarations { extent: ex(spt, pt), lifetimes, types })
 }
 
 fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {

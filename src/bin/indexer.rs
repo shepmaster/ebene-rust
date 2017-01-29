@@ -23,6 +23,8 @@ struct Indexing {
     layer_function: BTreeSet<strata_rs::Extent>,
     layer_function_header: BTreeSet<strata_rs::Extent>,
     layer_struct: BTreeSet<strata_rs::Extent>,
+    layer_generic_declarations: BTreeSet<strata_rs::Extent>,
+    layer_where: BTreeSet<strata_rs::Extent>,
 
     layers_expression: Vec<BTreeSet<strata_rs::Extent>>,
     layers_statement: Vec<BTreeSet<strata_rs::Extent>>,
@@ -59,6 +61,14 @@ impl Visitor for Indexing {
 
     fn visit_struct(&mut self, s: &strata_rs::Struct) {
         self.layer_struct.insert(s.extent);
+    }
+
+    fn visit_generic_declarations(&mut self, gd: &strata_rs::GenericDeclarations) {
+        self.layer_generic_declarations.insert(gd.extent);
+    }
+
+    fn visit_where(&mut self, w: &strata_rs::Where) {
+        self.layer_where.insert(w.extent);
     }
 
     fn visit_statement(&mut self, s: &strata_rs::Statement) {
@@ -125,6 +135,8 @@ impl From<Indexing> for IndexedFile {
             layer_function,
             layer_function_header,
             layer_struct,
+            layer_generic_declarations,
+            layer_where,
 
             layers_expression,
             layers_statement,
@@ -137,6 +149,8 @@ impl From<Indexing> for IndexedFile {
         layers.insert("function".into(), layer_function);
         layers.insert("function-header".into(), layer_function_header);
         layers.insert("struct".into(), layer_struct);
+        layers.insert("generic-declarations".into(), layer_generic_declarations);
+        layers.insert("where".into(), layer_where);
 
         for (i, layer) in layers_expression.into_iter().enumerate() {
             layers.insert(format!("expression-{}", i), layer);
