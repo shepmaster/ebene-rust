@@ -283,6 +283,7 @@ pub struct StructField {
     attributes: Vec<Attribute>,
     name: Ident,
     typ: Type,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2196,9 +2197,9 @@ fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Str
         _x         = optional(visibility);
         name       = ident;
         _          = literal(":");
-        _x         = optional(whitespace);
+        ws         = optional_whitespace(Vec::new());
         typ        = typ;
-    }, |_, pt| StructField { extent: ex(spt, pt), attributes, name, typ })
+    }, |_, pt| StructField { extent: ex(spt, pt), attributes, name, typ, whitespace: ws })
 }
 
 fn struct_defn_field_attr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> {
