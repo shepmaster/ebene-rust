@@ -365,6 +365,7 @@ pub enum TraitImplArgument {
 pub struct TraitImplArgumentNamed {
     name: Option<Pattern>,
     typ: Type,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2400,17 +2401,17 @@ fn trait_impl_function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
 
 fn trait_impl_function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplArgument> {
     sequence!(pm, pt, {
-        name = optional(trait_impl_function_argument_name);
-        typ  = typ;
-    }, |_, _| TraitImplArgument::Named(TraitImplArgumentNamed { name, typ }))
+        (name, ws) = concat_whitespace(Vec::new(), optional(trait_impl_function_argument_name));
+        typ        = typ;
+    }, |_, _| TraitImplArgument::Named(TraitImplArgumentNamed { name, typ, whitespace: ws }))
 }
 
-fn trait_impl_function_argument_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+fn trait_impl_function_argument_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Pattern, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         name = pattern;
         _    = literal(":");
-        _x   = optional(whitespace);
-    }, |_, _| name)
+        ws   = optional_whitespace(Vec::new());
+    }, |_, _| (name, ws))
 }
 
 fn trait_impl_function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Option<Block>> {
