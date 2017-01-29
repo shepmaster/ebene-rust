@@ -815,6 +815,7 @@ pub struct TypeAlias {
     extent: Extent,
     name: Type,
     defn: Type,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2464,19 +2465,15 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias>
     sequence!(pm, pt, {
         _x   = optional(visibility);
         _    = literal("type");
-        _x   = whitespace;
+        ws   = whitespace;
         name = typ;
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(ws);
         _    = literal("=");
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(ws);
         defn = typ;
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(ws);
         _    = literal(";");
-    }, |_, pt| TypeAlias {
-        extent: ex(spt, pt),
-        name,
-        defn,
-    })
+    }, |_, pt| TypeAlias { extent: ex(spt, pt), name, defn, whitespace: ws })
 }
 
 fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
