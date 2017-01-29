@@ -1233,7 +1233,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
         ws                = optional_whitespace(ws);
-        wheres            = optional(where_clause);
+        (wheres, ws)      = concat_whitespace(ws, optional(where_clause));
     }, |_, pt| {
         FunctionHeader {
             extent: ex(spt, pt),
@@ -1351,12 +1351,12 @@ fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     }, |_, _| (typ, ws))
 }
 
-fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Where>> {
+fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<Where>, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         _  = literal("where");
-        _x = whitespace;
+        ws = whitespace;
         w  = one_or_more(tail(",", function_where));
-    }, |_, _| w)
+    }, |_, _| (w, ws))
 }
 
 fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
@@ -2364,7 +2364,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
         ws                = optional_whitespace(ws);
-        wheres            = optional(where_clause);
+        (wheres, ws)      = concat_whitespace(ws, optional(where_clause));
     }, |_, pt| {
         TraitImplFunctionHeader {
             extent: ex(spt, pt),
@@ -2411,19 +2411,19 @@ fn trait_impl_function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<
 
 fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     sequence!(pm, pt, {
-        spt        = point;
-        _          = literal("impl");
-        generics   = optional(function_generic_declarations);
-        ws         = whitespace;
-        trait_name = optional(p_impl_of_trait);
-        type_name  = typ;
-        ws         = optional_whitespace(ws);
-        wheres     = optional(where_clause);
-        _          = literal("{");
-        ws         = optional_whitespace(ws);
-        body       = zero_or_more(impl_member);
-        ws         = optional_whitespace(ws);
-        _          = literal("}");
+        spt          = point;
+        _            = literal("impl");
+        generics     = optional(function_generic_declarations);
+        ws           = whitespace;
+        trait_name   = optional(p_impl_of_trait);
+        type_name    = typ;
+        ws           = optional_whitespace(ws);
+        (wheres, ws) = concat_whitespace(ws, optional(where_clause));
+        _            = literal("{");
+        ws           = optional_whitespace(ws);
+        body         = zero_or_more(impl_member);
+        ws           = optional_whitespace(ws);
+        _            = literal("}");
     }, |_, pt| Impl {
         extent: ex(spt, pt),
         generics,
@@ -3386,7 +3386,7 @@ mod test {
     #[test]
     fn where_clause_with_multiple_types() {
         let p = qp(where_clause, "where P: A, Q: B");
-        let p = unwrap_progress(p);
+        let (p, _) = unwrap_progress(p);
         assert_eq!(p[1].extent, (12, 16))
     }
 
