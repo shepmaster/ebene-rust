@@ -652,6 +652,7 @@ pub struct Dereference {
 pub struct Return {
     extent: Extent,
     value: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug)]
@@ -1816,12 +1817,16 @@ fn expr_closure_arg_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 }
 
 fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
-    let spt = pt;
     sequence!(pm, pt, {
-        _x    = optional(literal("return"));
-        _x    = whitespace;
+        spt   = point;
+        _     = optional(literal("return"));
+        ws    = append_whitespace(Vec::new());
         value = expression;
-    }, |_, pt| Return { extent: ex(spt, pt), value: Box::new(value) })
+    }, |_, pt| Return {
+        extent: ex(spt, pt),
+        value: Box::new(value),
+        whitespace: ws,
+    })
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
