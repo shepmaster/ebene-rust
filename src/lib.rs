@@ -824,6 +824,7 @@ pub struct Module {
 #[derive(Debug, Visit)]
 pub struct Visibility {
     extent: Extent,
+    whitespace: Vec<Whitespace>,
 }
 
 // --------------------------------------------------
@@ -2281,8 +2282,8 @@ fn visibility<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Visibility
     let spt = pt;
     sequence!(pm, pt, {
         _  = literal("pub");
-        _x = optional(whitespace);
-    }, |_, pt| Visibility { extent: ex(spt, pt) })
+        ws = optional_whitespace(Vec::new());
+    }, |_, pt| Visibility { extent: ex(spt, pt), whitespace: ws })
 }
 
 // TODO: Massively duplicated!!!
