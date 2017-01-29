@@ -478,6 +478,7 @@ pub struct Assign {
     extent: Extent,
     name: Ident,
     value: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1507,11 +1508,16 @@ fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assign> {
     sequence!(pm, pt, {
         spt   = point;
         name  = ident;
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(Vec::new());
         _     = literal("=");
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(ws);
         value = expression;
-    }, |_, pt| Assign { extent: ex(spt, pt), name, value: Box::new(value) })
+    }, |_, pt| Assign {
+        extent: ex(spt, pt),
+        name,
+        value: Box::new(value),
+        whitespace: ws,
+    })
 }
 
 fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
