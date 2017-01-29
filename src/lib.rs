@@ -723,6 +723,7 @@ pub struct PatternStruct {
 pub struct PatternStructField {
     name: Ident,
     pattern: Pattern,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2122,7 +2123,7 @@ fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     let spt = pt;
     sequence!(pm, pt, {
         name    = ident;
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(Vec::new());
         pattern = optional(pattern_struct_field_tail);
     }, |_, pt| {
         let pattern = pattern.unwrap_or_else(|| {
@@ -2133,7 +2134,7 @@ fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
                 whitespace: Vec::new(),
             })
         });
-        PatternStructField { name, pattern }
+        PatternStructField { name, pattern, whitespace: ws }
     })
 }
 
