@@ -142,6 +142,7 @@ pub struct Comment {
 pub struct Use {
     extent: Extent,
     name: Extent,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2425,16 +2426,13 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
 }
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
-    let spt = pt;
     sequence!(pm, pt, {
+        spt  = point;
         _    = literal("use");
-        _x   = whitespace;
+        ws   = whitespace;
         name = use_path;
         _    = literal(";");
-    }, |_, pt| Use {
-        extent: ex(spt, pt),
-        name
-    })
+    }, |_, pt| Use { extent: ex(spt, pt), name, whitespace: ws })
 }
 
 fn use_path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
