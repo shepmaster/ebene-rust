@@ -785,6 +785,7 @@ pub struct Impl {
     type_name: Type,
     wheres: Vec<Where>,
     body: Vec<ImplMember>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2350,15 +2351,15 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     sequence!(pm, pt, {
         _          = literal("impl");
         generics   = optional(function_generic_declarations);
-        _x         = whitespace;
+        ws         = whitespace;
         trait_name = optional(p_impl_of_trait);
         type_name  = typ;
-        _x         = optional(whitespace);
+        ws         = optional_whitespace(ws);
         wheres     = optional(where_clause);
         _          = literal("{");
-        _x         = optional(whitespace);
+        ws         = optional_whitespace(ws);
         body       = zero_or_more(impl_member);
-        _x         = optional(whitespace);
+        ws         = optional_whitespace(ws);
         _          = literal("}");
     }, |_, pt| Impl {
         extent: ex(spt, pt),
@@ -2367,6 +2368,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         type_name,
         wheres: wheres.unwrap_or_else(Vec::new),
         body,
+        whitespace: ws,
     })
 }
 
