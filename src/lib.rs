@@ -626,6 +626,7 @@ pub struct Closure {
     is_move: bool,
     args: Vec<ClosureArg>,
     body: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1784,7 +1785,7 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
     sequence!(pm, pt, {
         spt  = point;
         mov  = optional(literal("move"));
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(Vec::new());
         _    = literal("|");
         args = zero_or_more(tail(",", expr_closure_arg));
         _    = literal("|");
@@ -1794,6 +1795,7 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
         is_move: mov.is_some(),
         args,
         body: Box::new(body),
+        whitespace: ws,
     })
 }
 
