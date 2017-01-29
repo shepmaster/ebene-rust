@@ -1007,6 +1007,24 @@ pub trait Visitor {
 
 // --------------------------------------------------
 
+fn ex(start: Point, end: Point) -> Extent {
+    let ex = (start.offset, end.offset);
+    assert!(ex.1 >= ex.0, "{} does not come before {}", ex.1, ex.0);
+    ex
+}
+
+// --------------------------------------------------
+
+fn ext<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        let spt = pt;
+        let (pt, _) = try_parse!(f(pm, pt));
+        Progress::success(pt, ex(spt, pt))
+    }
+}
+
 fn parse_until<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
     where P: std::str::pattern::Pattern<'s> + Clone // TODO: eww clone
 {
@@ -1055,6 +1073,8 @@ fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>
         }, |_, _| v)
     }
 }
+
+// --------------------------------------------------
 
 // TODO: can we transofrm this to (pm, pt)?
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -1113,22 +1133,6 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         header,
         body,
     }))
-}
-
-fn ex(start: Point, end: Point) -> Extent {
-    let ex = (start.offset, end.offset);
-    assert!(ex.1 >= ex.0, "{} does not come before {}", ex.1, ex.0);
-    ex
-}
-
-fn ext<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
-    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-{
-    move |pm, pt| {
-        let spt = pt;
-        let (pt, _) = try_parse!(f(pm, pt));
-        Progress::success(pt, ex(spt, pt))
-    }
 }
 
 fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
