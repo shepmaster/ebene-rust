@@ -1145,12 +1145,11 @@ fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, 
 }
 
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
-    let ws = Vec::new();
-    let spt = pt;
     sequence!(pm, pt, {
+        spt         = point;
         visibility  = optional(visibility);
         _           = literal("fn");
-        ws          = optional_whitespace(ws);
+        ws          = optional_whitespace(Vec::new());
         name        = ident;
         generics    = optional(function_generic_declarations);
         arguments   = function_arglist;
