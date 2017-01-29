@@ -274,6 +274,7 @@ pub struct Struct {
     pub extent: Extent,
     name: Ident,
     fields: Vec<StructField>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2167,19 +2168,15 @@ fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pat
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
-    let spt = pt;
     sequence!(pm, pt, {
+        spt    = point;
         _x     = optional(visibility);
         _      = literal("struct");
-        _x     = whitespace;
+        ws     = whitespace;
         name   = ident;
-        _x     = optional(whitespace);
+        ws     = optional_whitespace(ws);
         fields = struct_defn_body;
-    }, |_, pt| Struct {
-        extent: ex(spt, pt),
-        name,
-        fields,
-    })
+    }, |_, pt| Struct { extent: ex(spt, pt), name, fields, whitespace: ws })
 }
 
 fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructField>> {
