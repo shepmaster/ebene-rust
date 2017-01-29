@@ -542,6 +542,7 @@ pub struct ForLoop {
     pattern: Pattern,
     iter: Box<Expression>,
     body: Box<Block>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1083,6 +1084,14 @@ fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>
     }
 }
 
+fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
+    zero_or_more_append(ws, whitespace_core)
+}
+
+fn append_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
+    one_or_more_append(ws, whitespace_core)
+}
+
 // --------------------------------------------------
 
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -1142,10 +1151,6 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Function> {
         body,
         whitespace: ws
     })
-}
-
-fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
-    zero_or_more_append(ws, whitespace_core)
 }
 
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
@@ -1598,17 +1603,18 @@ fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop
     sequence!(pm, pt, {
         spt          = point;
         _            = literal("for");
-        _x           = whitespace;
+        ws           = append_whitespace(Vec::new());
         pattern      = pattern;
-        _x           = whitespace;
+        ws           = append_whitespace(ws);
         _            = literal("in");
-        _x           = whitespace;
+        ws           = append_whitespace(ws);
         (iter, body) = expr_followed_by_block;
     }, |_, pt| ForLoop {
         extent: ex(spt, pt),
         pattern,
         iter: Box::new(iter),
         body: Box::new(body),
+        whitespace: ws,
     })
 }
 
