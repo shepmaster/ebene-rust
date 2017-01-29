@@ -144,8 +144,15 @@ pub struct Comment {
 #[derive(Debug, Visit)]
 pub struct Use {
     extent: Extent,
-    name: Extent,
+    names: Vec<Ident>,
+    tail: Option<Extent>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub struct UsePath {
+    names: Vec<Ident>,
+    tail: Option<Extent>,
 }
 
 #[derive(Debug, Visit)]
@@ -2468,26 +2475,27 @@ fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
         spt  = point;
         _    = literal("use");
         ws   = whitespace;
-        name = use_path;
+        path = use_path;
         _    = literal(";");
-    }, |_, pt| Use { extent: ex(spt, pt), name, whitespace: ws })
+    }, move |_, pt| {
+        let UsePath { names, tail } = path;
+        Use { extent: ex(spt, pt), names, tail, whitespace: ws }
+    })
 }
 
-fn use_path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn use_path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UsePath> {
     sequence!(pm, pt, {
-        spt = point;
-        _x  = ident;
-        _x  = zero_or_more(use_path_component);
-        _x  = optional(use_path_tail);
-    }, |_, pt| ex(spt, pt))
+        name  = ident;
+        names = zero_or_more_append(vec![name], use_path_component);
+        tail  = optional(use_path_tail);
+    }, |_, _| UsePath { names, tail })
 }
 
-fn use_path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn use_path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
     sequence!(pm, pt, {
-        spt = point;
         _   = literal("::");
-        _x  = ident;
-    }, |_, pt| ex(spt, pt))
+        name  = ident;
+    }, |_, _| name)
 }
 
 fn use_path_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
