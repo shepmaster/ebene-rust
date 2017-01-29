@@ -315,6 +315,7 @@ pub struct SelfArgument {
     is_reference: Option<Extent>,
     is_mutable: Option<Extent>,
     name: Ident,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1239,17 +1240,18 @@ fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArg
     sequence!(pm, pt, {
         spt          = point;
         is_reference = optional(ext(literal("&")));
-        _x           = optional(whitespace);
+        ws           = optional_whitespace(Vec::new());
         is_mutable   = optional(ext(literal("mut")));
-        _x           = optional(whitespace);
+        ws           = optional_whitespace(ws);
         name         = ext(literal("self"));
         _            = optional(literal(","));
-        _x           = optional(whitespace);
+        ws           = optional_whitespace(ws);
     }, |_, pt| SelfArgument {
         extent: ex(spt, pt),
         is_reference,
         is_mutable,
-        name: Ident { extent: name }
+        name: Ident { extent: name },
+        whitespace: ws,
     })
 }
 
