@@ -565,6 +565,7 @@ pub struct If {
     body: Box<Block>,
     more: Vec<If>,
     else_body: Option<Box<Block>>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1524,7 +1525,7 @@ fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
     let spt = pt;
     sequence!(pm, pt, {
         _                 = literal("if");
-        _x                = whitespace;
+        ws                = whitespace;
         (condition, body) = expr_followed_by_block;
         more              = zero_or_more(expr_if_else_if);
         else_body         = optional(expr_if_else_end);
@@ -1533,7 +1534,8 @@ fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
         condition: Box::new(condition),
         body: Box::new(body),
         more,
-        else_body: else_body.map(Box::new)
+        else_body: else_body.map(Box::new),
+        whitespace: ws,
     })
 }
 
