@@ -505,6 +505,7 @@ pub struct Value {
     extent: Extent,
     name: PathedIdent,
     literal: Option<Vec<StructLiteralField>>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1592,18 +1593,19 @@ fn expr_followed_by_block_expr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
 }
 
 fn expr_followed_by_block_simple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
-    let spt = pt;
     sequence!(pm, pt, {
+        spt       = point;
         condition = pathed_ident;
         mpt       = point;
-        _x        = optional(whitespace);
+        ws        = optional_whitespace(Vec::new());
         body      = block;
     }, |_, _| {
         let condition = Expression::Value(Value {
-                extent: ex(spt, mpt),
-                name: condition,
-                literal: None,
-            });
+            extent: ex(spt, mpt),
+            name: condition,
+            literal: None,
+            whitespace: ws,
+        });
         (condition, body)
     })
 }
@@ -1873,9 +1875,9 @@ fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
     sequence!(pm, pt, {
         spt     = point;
         name    = pathed_ident;
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(Vec::new());
         literal = optional(expr_value_struct_literal);
-    }, |_, pt| Value { extent: ex(spt, pt), name, literal } )
+    }, |_, pt| Value { extent: ex(spt, pt), name, literal, whitespace: ws } )
 }
 
 fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructLiteralField>> {
@@ -1889,17 +1891,18 @@ fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
 }
 
 fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructLiteralField> {
-    let spt = pt;
     sequence!(pm, pt, {
+        spt   = point;
         name  = ident;
         mpt   = point;
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(Vec::new());
         value = optional(expr_value_struct_literal_field_value);
     }, |_, _| {
         let value = value.unwrap_or_else(|| Expression::Value(Value {
             extent: ex(spt, mpt),
             name: name.into(),
             literal: None,
+            whitespace: ws,
         }));
         StructLiteralField { name, value }
     })
