@@ -342,6 +342,7 @@ pub struct Where {
     pub extent: Extent,
     name: Type,
     bounds: Vec<Type>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1282,13 +1283,13 @@ fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Wher
 }
 
 fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
-    let spt = pt;
     sequence!(pm, pt, {
+        spt    = point;
         name   = typ;
         _      = literal(":");
-        _x     = optional(whitespace);
+        ws     = optional_whitespace(Vec::new());
         bounds = one_or_more(tail("+", typ));
-    }, |_, pt| Where { extent: ex(spt, pt), name, bounds })
+    }, |_, pt| Where { extent: ex(spt, pt), name, bounds, whitespace: ws })
 }
 
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
