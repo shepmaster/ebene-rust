@@ -716,6 +716,7 @@ pub struct PatternStruct {
     fields: Vec<PatternStructField>,
     #[visit(ignore)]
     wildcard: bool,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2100,19 +2101,20 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
     let spt = pt;
     sequence!(pm, pt, {
         name     = pathed_ident;
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(Vec::new());
         _        = literal("{");
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         fields   = zero_or_more(tail(",", pattern_struct_field));
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         wildcard = optional(literal(".."));
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         _        = literal("}");
     }, |_, pt| PatternStruct {
         extent: ex(spt, pt),
         name,
         fields,
         wildcard: wildcard.is_some(),
+        whitespace: ws,
     })
 }
 
