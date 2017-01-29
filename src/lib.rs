@@ -289,6 +289,13 @@ pub struct Struct {
     pub extent: Extent,
     visibility: Option<Visibility>,
     name: Ident,
+    body: StructDefinitionBody,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct StructDefinitionBody {
+    pub extent: Extent,
     fields: Vec<StructField>,
     whitespace: Vec<Whitespace>,
 }
@@ -323,7 +330,7 @@ pub struct EnumVariant {
 #[derive(Debug, Visit)]
 pub enum EnumVariantBody {
     Tuple(Vec<Type>),
-    Struct(Extent),
+    Struct(StructDefinitionBody),
 }
 
 #[derive(Debug, Visit)]
@@ -960,6 +967,7 @@ pub trait Visitor {
     fn visit_statement(&mut self, &Statement) {}
     fn visit_string(&mut self, &String) {}
     fn visit_struct(&mut self, &Struct) {}
+    fn visit_struct_definition_body(&mut self, &StructDefinitionBody) {}
     fn visit_struct_field(&mut self, &StructField) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_top_level(&mut self, &TopLevel) {}
@@ -1042,6 +1050,7 @@ pub trait Visitor {
     fn exit_statement(&mut self, &Statement) {}
     fn exit_string(&mut self, &String) {}
     fn exit_struct(&mut self, &Struct) {}
+    fn exit_struct_definition_body(&mut self, &StructDefinitionBody) {}
     fn exit_struct_field(&mut self, &StructField) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_top_level(&mut self, &TopLevel) {}
@@ -2226,18 +2235,19 @@ fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
-        fields     = struct_defn_body;
-    }, |_, pt| Struct { extent: ex(spt, pt), visibility, name, fields, whitespace: ws })
+        body       = struct_defn_body;
+    }, |_, pt| Struct { extent: ex(spt, pt), visibility, name, body, whitespace: ws })
 }
 
-fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructField>> {
+fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBody> {
     sequence!(pm, pt, {
-        _  = literal("{");
-        _x = optional(whitespace);
+        spt    = point;
+        _      = literal("{");
+        ws     = optional_whitespace(Vec::new());
         fields = zero_or_more(tail(",", struct_defn_field));
-        _x = optional(whitespace);
-        _  = literal("}");
-    }, |_, _| fields)
+        ws     = optional_whitespace(ws);
+        _      = literal("}");
+    }, |_, pt| StructDefinitionBody { extent: ex(spt, pt), fields, whitespace: ws })
 }
 
 fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
@@ -2300,7 +2310,7 @@ fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVari
 fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
     pm.alternate(pt)
         .one(map(tuple_defn_body, EnumVariantBody::Tuple))
-        .one(map(ext(struct_defn_body), EnumVariantBody::Struct))
+        .one(map(struct_defn_body, EnumVariantBody::Struct))
         .finish()
 }
 
