@@ -747,6 +747,7 @@ pub struct PatternCharacter {
 pub struct PatternReference {
     extent: Extent,
     pattern: Box<Pattern>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2156,9 +2157,13 @@ fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pat
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("&");
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(Vec::new());
         pattern = pattern;
-    }, |_, pt| PatternReference { extent: ex(spt, pt), pattern: Box::new(pattern) })
+    }, |_, pt| PatternReference {
+        extent: ex(spt, pt),
+        pattern: Box::new(pattern),
+        whitespace: ws
+    })
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
