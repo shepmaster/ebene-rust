@@ -226,6 +226,9 @@ fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
 
 #[get("/search?<query>")]
 fn search(query: Query) -> JSON<SearchResults> {
+    println!("Query: {:?}", query.q);
+    println!("Highlight: {:?}", query.h);
+
     let q = match query.q {
         Some(q) => q.0,
         None => return JSON(SearchResults::default()),
