@@ -1936,21 +1936,21 @@ fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dere
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
     sequence!(pm, pt, {
-        spt     = point;
-        name    = pathed_ident;
-        ws      = optional_whitespace(Vec::new());
-        literal = optional(expr_value_struct_literal);
+        spt           = point;
+        name          = pathed_ident;
+        ws            = optional_whitespace(Vec::new());
+        (literal, ws) = concat_whitespace(ws, optional(expr_value_struct_literal));
     }, |_, pt| Value { extent: ex(spt, pt), name, literal, whitespace: ws } )
 }
 
-fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructLiteralField>> {
+fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<StructLiteralField>, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         _      = literal("{");
-        _x     = optional(whitespace);
+        ws     = optional_whitespace(Vec::new());
         fields = zero_or_more(tail(",", expr_value_struct_literal_field));
-        _x     = optional(whitespace);
+        ws     = optional_whitespace(ws);
         _      = literal("}");
-    }, |_, _| fields)
+    }, |_, _| (fields, ws))
 }
 
 fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructLiteralField> {
