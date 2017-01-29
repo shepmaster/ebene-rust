@@ -236,6 +236,7 @@ pub struct TypeCore {
     is_impl: Option<Extent>,
     name: PathedIdent,
     generics: Option<TypeGenerics>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2599,19 +2600,19 @@ fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<T
 
 fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCore> {
     sequence!(pm, pt, {
-        spt      = point;
-        is_impl  = optional(typ_impl);
-        name     = pathed_ident;
-        generics = optional(typ_generics);
-    }, |_, pt| TypeCore { extent: ex(spt, pt), is_impl, name, generics })
+        spt           = point;
+        (is_impl, ws) = concat_whitespace(Vec::new(), optional(typ_impl));
+        name          = pathed_ident;
+        generics      = optional(typ_generics);
+    }, |_, pt| TypeCore { extent: ex(spt, pt), is_impl, name, generics, whitespace: ws })
 }
 
-fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Extent, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         spt = point;
         _   = literal("impl");
-        _x  = whitespace;
-    }, |_, _| ex(spt, pt))
+        ws  = whitespace;
+    }, |_, _| (ex(spt, pt), ws))
 }
 
 fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGenerics> {
