@@ -118,6 +118,8 @@ impl TopLevel {
 #[derive(Debug, Visit)]
 pub struct Attribute {
     extent: Extent,
+    is_containing: Option<Extent>,
+    text: Extent,
 }
 
 #[derive(Debug, Visit)]
@@ -2439,13 +2441,13 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
 
 fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> {
     sequence!(pm, pt, {
-        spt = point;
-        _   = literal("#");
-        _x  = optional(literal("!"));
-        _   = literal("[");
-        _x  = parse_nested_until('[', ']');
-        _   = literal("]");
-    }, |_, pt| Attribute { extent: ex(spt, pt) })
+        spt           = point;
+        _             = literal("#");
+        is_containing = optional(ext(literal("!")));
+        _             = literal("[");
+        text          = parse_nested_until('[', ']');
+        _             = literal("]");
+    }, |_, pt| Attribute { extent: ex(spt, pt), is_containing, text })
 }
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
