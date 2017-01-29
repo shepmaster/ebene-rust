@@ -1605,7 +1605,7 @@ fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
         ws                = whitespace;
         (condition, body) = expr_followed_by_block;
         more              = zero_or_more(expr_if_else_if);
-        else_body         = optional(expr_if_else_end);
+        (else_body, ws)   = concat_whitespace(ws, optional(expr_if_else_end));
     }, move |_, pt| If {
         extent: ex(spt, pt),
         condition: Box::new(condition),
@@ -1625,13 +1625,13 @@ fn expr_if_else_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
     }, |_, _| tail)
 }
 
-fn expr_if_else_end<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
+fn expr_if_else_end<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Block, Vec<Whitespace>)> {
     sequence!(pm, pt, {
-        _x   = optional(whitespace);
-        _    = literal("else");
-        _x        = optional(whitespace);
+        ws        = optional_whitespace(Vec::new());
+        _         = literal("else");
+        ws        = optional_whitespace(ws);
         else_body = block;
-    }, |_, _| else_body)
+    }, |_, _| (else_body, ws))
 }
 
 // `expr {}` greedily matches `StructName {}` as a structure literal
