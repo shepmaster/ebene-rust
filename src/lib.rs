@@ -560,6 +560,7 @@ pub struct Binary {
     op: Extent,
     lhs: Box<Expression>,
     rhs: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -660,7 +661,7 @@ pub struct Return {
 
 #[derive(Debug)]
 enum ExpressionTail {
-    Binary { op: Extent, rhs: Box<Expression> },
+    Binary { op: Extent, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
     FieldAccess { field: Ident },
     Call { args: Vec<Expression> },
     MethodCall { name: Ident, turbofish: Option<Turbofish>, args: Vec<Expression> },
@@ -1401,12 +1402,13 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
         let (pt2, tail) = try_parse!(optional(expression_tail)(pm, pt));
         pt = pt2;
         match tail {
-            Some(ExpressionTail::Binary { op, rhs }) => {
+            Some(ExpressionTail::Binary { op, rhs, whitespace }) => {
                 expression = Expression::Binary(Binary {
                     extent: ex(spt, pt),
-                    op: op,
+                    op,
                     lhs: Box::new(expression),
-                    rhs: rhs,
+                    rhs,
+                    whitespace,
                 })
             }
             Some(ExpressionTail::FieldAccess { field }) => {
@@ -1939,11 +1941,11 @@ fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
 
 fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
-        _x  = optional(whitespace);
+        ws  = optional_whitespace(Vec::new());
         op  = binary_op;
-        _x  = optional(whitespace);
+        ws  = optional_whitespace(ws);
         rhs = expression;
-    }, |_, _| ExpressionTail::Binary { op, rhs: Box::new(rhs) })
+    }, |_, _| ExpressionTail::Binary { op, rhs: Box::new(rhs), whitespace: ws })
 }
 
 fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
