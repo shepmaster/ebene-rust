@@ -706,6 +706,7 @@ pub struct PatternIdent {
     extent: Extent,
     ident: PathedIdent,
     tuple: Vec<Pattern>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2064,10 +2065,15 @@ fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern
     let spt = pt;
     sequence!(pm, pt, {
         _x    = optional(literal("mut"));
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(Vec::new());
         ident = pathed_ident;
         tuple = optional(pattern_tuple_inner);
-    }, |_, pt| PatternIdent { extent: ex(spt, pt), ident, tuple: tuple.unwrap_or_else(Vec::new) })
+    }, |_, pt| PatternIdent {
+        extent: ex(spt, pt),
+        ident,
+        tuple: tuple.unwrap_or_else(Vec::new),
+        whitespace: ws,
+    })
 }
 
 fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternTuple> {
@@ -2118,7 +2124,12 @@ fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
         pattern = optional(pattern_struct_field_tail);
     }, |_, pt| {
         let pattern = pattern.unwrap_or_else(|| {
-            Pattern::Ident(PatternIdent { extent: ex(spt, pt), ident: name.into(), tuple: Vec::new() })
+            Pattern::Ident(PatternIdent {
+                extent: ex(spt, pt),
+                ident: name.into(),
+                tuple: Vec::new(),
+                whitespace: Vec::new(),
+            })
         });
         PatternStructField { name, pattern }
     })
