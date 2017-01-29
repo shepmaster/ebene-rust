@@ -1955,11 +1955,11 @@ fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
 
 fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructLiteralField> {
     sequence!(pm, pt, {
-        spt   = point;
-        name  = ident;
-        mpt   = point;
-        ws    = optional_whitespace(Vec::new());
-        value = optional(expr_value_struct_literal_field_value);
+        spt         = point;
+        name        = ident;
+        mpt         = point;
+        ws          = optional_whitespace(Vec::new());
+        (value, ws) = concat_whitespace(ws, optional(expr_value_struct_literal_field_value));
     }, |_, _| {
         let value = value.unwrap_or_else(|| Expression::Value(Value {
             extent: ex(spt, mpt),
@@ -1971,12 +1971,12 @@ fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Pr
     })
 }
 
-fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         _     = literal(":");
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(Vec::new());
         value = expression;
-    }, |_, _| value )
+    }, |_, _| (value, ws))
 }
 
 fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionCall> {
