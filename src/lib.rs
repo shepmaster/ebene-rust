@@ -1144,6 +1144,22 @@ fn append_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Po
     one_or_more_append(ws, whitespace_core)
 }
 
+fn concat_whitespace<'s, F, T>
+    (mut ws: Vec<Whitespace>, parser: F)
+     -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, (Option<T>, Vec<Whitespace>)>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Option<(T, Vec<Whitespace>)>>
+{
+    move |pm, pt| {
+        parser(pm, pt).map(|opt| {
+            let val = opt.map(|(val, ws2)| {
+                ws.extend(ws2);
+                val
+            });
+            (val, ws)
+        })
+    }
+}
+
 // --------------------------------------------------
 
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
@@ -1207,17 +1223,17 @@ fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Function> {
 
 fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionHeader> {
     sequence!(pm, pt, {
-        spt         = point;
-        visibility  = optional(visibility);
-        _           = literal("fn");
-        ws          = optional_whitespace(Vec::new());
-        name        = ident;
-        generics    = optional(function_generic_declarations);
-        arguments   = function_arglist;
-        ws          = optional_whitespace(ws);
-        return_type = optional(function_return_type);
-        ws          = optional_whitespace(ws);
-        wheres      = optional(where_clause);
+        spt               = point;
+        visibility        = optional(visibility);
+        _                 = literal("fn");
+        ws                = optional_whitespace(Vec::new());
+        name              = ident;
+        generics          = optional(function_generic_declarations);
+        arguments         = function_arglist;
+        ws                = optional_whitespace(ws);
+        (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
+        ws                = optional_whitespace(ws);
+        wheres            = optional(where_clause);
     }, |_, pt| {
         FunctionHeader {
             extent: ex(spt, pt),
@@ -1327,12 +1343,12 @@ fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Arg
     }, |_, _| Argument::Named(NamedArgument { name, typ, whitespace: ws }))
 }
 
-fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         _   = literal("->");
-        _x  = optional(whitespace);
+        ws  = optional_whitespace(Vec::new());
         typ = typ;
-    }, |_, _| typ)
+    }, |_, _| (typ, ws))
 }
 
 fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Where>> {
@@ -2338,17 +2354,17 @@ fn visibility<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Visibility
 // TODO: Massively duplicated!!!
 fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplFunctionHeader> {
     sequence!(pm, pt, {
-        spt         = point;
-        visibility  = optional(visibility);
-        _           = literal("fn");
-        ws          = optional_whitespace(Vec::new());
-        name        = ident;
-        generics    = optional(function_generic_declarations);
-        arguments   = trait_impl_function_arglist;
-        ws          = optional_whitespace(ws);
-        return_type = optional(function_return_type);
-        ws          = optional_whitespace(ws);
-        wheres      = optional(where_clause);
+        spt               = point;
+        visibility        = optional(visibility);
+        _                 = literal("fn");
+        ws                = optional_whitespace(Vec::new());
+        name              = ident;
+        generics          = optional(function_generic_declarations);
+        arguments         = trait_impl_function_arglist;
+        ws                = optional_whitespace(ws);
+        (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
+        ws                = optional_whitespace(ws);
+        wheres            = optional(where_clause);
     }, |_, pt| {
         TraitImplFunctionHeader {
             extent: ex(spt, pt),
@@ -2595,12 +2611,12 @@ fn typ_generics<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGene
 
 fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGenericsFunction> {
     sequence!(pm, pt, {
-        spt = point;
-        _  = literal("(");
-        types = zero_or_more(tail(",", typ));
-        _  = literal(")");
-        ws = optional_whitespace(Vec::new());
-        return_type = optional(function_return_type);
+        spt               = point;
+        _                 = literal("(");
+        types             = zero_or_more(tail(",", typ));
+        _                 = literal(")");
+        ws                = optional_whitespace(Vec::new());
+        (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
     }, |_, pt| TypeGenericsFunction {
         extent: ex(spt, pt),
         types,
