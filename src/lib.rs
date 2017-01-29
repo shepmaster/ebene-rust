@@ -806,6 +806,7 @@ pub struct ImplFunction {
 pub struct Crate {
     extent: Extent,
     name: Ident,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1131,7 +1132,7 @@ fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
         .one(map(p_trait, TopLevel::Trait))
         .one(map(p_impl, TopLevel::Impl))
         .one(map(attribute, TopLevel::Attribute))
-        .one(extern_crate)
+        .one(map(extern_crate, TopLevel::ExternCrate))
         .one(map(p_use, TopLevel::Use))
         .one(map(type_alias, TopLevel::TypeAlias))
         .one(map(module, TopLevel::Module))
@@ -2410,17 +2411,17 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> 
     }, |_, pt| Attribute { extent: ex(spt, pt) })
 }
 
-fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
-    let spt = pt;
+fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
     sequence!(pm, pt, {
+        spt  = point;
         _    = literal("extern");
-        _x   = whitespace;
+        ws   = whitespace;
         _    = literal("crate");
-        _x   = whitespace;
+        ws   = append_whitespace(ws);
         name = ident;
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(ws);
         _    = literal(";");
-    }, |_, pt| TopLevel::ExternCrate(Crate { extent: ex(spt, pt), name }))
+    }, |_, pt| Crate { extent: ex(spt, pt), name, whitespace: ws })
 }
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
