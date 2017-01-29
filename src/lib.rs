@@ -2172,10 +2172,10 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
 
 fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternStructField> {
     sequence!(pm, pt, {
-        spt     = point;
-        name    = ident;
-        ws      = optional_whitespace(Vec::new());
-        pattern = optional(pattern_struct_field_tail);
+        spt           = point;
+        name          = ident;
+        ws            = optional_whitespace(Vec::new());
+        (pattern, ws) = concat_whitespace(ws, optional(pattern_struct_field_tail));
     }, |_, pt| {
         let pattern = pattern.unwrap_or_else(|| {
             Pattern::Ident(PatternIdent {
@@ -2190,12 +2190,12 @@ fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     })
 }
 
-fn pattern_struct_field_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
+fn pattern_struct_field_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Pattern, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         _       = literal(":");
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(Vec::new());
         pattern = pattern;
-    }, |_, _| pattern)
+    }, |_, _| (pattern, ws))
 }
 
 fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternCharacter> {
