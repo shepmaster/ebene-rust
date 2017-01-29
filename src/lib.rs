@@ -823,6 +823,7 @@ pub struct Module {
     extent: Extent,
     name: Ident,
     body: Vec<TopLevel>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2480,13 +2481,13 @@ fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
     let spt = pt;
     sequence!(pm, pt, {
         _    = literal("mod");
-        _x   = whitespace;
+        ws   = whitespace;
         name = ident;
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(ws);
         _    = literal("{");
         body = zero_or_more(top_level);
         _    = literal("}");
-    }, |_, pt| Module { extent: ex(spt, pt), name, body })
+    }, |_, pt| Module { extent: ex(spt, pt), name, body, whitespace: ws })
 }
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
