@@ -211,6 +211,7 @@ pub struct TypeReference {
     extent: Extent,
     mutable: Option<Extent>,
     lifetime: Option<Lifetime>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2504,11 +2505,11 @@ fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference
     sequence!(pm, pt, {
         spt      = point;
         _        = literal("&");
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(Vec::new());
         mutable  = optional(ext(literal("mut")));
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         lifetime = optional(lifetime);
-    }, |_, pt| TypeReference { extent: ex(spt, pt), mutable, lifetime })
+    }, |_, pt| TypeReference { extent: ex(spt, pt), mutable, lifetime, whitespace: ws })
 }
 
 fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> {
