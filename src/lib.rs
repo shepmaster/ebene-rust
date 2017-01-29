@@ -760,6 +760,7 @@ pub struct Trait {
     name: Ident,
     generics: Option<GenericDeclarations>,
     members: Vec<TraitMember>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2248,16 +2249,16 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
     sequence!(pm, pt, {
         _x       = optional(visibility);
         _        = literal("trait");
-        _x       = whitespace;
+        ws       = whitespace;
         name     = ident;
         generics = optional(function_generic_declarations);
-        _x       = whitespace;
+        ws       = append_whitespace(ws);
         _        = literal("{");
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         members  = zero_or_more(trait_impl_member);
-        _x       = optional(whitespace);
+        ws       = optional_whitespace(ws);
         _        = literal("}");
-    }, |_, pt| Trait { extent: ex(spt, pt), name, generics, members })
+    }, |_, pt| Trait { extent: ex(spt, pt), name, generics, members, whitespace: ws })
 }
 
 fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMember> {
