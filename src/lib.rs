@@ -322,6 +322,7 @@ pub struct SelfArgument {
 pub struct NamedArgument {
     name: Pattern,
     typ: Type,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1259,9 +1260,9 @@ fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Arg
     sequence!(pm, pt, {
         name = pattern;
         _    = literal(":");
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(Vec::new());
         typ  = typ;
-    }, |_, _| Argument::Named(NamedArgument { name, typ }))
+    }, |_, _| Argument::Named(NamedArgument { name, typ, whitespace: ws }))
 }
 
 fn function_return_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
