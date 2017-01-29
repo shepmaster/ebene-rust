@@ -1007,7 +1007,7 @@ pub trait Visitor {
 
 // --------------------------------------------------
 
-fn parse_until2<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
+fn parse_until<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
     where P: std::str::pattern::Pattern<'s> + Clone // TODO: eww clone
 {
     move |_, pt| {
@@ -1089,7 +1089,7 @@ fn comment_end_of_line<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, C
     let spt = pt;
     sequence!(pm, pt, {
         _x   = literal("//");
-        text = parse_until2("\n");
+        text = parse_until("\n");
     }, |_, pt| Comment { extent: ex(spt, pt), text })
 }
 
@@ -1097,7 +1097,7 @@ fn comment_region<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Commen
     let spt = pt;
     sequence!(pm, pt, {
         _x   = literal("/*");
-        text = parse_until2("*/");
+        text = parse_until("*/");
         _x   = literal("*/");
     }, |_, pt| Comment { extent: ex(spt, pt), text })
 }
