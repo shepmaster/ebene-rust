@@ -227,7 +227,7 @@ pub struct TypeReference {
 #[derive(Debug, Visit)]
 pub enum TypeInner {
     Core(TypeCore),
-    Tuple(Extent),
+    Tuple(Vec<Type>),
 }
 
 #[derive(Debug, Visit)]
@@ -322,7 +322,7 @@ pub struct EnumVariant {
 
 #[derive(Debug, Visit)]
 pub enum EnumVariantBody {
-    Tuple(Extent),
+    Tuple(Vec<Type>),
     Struct(Extent),
 }
 
@@ -2561,13 +2561,12 @@ fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> 
         .finish()
 }
 
-fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
     sequence!(pm, pt, {
-        spt = point;
-        _   = literal("(");
-        _x  = zero_or_more(tail(",", typ));
-        _   = literal(")");
-    }, |_, pt| ex(spt, pt))
+        _     = literal("(");
+        types = zero_or_more(tail(",", typ));
+        _     = literal(")");
+    }, |_, _| types)
 }
 
 fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCore> {
