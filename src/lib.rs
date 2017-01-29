@@ -2423,19 +2423,19 @@ fn trait_impl_function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<
 
 fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     sequence!(pm, pt, {
-        spt          = point;
-        _            = literal("impl");
-        generics     = optional(function_generic_declarations);
-        ws           = whitespace;
-        trait_name   = optional(p_impl_of_trait);
-        type_name    = typ;
-        ws           = optional_whitespace(ws);
-        (wheres, ws) = concat_whitespace(ws, optional(where_clause));
-        _            = literal("{");
-        ws           = optional_whitespace(ws);
-        body         = zero_or_more(impl_member);
-        ws           = optional_whitespace(ws);
-        _            = literal("}");
+        spt              = point;
+        _                = literal("impl");
+        generics         = optional(function_generic_declarations);
+        ws               = whitespace;
+        (trait_name, ws) = concat_whitespace(ws, optional(p_impl_of_trait));
+        type_name        = typ;
+        ws               = optional_whitespace(ws);
+        (wheres, ws)     = concat_whitespace(ws, optional(where_clause));
+        _                = literal("{");
+        ws               = optional_whitespace(ws);
+        body             = zero_or_more(impl_member);
+        ws               = optional_whitespace(ws);
+        _                = literal("}");
     }, |_, pt| Impl {
         extent: ex(spt, pt),
         generics,
@@ -2447,13 +2447,13 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     })
 }
 
-fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         trait_name = typ;
-        _x         = whitespace;
+        ws         = whitespace;
         _          = literal("for");
-        _x         = whitespace;
-    }, |_, _| trait_name)
+        ws         = append_whitespace(ws);
+    }, |_, _| (trait_name, ws))
 }
 
 fn impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplMember> {
