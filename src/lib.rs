@@ -647,6 +647,7 @@ pub struct Reference {
 pub struct Dereference {
     extent: Extent,
     value: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1859,9 +1860,13 @@ fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dere
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("*");
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(Vec::new());
         value   = expression;
-    }, |_, pt| Dereference { extent: ex(spt, pt), value: Box::new(value) } )
+    }, |_, pt| Dereference {
+        extent: ex(spt, pt),
+        value: Box::new(value),
+        whitespace: ws,
+    })
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
