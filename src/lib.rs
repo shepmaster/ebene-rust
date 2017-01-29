@@ -247,6 +247,7 @@ pub struct TypeGenericsAngle {
     extent: Extent,
     lifetimes: Vec<Lifetime>,
     types: Vec<Type>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Copy, Clone, Visit)]
@@ -2573,11 +2574,11 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
     sequence!(pm, pt, {
         spt       = point;
         _         = literal("<");
-        _x        = optional(whitespace);
+        ws        = optional_whitespace(Vec::new());
         lifetimes = zero_or_more(tail(",", lifetime));
         types     = zero_or_more(tail(",", typ));
         _         = literal(">");
-    }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types })
+    }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types, whitespace: ws })
 }
 
 fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
