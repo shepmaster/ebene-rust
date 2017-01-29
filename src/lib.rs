@@ -470,6 +470,7 @@ pub struct Let {
     pattern: Pattern,
     typ: Option<Type>,
     value: Option<Box<Expression>>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1471,13 +1472,19 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("let");
-        _x      = whitespace;
+        ws      = whitespace;
         pattern = pattern;
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(ws);
         typ     = optional(expr_let_type);
-        _x      = optional(whitespace);
+        ws      = optional_whitespace(ws);
         value   = optional(expr_let_rhs);
-    }, |_, pt| Let { extent: ex(spt, pt), pattern, typ, value: value.map(Box::new) })
+    }, |_, pt| Let {
+        extent: ex(spt, pt),
+        pattern,
+        typ,
+        value: value.map(Box::new),
+        whitespace: ws,
+    })
 }
 
 fn expr_let_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
