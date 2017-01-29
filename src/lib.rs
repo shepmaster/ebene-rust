@@ -299,6 +299,7 @@ pub struct EnumVariant {
     extent: Extent,
     name: Ident,
     body: Option<EnumVariantBody>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -2227,16 +2228,12 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
 }
 
 fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariant> {
-    let spt        = pt;
     sequence!(pm, pt, {
+        spt  = point;
         name = ident;
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(Vec::new());
         body = optional(enum_variant_body);
-    }, |_, pt| EnumVariant {
-        extent: ex(spt, pt),
-        name,
-        body: body
-    })
+    }, |_, pt| EnumVariant { extent: ex(spt, pt), name, body, whitespace: ws })
 }
 
 fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
