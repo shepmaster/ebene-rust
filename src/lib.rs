@@ -149,6 +149,7 @@ pub struct Function {
     pub extent: Extent,
     pub header: FunctionHeader,
     body: Block,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1077,10 +1078,9 @@ fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>
 
 // --------------------------------------------------
 
-// TODO: can we transofrm this to (pm, pt)?
 fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
     pm.alternate(pt)
-        .one(function)
+        .one(map(function, TopLevel::Function))
         .one(map(macro_rules, TopLevel::MacroRules))
         .one(map(p_struct, TopLevel::Struct))
         .one(map(p_enum, TopLevel::Enum))
@@ -1123,17 +1123,18 @@ fn comment_region<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Commen
     }, |_, pt| Comment { extent: ex(spt, pt), text })
 }
 
-fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
-    let spt          = pt;
+fn function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Function> {
     sequence!(pm, pt, {
+        spt    = point;
         header = function_header;
-        _x     = optional(whitespace);
+        ws     = optional_whitespace(Vec::new());
         body   = block;
-    }, |_, pt| TopLevel::Function(Function {
+    }, |_, pt| Function {
         extent: ex(spt, pt),
         header,
         body,
-    }))
+        whitespace: ws
+    })
 }
 
 fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
