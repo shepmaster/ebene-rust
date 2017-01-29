@@ -278,6 +278,7 @@ impl From<Ident> for PathedIdent {
 #[derive(Debug, Visit)]
 pub struct Struct {
     pub extent: Extent,
+    visibility: Option<Visibility>,
     name: Ident,
     fields: Vec<StructField>,
     whitespace: Vec<Whitespace>,
@@ -287,6 +288,7 @@ pub struct Struct {
 pub struct StructField {
     extent: Extent,
     attributes: Vec<Attribute>,
+    visibility: Option<Visibility>,
     name: Ident,
     typ: Type,
     whitespace: Vec<Whitespace>,
@@ -295,6 +297,7 @@ pub struct StructField {
 #[derive(Debug, Visit)]
 pub struct Enum {
     pub extent: Extent,
+    visibility: Option<Visibility>,
     name: Ident,
     variants: Vec<EnumVariant>,
     whitespace: Vec<Whitespace>,
@@ -714,6 +717,7 @@ impl Pattern {
 #[derive(Debug, Visit)]
 pub struct PatternIdent {
     extent: Extent,
+    mutable: Option<Extent>,
     ident: PathedIdent,
     tuple: Vec<Pattern>,
     whitespace: Vec<Whitespace>,
@@ -763,6 +767,7 @@ pub struct PatternReference {
 #[derive(Debug, Visit)]
 pub struct Trait {
     extent: Extent,
+    visibility: Option<Visibility>,
     name: Ident,
     generics: Option<GenericDeclarations>,
     members: Vec<TraitMember>,
@@ -818,6 +823,7 @@ pub struct Crate {
 #[derive(Debug, Visit)]
 pub struct TypeAlias {
     extent: Extent,
+    visibility: Option<Visibility>,
     name: Type,
     defn: Type,
     whitespace: Vec<Whitespace>,
@@ -2082,13 +2088,14 @@ fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
 
 fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternIdent> {
     sequence!(pm, pt, {
-        spt   = point;
-        _x    = optional(literal("mut"));
-        ws    = optional_whitespace(Vec::new());
-        ident = pathed_ident;
-        tuple = optional(pattern_tuple_inner);
+        spt     = point;
+        mutable = optional(ext(literal("mut")));
+        ws      = optional_whitespace(Vec::new());
+        ident   = pathed_ident;
+        tuple   = optional(pattern_tuple_inner);
     }, |_, pt| PatternIdent {
         extent: ex(spt, pt),
+        mutable,
         ident,
         tuple: tuple.unwrap_or_else(Vec::new),
         whitespace: ws,
@@ -2147,6 +2154,7 @@ fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
         let pattern = pattern.unwrap_or_else(|| {
             Pattern::Ident(PatternIdent {
                 extent: ex(spt, pt),
+                mutable: None,
                 ident: name.into(),
                 tuple: Vec::new(),
                 whitespace: Vec::new(),
@@ -2186,14 +2194,14 @@ fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pat
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
     sequence!(pm, pt, {
-        spt    = point;
-        _x     = optional(visibility);
-        _      = literal("struct");
-        ws     = whitespace;
-        name   = ident;
-        ws     = optional_whitespace(ws);
-        fields = struct_defn_body;
-    }, |_, pt| Struct { extent: ex(spt, pt), name, fields, whitespace: ws })
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("struct");
+        ws         = whitespace;
+        name       = ident;
+        ws         = optional_whitespace(ws);
+        fields     = struct_defn_body;
+    }, |_, pt| Struct { extent: ex(spt, pt), visibility, name, fields, whitespace: ws })
 }
 
 fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructField>> {
@@ -2210,12 +2218,19 @@ fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Str
     sequence!(pm, pt, {
         spt        = point;
         attributes = zero_or_more(struct_defn_field_attr);
-        _x         = optional(visibility);
+        visibility = optional(visibility);
         name       = ident;
         _          = literal(":");
         ws         = optional_whitespace(Vec::new());
         typ        = typ;
-    }, |_, pt| StructField { extent: ex(spt, pt), attributes, name, typ, whitespace: ws })
+    }, |_, pt| StructField {
+        extent: ex(spt, pt),
+        visibility,
+        attributes,
+        name,
+        typ,
+        whitespace: ws,
+    })
 }
 
 fn struct_defn_field_attr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> {
@@ -2227,18 +2242,24 @@ fn struct_defn_field_attr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 
 fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
     sequence!(pm, pt, {
-        spt      = point;
-        _x       = optional(visibility);
-        _        = literal("enum");
-        ws       = whitespace;
-        name     = ident;
-        ws       = optional_whitespace(ws);
-        _        = literal("{");
-        ws       = optional_whitespace(ws);
-        variants = zero_or_more(tail(",", enum_variant));
-        ws       = optional_whitespace(ws);
-        _        = literal("}");
-    }, |_, pt| Enum { extent: ex(spt, pt), name, variants, whitespace: ws })
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("enum");
+        ws         = whitespace;
+        name       = ident;
+        ws         = optional_whitespace(ws);
+        _          = literal("{");
+        ws         = optional_whitespace(ws);
+        variants   = zero_or_more(tail(",", enum_variant));
+        ws         = optional_whitespace(ws);
+        _          = literal("}");
+    }, |_, pt| Enum {
+        extent: ex(spt, pt),
+        visibility,
+        name,
+        variants,
+        whitespace: ws,
+    })
 }
 
 fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariant> {
@@ -2259,19 +2280,26 @@ fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enu
 
 fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
     sequence!(pm, pt, {
-        spt      = point;
-        _x       = optional(visibility);
-        _        = literal("trait");
-        ws       = whitespace;
-        name     = ident;
-        generics = optional(function_generic_declarations);
-        ws       = append_whitespace(ws);
-        _        = literal("{");
-        ws       = optional_whitespace(ws);
-        members  = zero_or_more(trait_impl_member);
-        ws       = optional_whitespace(ws);
-        _        = literal("}");
-    }, |_, pt| Trait { extent: ex(spt, pt), name, generics, members, whitespace: ws })
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("trait");
+        ws         = whitespace;
+        name       = ident;
+        generics   = optional(function_generic_declarations);
+        ws         = append_whitespace(ws);
+        _          = literal("{");
+        ws         = optional_whitespace(ws);
+        members    = zero_or_more(trait_impl_member);
+        ws         = optional_whitespace(ws);
+        _          = literal("}");
+    }, |_, pt| Trait {
+        extent: ex(spt, pt),
+        visibility,
+        name,
+        generics,
+        members,
+        whitespace: ws,
+    })
 }
 
 fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMember> {
@@ -2469,18 +2497,18 @@ fn use_path_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent>
 
 fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias> {
     sequence!(pm, pt, {
-        spt  = point;
-        _x   = optional(visibility);
-        _    = literal("type");
-        ws   = whitespace;
-        name = typ;
-        ws   = optional_whitespace(ws);
-        _    = literal("=");
-        ws   = optional_whitespace(ws);
-        defn = typ;
-        ws   = optional_whitespace(ws);
-        _    = literal(";");
-    }, |_, pt| TypeAlias { extent: ex(spt, pt), name, defn, whitespace: ws })
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("type");
+        ws         = whitespace;
+        name       = typ;
+        ws         = optional_whitespace(ws);
+        _          = literal("=");
+        ws         = optional_whitespace(ws);
+        defn       = typ;
+        ws         = optional_whitespace(ws);
+        _          = literal(";");
+    }, |_, pt| TypeAlias { extent: ex(spt, pt), visibility, name, defn, whitespace: ws })
 }
 
 fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
