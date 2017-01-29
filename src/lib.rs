@@ -550,6 +550,7 @@ pub struct ForLoop {
 pub struct Loop {
     extent: Extent,
     body: Box<Block>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1624,9 +1625,9 @@ fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
     sequence!(pm, pt, {
         spt  = point;
         _    = literal("loop");
-        _x   = optional(whitespace);
+        ws   = optional_whitespace(Vec::new());
         body = block;
-    }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body) })
+    }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
 }
 
 fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
