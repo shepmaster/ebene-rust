@@ -350,6 +350,7 @@ pub struct Block {
     extent: Extent,
     statements: Vec<Statement>,
     expression: Option<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1295,10 +1296,10 @@ fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
     let spt = pt;
     sequence!(pm, pt, {
         _         = literal("{");
-        _x        = optional(whitespace);
+        ws        = optional_whitespace(Vec::new());
         mut stmts = zero_or_more(statement);
         mut expr  = optional(expression);
-        _x        = optional(whitespace);
+        ws        = optional_whitespace(ws);
         _         = literal("}");
     }, |_, pt| {
         if expr.is_none() && stmts.last().map_or(false, Statement::is_implicit) {
@@ -1309,6 +1310,7 @@ fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
             extent: ex(spt, pt),
             statements: stmts,
             expression: expr,
+            whitespace: ws,
         }
     })
 }
