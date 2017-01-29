@@ -659,6 +659,7 @@ pub struct Closure {
 pub struct ClosureArg {
     name: Pattern,
     typ: Option<Type>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1868,18 +1869,18 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
 
 fn expr_closure_arg<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ClosureArg> {
     sequence!(pm, pt, {
-        name = pattern;
-        typ  = optional(expr_closure_arg_type);
-    }, |_, _| ClosureArg { name, typ })
+        name      = pattern;
+        (typ, ws) = concat_whitespace(Vec::new(), optional(expr_closure_arg_type));
+    }, |_, _| ClosureArg { name, typ, whitespace: ws })
 }
 
-fn expr_closure_arg_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+fn expr_closure_arg_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type, Vec<Whitespace>)> {
     sequence!(pm, pt, {
-        _x  = optional(whitespace);
+        ws  = optional_whitespace(Vec::new());
         _   = literal(":");
-        _x  = optional(whitespace);
+        ws  = optional_whitespace(ws);
         typ = typ;
-    }, |_, _| typ)
+    }, |_, _| (typ, ws))
 }
 
 fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
