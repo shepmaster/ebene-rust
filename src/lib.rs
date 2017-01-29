@@ -620,6 +620,7 @@ pub struct Slice {
     extent: Extent,
     target: Box<Expression>,
     range: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -672,7 +673,7 @@ enum ExpressionTail {
         whitespace: Vec<Whitespace>,
     },
     Range { rhs: Option<Box<Expression>> },
-    Slice { range: Box<Expression> },
+    Slice { range: Box<Expression>, whitespace: Vec<Whitespace> },
 }
 
 #[derive(Debug, Visit)]
@@ -1448,11 +1449,12 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                     rhs
                 })
             }
-            Some(ExpressionTail::Slice { range }) => {
+            Some(ExpressionTail::Slice { range, whitespace }) => {
                 expression = Expression::Slice(Slice {
                     extent: ex(spt, pt),
                     target: Box::new(expression),
-                    range
+                    range,
+                    whitespace,
                 })
             }
             None => break,
@@ -2016,11 +2018,11 @@ fn expr_tail_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
 fn expr_tail_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _     = literal("[");
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(Vec::new());
         range = expression;
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(ws);
         _     = literal("]");
-    }, |_, _| ExpressionTail::Slice { range: Box::new(range) })
+    }, |_, _| ExpressionTail::Slice { range: Box::new(range), whitespace: ws })
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
