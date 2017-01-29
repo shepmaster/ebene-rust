@@ -13,6 +13,7 @@ extern crate unicode_xid;
 
 use std::collections::BTreeSet;
 use unicode_xid::UnicodeXID;
+use peresil::combinators::*;
 
 // define what you want to parse; likely a string
 // create an error type
@@ -1006,7 +1007,6 @@ pub trait Visitor {
 
 // --------------------------------------------------
 
-// TODO: extract to peresil?
 fn parse_until2<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
     where P: std::str::pattern::Pattern<'s> + Clone // TODO: eww clone
 {
@@ -1020,7 +1020,6 @@ fn parse_until2<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<
     }
 }
 
-// TODO: extract to peresil?
 fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent> {
     move |_, pt| {
         let mut depth: usize = 0;
@@ -1044,40 +1043,6 @@ fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, P
     }
 }
 
-// TODO: extract to peresil
-fn one_or_more<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
-{
-    move |pm, pt| {
-        let (pt, head) = try_parse!(f(pm, pt));
-        let existing = vec![head];
-        let (pt, tail) = try_parse!(zero_or_more_append(existing, f)(pm, pt));
-
-        Progress::success(pt, tail)
-    }
-}
-
-// TODO: extract to peresil
-// alternate syntax: `foo: parser;`?
-macro_rules! sequence {
-    ($pm:expr, $pt:expr, {let $x:pat = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
-        let (pt, $x) = try_parse!($parser($pm, $pt));
-        sequence!($pm, pt, {$($rest)*}, $creator)
-    }};
-    ($pm:expr, $pt:expr, {$x:pat = $parser:expr; $($rest:tt)*}, $creator:expr) => {{
-        let (pt, $x) = try_parse!($parser($pm, $pt));
-        sequence!($pm, pt, {$($rest)*}, $creator)
-    }};
-    ($pm:expr, $pt:expr, {$parser:expr; $($rest:tt)*}, $creator:expr) => {{
-        let (pt, _) = try_parse!($parser($pm, $pt));
-        sequence!($pm, pt, {$($rest)*}, $creator)
-    }};
-    ($pm:expr, $pt:expr, {}, $creator:expr) => {
-        Progress::success($pt, $creator($pm, $pt))
-    };
-}
-
-// TODO: promote?
 fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
@@ -1088,97 +1053,6 @@ fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>
             _x = optional(literal(sep));
             _x = optional(whitespace);
         }, |_, _| v)
-    }
-}
-
-// TODO: promote?
-fn optional<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Option<T>>
-    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-{
-    move |pm, pt| pm.optional(pt, f)
-}
-
-// TODO: promote?
-#[allow(dead_code)]
-fn optional_append<'s, A, F, T>(a: A, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
-    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
-          A: IntoAppend<T>,
-{
-    move |pm, pt| {
-        let mut a = a.into();
-        match f(pm, pt) {
-            Progress { point, status: peresil::Status::Success(v) } => {
-                a.push(v);
-                Progress::success(point, a)
-            }
-            Progress { point, status: peresil::Status::Failure(..) } => {
-                Progress::success(point, a)
-            }
-        }
-    }
-}
-
-// TODO: promote?
-fn point<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Point<'s>> {
-    Progress::success(pt, pt)
-}
-
-// TODO: promote?
-fn zero_or_more<'s, F, T>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-{
-    move |pm, pt| pm.zero_or_more(pt, &f) // what why ref?
-}
-
-trait IntoAppend<T> {
-    fn into(self) -> Vec<T>;
-}
-impl<T> IntoAppend<T> for Vec<T> {
-    fn into(self) -> Vec<T> { self }
-}
-impl<T> IntoAppend<T> for Option<T> {
-    fn into(self) -> Vec<T> {
-        self.map(|v| vec![v]).unwrap_or_else(Vec::new)
-    }
-}
-
-// TODO: promote?
-fn zero_or_more_append<'s, A, F, T>(existing: A, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
-          A: IntoAppend<T>,
-{
-    move |pm, mut pt| {
-        let mut existing = existing.into();
-        loop {
-            match f(pm, pt) {
-                Progress { point, status: peresil::Status::Success(v) } => {
-                    existing.push(v);
-                    pt = point;
-                },
-                Progress { .. } => return Progress::success(pt, existing),
-            }
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn map<'s, P, F, T, U>(p: P, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, U>
-    where P: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>,
-          F: FnOnce(T) -> U
-{
-    move |pm, pt| {
-        p(pm, pt).map(f)
-    }
-}
-
-// todo: promote?
-#[allow(dead_code)]
-fn inspect<'s, F>(f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, ()>
-    where F: Fn(Point<'s>)
-{
-    move |_, pt| {
-        f(pt);
-        Progress::success(pt, ())
     }
 }
 

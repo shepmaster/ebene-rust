@@ -16,6 +16,7 @@ unicode-xid = "0.0.4"
 
 [dependencies.peresil]
 path = "../sxd/peresil"
+features = ["combinators"]
 
 [dependencies.strata]
 path = "../strata"
