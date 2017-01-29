@@ -1549,14 +1549,14 @@ fn expr_macro_call_square<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 
 fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
     sequence!(pm, pt, {
-        spt     = point;
-        _       = literal("let");
-        ws      = whitespace;
-        pattern = pattern;
-        ws      = optional_whitespace(ws);
-        typ     = optional(expr_let_type);
-        ws      = optional_whitespace(ws);
-        value   = optional(expr_let_rhs);
+        spt         = point;
+        _           = literal("let");
+        ws          = whitespace;
+        pattern     = pattern;
+        ws          = optional_whitespace(ws);
+        (typ, ws)   = concat_whitespace(ws, optional(expr_let_type));
+        ws          = optional_whitespace(ws);
+        (value, ws) = concat_whitespace(ws, optional(expr_let_rhs));
     }, |_, pt| Let {
         extent: ex(spt, pt),
         pattern,
@@ -1566,20 +1566,20 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
     })
 }
 
-fn expr_let_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
+fn expr_let_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         _   = literal(":");
-        _x  = optional(whitespace);
+        ws  = optional_whitespace(Vec::new());
         typ = typ;
-    }, |_, _| typ)
+    }, |_, _| (typ, ws))
 }
 
-fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         _     = literal("=");
-        _x    = optional(whitespace);
+        ws    = optional_whitespace(Vec::new());
         value = expression;
-    }, |_, _| value)
+    }, |_, _| (value, ws))
 }
 
 fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assign> {
