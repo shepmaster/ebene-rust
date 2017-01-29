@@ -536,6 +536,7 @@ pub struct MethodCall {
     name: Ident,
     turbofish: Option<Turbofish>,
     args: Vec<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -664,7 +665,12 @@ enum ExpressionTail {
     Binary { op: Extent, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
     FieldAccess { field: Ident },
     Call { args: Vec<Expression> },
-    MethodCall { name: Ident, turbofish: Option<Turbofish>, args: Vec<Expression> },
+    MethodCall {
+        name: Ident,
+        turbofish: Option<Turbofish>,
+        args: Vec<Expression>,
+        whitespace: Vec<Whitespace>,
+    },
     Range { rhs: Option<Box<Expression>> },
     Slice { range: Box<Expression> },
 }
@@ -1425,13 +1431,14 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                     args: args
                 })
             }
-            Some(ExpressionTail::MethodCall { name, turbofish, args }) => {
+            Some(ExpressionTail::MethodCall { name, turbofish, args, whitespace }) => {
                 expression = Expression::MethodCall(MethodCall {
                     extent: ex(spt, pt),
                     receiver: Box::new(expression),
-                    name: name,
-                    turbofish: turbofish,
-                    args: args
+                    name,
+                    turbofish,
+                    args,
+                    whitespace,
                 })
             }
             Some(ExpressionTail::Range { rhs }) => {
@@ -1974,14 +1981,14 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
 
 fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
-        _x        = optional(whitespace);
+        ws        = optional_whitespace(Vec::new());
         _         = literal(".");
         name      = ident;
         turbofish = optional(turbofish);
         _         = literal("(");
         args      = zero_or_more(tail(",", expression));
         _         = literal(")");
-    }, |_, _| ExpressionTail::MethodCall { name, turbofish, args })
+    }, |_, _| ExpressionTail::MethodCall { name, turbofish, args, whitespace: ws })
 }
 
 fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
