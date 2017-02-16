@@ -334,6 +334,7 @@ pub struct Struct {
     pub extent: Extent,
     visibility: Option<Visibility>,
     name: Ident,
+    generics: Option<GenericDeclarations>,
     body: StructDefinitionBody,
     whitespace: Vec<Whitespace>,
 }
@@ -360,6 +361,7 @@ pub struct Enum {
     pub extent: Extent,
     visibility: Option<Visibility>,
     name: Ident,
+    generics: Option<GenericDeclarations>,
     variants: Vec<EnumVariant>,
     whitespace: Vec<Whitespace>,
 }
@@ -1283,7 +1285,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         _                 = literal("fn");
         ws                = optional_whitespace(Vec::new());
         name              = ident;
-        generics          = optional(function_generic_declarations);
+        generics          = optional(generic_declarations);
         arguments         = function_arglist;
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -1347,7 +1349,7 @@ fn split_point_at_non_zero_offset<'s>(pt: Point<'s>, idx: usize, e: Error) -> Pr
     }
 }
 
-fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
+fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
     sequence!(pm, pt, {
         spt       = point;
         _         = literal("<");
@@ -2277,8 +2279,17 @@ fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
+        generics   = optional(generic_declarations);
+        ws         = optional_whitespace(ws);
         body       = struct_defn_body;
-    }, |_, pt| Struct { extent: ex(spt, pt), visibility, name, body, whitespace: ws })
+    }, |_, pt| Struct {
+        extent: ex(spt, pt),
+        visibility,
+        name,
+        generics,
+        body,
+        whitespace: ws,
+    })
 }
 
 fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBody> {
@@ -2326,6 +2337,8 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
+        generics   = optional(generic_declarations);
+        ws         = optional_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
         variants   = zero_or_more(tail(",", enum_variant));
@@ -2335,6 +2348,7 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         extent: ex(spt, pt),
         visibility,
         name,
+        generics,
         variants,
         whitespace: ws,
     })
@@ -2363,7 +2377,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
         _          = literal("trait");
         ws         = whitespace;
         name       = ident;
-        generics   = optional(function_generic_declarations);
+        generics   = optional(generic_declarations);
         ws         = append_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
@@ -2412,7 +2426,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         _                 = literal("fn");
         ws                = optional_whitespace(Vec::new());
         name              = ident;
-        generics          = optional(function_generic_declarations);
+        generics          = optional(generic_declarations);
         arguments         = trait_impl_function_arglist;
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -2466,7 +2480,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     sequence!(pm, pt, {
         spt              = point;
         _                = literal("impl");
-        generics         = optional(function_generic_declarations);
+        generics         = optional(generic_declarations);
         ws               = whitespace;
         (trait_name, ws) = concat_whitespace(ws, optional(p_impl_of_trait));
         type_name        = typ;
@@ -2868,6 +2882,12 @@ mod test {
     fn enum_with_generic_types() {
         let p = qp(p_enum, "enum A { Foo(Vec<u8>) }");
         assert_eq!(unwrap_progress(p).extent, (0, 23))
+    }
+
+    #[test]
+    fn enum_with_generic_declarations() {
+        let p = qp(p_enum, "enum A<T> { Foo(Vec<T>) }");
+        assert_eq!(unwrap_progress(p).extent, (0, 25))
     }
 
     #[test]
@@ -3416,6 +3436,12 @@ mod test {
     fn struct_with_generic_fields() {
         let p = qp(p_struct, "struct S { field: Option<u8> }");
         assert_eq!(unwrap_progress(p).extent, (0, 30))
+    }
+
+    #[test]
+    fn struct_with_generic_declarations() {
+        let p = qp(p_struct, "struct S<T> { field: Option<T> }");
+        assert_eq!(unwrap_progress(p).extent, (0, 32))
     }
 
     #[test]
