@@ -498,6 +498,7 @@ pub enum Expression {
     Slice(Slice),
     String(String),
     Tuple(Tuple),
+    TryOperator(TryOperator),
     Value(Value),
 }
 
@@ -528,6 +529,7 @@ impl Expression {
             Expression::Return(Return { extent, .. }) |
             Expression::Slice(Slice { extent, .. }) |
             Expression::String(String { extent, .. }) |
+            Expression::TryOperator(TryOperator { extent, .. }) |
             Expression::Tuple(Tuple { extent, .. }) |
             Expression::Value(Value { extent, .. }) => extent,
         }
@@ -562,6 +564,12 @@ pub struct Assign {
 pub struct Tuple {
     extent: Extent,
     members: Vec<Expression>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TryOperator {
+    extent: Extent,
+    target: Box<Expression>,
 }
 
 #[derive(Debug, Visit)]
@@ -751,6 +759,7 @@ enum ExpressionTail {
     },
     Range { rhs: Option<Box<Expression>> },
     Slice { range: Box<Expression>, whitespace: Vec<Whitespace> },
+    TryOperator,
 }
 
 #[derive(Debug, Visit)]
@@ -1024,6 +1033,7 @@ pub trait Visitor {
     fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn visit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn visit_trait_member(&mut self, &TraitMember) {}
+    fn visit_try_operator(&mut self, &TryOperator) {}
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
@@ -1107,6 +1117,7 @@ pub trait Visitor {
     fn exit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn exit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn exit_trait_member(&mut self, &TraitMember) {}
+    fn exit_try_operator(&mut self, &TryOperator) {}
     fn exit_tuple(&mut self, &Tuple) {}
     fn exit_turbofish(&mut self, &Turbofish) {}
     fn exit_type(&mut self, &Type) {}
@@ -1560,6 +1571,12 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                     target: Box::new(expression),
                     range,
                     whitespace,
+                })
+            }
+            Some(ExpressionTail::TryOperator) => {
+                expression = Expression::TryOperator(TryOperator {
+                    extent: ex(spt, pt),
+                    target: Box::new(expression),
                 })
             }
             None => break,
@@ -2050,6 +2067,7 @@ fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         .one(expr_tail_field_access)
         .one(expr_tail_range)
         .one(expr_tail_slice)
+        .one(expr_tail_try_operator)
         .finish()
 }
 
@@ -2128,6 +2146,12 @@ fn expr_tail_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         ws    = optional_whitespace(ws);
         _     = literal("]");
     }, |_, _| ExpressionTail::Slice { range: Box::new(range), whitespace: ws })
+}
+
+fn expr_tail_try_operator<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        _     = literal("?");
+    }, |_, _| ExpressionTail::TryOperator)
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
@@ -3327,6 +3351,12 @@ mod test {
     #[test]
     fn expr_dereference() {
         let p = qp(expression, "*foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_try_operator() {
+        let p = qp(expression, "foo?");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
