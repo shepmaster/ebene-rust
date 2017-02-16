@@ -15,11 +15,11 @@ serde_json = "0.8.6"
 unicode-xid = "0.0.4"
 
 [dependencies.peresil]
-path = "../sxd/peresil"
+git = "https://github.com/shepmaster/peresil"
 features = ["combinators"]
 
 [dependencies.strata]
-path = "../strata"
+git = "https://github.com/shepmaster/strata"
 
 [dependencies.visit-derive]
 path = "visit-derive"
