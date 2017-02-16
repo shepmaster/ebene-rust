@@ -38,7 +38,7 @@ impl peresil::Recoverable for Error {
 #[derive(Debug, PartialEq)]
 pub struct ErrorDetail {
     location: usize,
-    errors: Vec<Error>,
+    errors: BTreeSet<Error>,
 }
 
 impl ErrorDetail {
@@ -100,7 +100,7 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ErrorDetail> {
             peresil::Status::Failure(e) => {
                 return Err(ErrorDetail {
                     location: top_level.point.offset,
-                    errors: e,
+                    errors: e.into_iter().collect(),
                 })
             },
         }
