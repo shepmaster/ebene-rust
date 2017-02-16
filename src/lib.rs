@@ -387,8 +387,7 @@ pub enum Argument {
 #[derive(Debug, Visit)]
 pub struct SelfArgument {
     extent: Extent,
-    is_reference: Option<Extent>,
-    is_mutable: Option<Extent>,
+    reference: Option<TypeReference>,
     name: Ident,
     whitespace: Vec<Whitespace>,
 }
@@ -1373,18 +1372,15 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
 
 fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArgument> {
     sequence!(pm, pt, {
-        spt          = point;
-        is_reference = optional(ext(literal("&")));
-        ws           = optional_whitespace(Vec::new());
-        is_mutable   = optional(ext(literal("mut")));
-        ws           = optional_whitespace(ws);
-        name         = ext(literal("self"));
-        _            = optional(literal(","));
-        ws           = optional_whitespace(ws);
+        spt       = point;
+        reference = optional(typ_ref);
+        ws        = optional_whitespace(Vec::new());
+        name      = ext(literal("self"));
+        _         = optional(literal(","));
+        ws        = optional_whitespace(ws);
     }, |_, pt| SelfArgument {
         extent: ex(spt, pt),
-        is_reference,
-        is_mutable,
+        reference,
         name: Ident { extent: name },
         whitespace: ws,
     })
@@ -2896,6 +2892,12 @@ mod test {
     fn fn_with_self_type() {
         let p = qp(function_header, "fn foo(&self)");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_self_type_with_lifetime() {
+        let p = qp(function_header, "fn foo<'a>(&'a self)");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
