@@ -1294,9 +1294,11 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         spt               = point;
         visibility        = optional(visibility);
         _                 = literal("fn");
-        ws                = optional_whitespace(Vec::new());
+        ws                = whitespace;
         name              = ident;
+        ws                = optional_whitespace(ws);
         generics          = optional(generic_declarations);
+        ws                = optional_whitespace(ws);
         arguments         = function_arglist;
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -2996,6 +2998,18 @@ mod test {
     fn fn_with_lifetimes_and_generics() {
         let p = qp(function_header, "fn foo<'a, T>()");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn fn_with_whitespace_before_arguments() {
+        let p = qp(function_header, "fn foo () -> ()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn fn_with_whitespace_before_generics() {
+        let p = qp(function_header, "fn foo <'a, T>() -> ()");
+        assert_eq!(unwrap_progress(p).extent, (0, 22))
     }
 
     #[test]
