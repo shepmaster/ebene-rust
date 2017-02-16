@@ -24,7 +24,7 @@ type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 
 // define an error type - emphasis on errors. Need to implement Recoverable (more to discuss.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Error {
+pub enum Error {
     Literal(&'static str),
     IdentNotFound,
     NumberNotFound,
@@ -35,10 +35,53 @@ impl peresil::Recoverable for Error {
     fn recoverable(&self) -> bool { true }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct ErrorDetail {
+    location: usize,
+    errors: Vec<Error>,
+}
+
+impl ErrorDetail {
+    pub fn with_text<'a>(&'a self, text: &'a str) -> ErrorDetailText<'a> {
+        ErrorDetailText { detail: self, text }
+    }
+}
+
+#[derive(Debug)]
+pub struct ErrorDetailText<'a> {
+    detail: &'a ErrorDetail,
+    text: &'a str,
+}
+
+use std::fmt;
+
+impl<'a> fmt::Display for ErrorDetailText<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let (head, tail) = self.text.split_at(self.detail.location);
+        let start_of_line = head.rfind("\n").unwrap_or(0);
+        let end_of_line = tail.find("\n").unwrap_or_else(|| tail.len());
+
+        let head_line = &head[start_of_line..];
+        let tail_line = &tail[..end_of_line];
+
+        let line = head.matches("\n").count() + 1; // Normally the first line is #1, so add one
+        let col = head_line.len();
+
+        writeln!(f, "Unable to parse text (line {}, column {})", line, col)?;
+        writeln!(f, "{}{}", head_line, tail_line)?;
+        writeln!(f, "{:>width$}", "^", width = col)?;
+        writeln!(f, "Expected:")?;
+        for e in &self.detail.errors {
+            writeln!(f, "  {:?}", e)?; // TODO: should be Display
+        }
+        Ok(())
+    }
+}
+
 // Construct a point, initialize  the master. This is what stores errors
 // todo: rename?
 
-pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ()> {
+pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ErrorDetail> {
     let mut pt = Point::new(file);
     let mut pm = Master::new();
     let mut results = Vec::new();
@@ -55,9 +98,10 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ()> {
                 next_pt = top_level.point;
             },
             peresil::Status::Failure(e) => {
-                println!("Err @ {}: {:?}", top_level.point.offset, e.into_iter().collect::<BTreeSet<_>>());
-                println!(">>{}<<", &file[top_level.point.offset..]);
-                return Err(());
+                return Err(ErrorDetail {
+                    location: top_level.point.offset,
+                    errors: e,
+                })
             },
         }
 
