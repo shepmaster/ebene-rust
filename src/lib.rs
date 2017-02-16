@@ -263,8 +263,8 @@ pub struct Type {
 #[derive(Debug, Visit)]
 pub struct TypeReference {
     extent: Extent,
-    mutable: Option<Extent>,
     lifetime: Option<Lifetime>,
+    mutable: Option<Extent>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -2621,10 +2621,10 @@ fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference
         spt      = point;
         _        = literal("&");
         ws       = optional_whitespace(Vec::new());
-        mutable  = optional(ext(literal("mut")));
-        ws       = optional_whitespace(ws);
         lifetime = optional(lifetime);
-    }, |_, pt| TypeReference { extent: ex(spt, pt), mutable, lifetime, whitespace: ws })
+        ws       = optional_whitespace(ws);
+        mutable  = optional(ext(literal("mut")));
+    }, |_, pt| TypeReference { extent: ex(spt, pt), lifetime, mutable, whitespace: ws })
 }
 
 fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> {
@@ -3396,6 +3396,12 @@ mod test {
     fn type_mut_ref() {
         let p = qp(typ, "&mut Foo");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn type_mut_ref_with_lifetime() {
+        let p = qp(typ, "&'a mut Foo");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
