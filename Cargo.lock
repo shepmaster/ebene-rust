@@ -3,7 +3,7 @@ name = "strata_rs"
 version = "0.1.0"
 dependencies = [
  "lazy_static 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "peresil 0.3.0",
+ "peresil 0.3.0 (git+https://github.com/shepmaster/peresil)",
  "quick-error 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocket 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocket_codegen 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -11,7 +11,7 @@ dependencies = [
  "serde 0.8.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 0.8.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "strata 0.1.0",
+ "strata 0.1.0 (git+https://github.com/shepmaster/strata)",
  "unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "visit-derive 0.1.0",
 ]
@@ -215,6 +215,7 @@ dependencies = [
 [[package]]
 name = "peresil"
 version = "0.3.0"
+source = "git+https://github.com/shepmaster/peresil#ffad947f0b6fbdec62747fa7a0543388d2218621"
 
 [[package]]
 name = "phf"
@@ -400,6 +401,7 @@ dependencies = [
 [[package]]
 name = "strata"
 version = "0.1.0"
+source = "git+https://github.com/shepmaster/strata#d4ffbb0a8f5f317375320909a3710e63bc30f394"
 dependencies = [
  "itertools 0.5.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "punkt 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -537,6 +539,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum num-rational 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)" = "54ff603b8334a72fbb27fe66948aac0abaaa40231b3cecd189e76162f6f38aaf"
 "checksum num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)" = "a16a42856a256b39c6d3484f097f6713e14feacd9bfb02290917904fae46c81c"
 "checksum num_cpus 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "a225d1e2717567599c24f88e49f00856c6e825a12125181ee42c4257e3688d39"
+"checksum peresil 0.3.0 (git+https://github.com/shepmaster/peresil)" = "<none>"
 "checksum phf 0.7.21 (registry+https://github.com/rust-lang/crates.io-index)" = "cb325642290f28ee14d8c6201159949a872f220c62af6e110a56ea914fbe42fc"
 "checksum phf_generator 0.7.21 (registry+https://github.com/rust-lang/crates.io-index)" = "6b07ffcc532ccc85e3afc45865469bf5d9e4ef5bfcf9622e3cfe80c2d275ec03"
 "checksum phf_macros 0.7.21 (registry+https://github.com/rust-lang/crates.io-index)" = "00edda362e3d89cbf8fb24099c9e8ca844d8ad2cc04587f73b027f063d734504"
@@ -560,6 +563,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum serde_json 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)" = "67f7d2e9edc3523a9c8ec8cd6ec481b3a27810aafee3e625d311febd3e656b4c"
 "checksum siphasher 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "2ffc669b726f2bc9a3bcff66e5e23b56ba6bf70e22a34c3d7b6d0b3450b65b84"
 "checksum solicit 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)" = "172382bac9424588d7840732b250faeeef88942e37b6e35317dce98cafdd75b2"
+"checksum strata 0.1.0 (git+https://github.com/shepmaster/strata)" = "<none>"
 "checksum syn 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)" = "58fd09df59565db3399efbba34ba8a2fec1307511ebd245d0061ff9d42691673"
 "checksum term 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)" = "3deff8a2b3b6607d6d7cc32ac25c0b33709453ca9cceac006caac51e963cf94a"
 "checksum term-painter 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "ab900bf2f05175932b13d4fc12f8ff09ef777715b04998791ab2c930841e496b"

@@ -24,7 +24,7 @@ type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 
 // define an error type - emphasis on errors. Need to implement Recoverable (more to discuss.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Error {
+pub enum Error {
     Literal(&'static str),
     IdentNotFound,
     NumberNotFound,
@@ -35,10 +35,53 @@ impl peresil::Recoverable for Error {
     fn recoverable(&self) -> bool { true }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct ErrorDetail {
+    location: usize,
+    errors: Vec<Error>,
+}
+
+impl ErrorDetail {
+    pub fn with_text<'a>(&'a self, text: &'a str) -> ErrorDetailText<'a> {
+        ErrorDetailText { detail: self, text }
+    }
+}
+
+#[derive(Debug)]
+pub struct ErrorDetailText<'a> {
+    detail: &'a ErrorDetail,
+    text: &'a str,
+}
+
+use std::fmt;
+
+impl<'a> fmt::Display for ErrorDetailText<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let (head, tail) = self.text.split_at(self.detail.location);
+        let start_of_line = head.rfind("\n").unwrap_or(0);
+        let end_of_line = tail.find("\n").unwrap_or_else(|| tail.len());
+
+        let head_line = &head[start_of_line..];
+        let tail_line = &tail[..end_of_line];
+
+        let line = head.matches("\n").count() + 1; // Normally the first line is #1, so add one
+        let col = head_line.len();
+
+        writeln!(f, "Unable to parse text (line {}, column {})", line, col)?;
+        writeln!(f, "{}{}", head_line, tail_line)?;
+        writeln!(f, "{:>width$}", "^", width = col)?;
+        writeln!(f, "Expected:")?;
+        for e in &self.detail.errors {
+            writeln!(f, "  {:?}", e)?; // TODO: should be Display
+        }
+        Ok(())
+    }
+}
+
 // Construct a point, initialize  the master. This is what stores errors
 // todo: rename?
 
-pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ()> {
+pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ErrorDetail> {
     let mut pt = Point::new(file);
     let mut pm = Master::new();
     let mut results = Vec::new();
@@ -55,9 +98,10 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ()> {
                 next_pt = top_level.point;
             },
             peresil::Status::Failure(e) => {
-                println!("Err @ {}: {:?}", top_level.point.offset, e.into_iter().collect::<BTreeSet<_>>());
-                println!(">>{}<<", &file[top_level.point.offset..]);
-                return Err(());
+                return Err(ErrorDetail {
+                    location: top_level.point.offset,
+                    errors: e,
+                })
             },
         }
 
@@ -219,8 +263,8 @@ pub struct Type {
 #[derive(Debug, Visit)]
 pub struct TypeReference {
     extent: Extent,
-    mutable: Option<Extent>,
     lifetime: Option<Lifetime>,
+    mutable: Option<Extent>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -290,6 +334,7 @@ pub struct Struct {
     pub extent: Extent,
     visibility: Option<Visibility>,
     name: Ident,
+    generics: Option<GenericDeclarations>,
     body: StructDefinitionBody,
     whitespace: Vec<Whitespace>,
 }
@@ -316,6 +361,7 @@ pub struct Enum {
     pub extent: Extent,
     visibility: Option<Visibility>,
     name: Ident,
+    generics: Option<GenericDeclarations>,
     variants: Vec<EnumVariant>,
     whitespace: Vec<Whitespace>,
 }
@@ -343,8 +389,7 @@ pub enum Argument {
 #[derive(Debug, Visit)]
 pub struct SelfArgument {
     extent: Extent,
-    is_reference: Option<Extent>,
-    is_mutable: Option<Extent>,
+    reference: Option<TypeReference>,
     name: Ident,
     whitespace: Vec<Whitespace>,
 }
@@ -453,6 +498,7 @@ pub enum Expression {
     Slice(Slice),
     String(String),
     Tuple(Tuple),
+    TryOperator(TryOperator),
     Value(Value),
 }
 
@@ -483,6 +529,7 @@ impl Expression {
             Expression::Return(Return { extent, .. }) |
             Expression::Slice(Slice { extent, .. }) |
             Expression::String(String { extent, .. }) |
+            Expression::TryOperator(TryOperator { extent, .. }) |
             Expression::Tuple(Tuple { extent, .. }) |
             Expression::Value(Value { extent, .. }) => extent,
         }
@@ -517,6 +564,12 @@ pub struct Assign {
 pub struct Tuple {
     extent: Extent,
     members: Vec<Expression>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TryOperator {
+    extent: Extent,
+    target: Box<Expression>,
 }
 
 #[derive(Debug, Visit)]
@@ -706,6 +759,7 @@ enum ExpressionTail {
     },
     Range { rhs: Option<Box<Expression>> },
     Slice { range: Box<Expression>, whitespace: Vec<Whitespace> },
+    TryOperator,
 }
 
 #[derive(Debug, Visit)]
@@ -979,6 +1033,7 @@ pub trait Visitor {
     fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn visit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn visit_trait_member(&mut self, &TraitMember) {}
+    fn visit_try_operator(&mut self, &TryOperator) {}
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
@@ -1062,6 +1117,7 @@ pub trait Visitor {
     fn exit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn exit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn exit_trait_member(&mut self, &TraitMember) {}
+    fn exit_try_operator(&mut self, &TryOperator) {}
     fn exit_tuple(&mut self, &Tuple) {}
     fn exit_turbofish(&mut self, &Turbofish) {}
     fn exit_type(&mut self, &Type) {}
@@ -1238,9 +1294,11 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         spt               = point;
         visibility        = optional(visibility);
         _                 = literal("fn");
-        ws                = optional_whitespace(Vec::new());
+        ws                = whitespace;
         name              = ident;
-        generics          = optional(function_generic_declarations);
+        ws                = optional_whitespace(ws);
+        generics          = optional(generic_declarations);
+        ws                = optional_whitespace(ws);
         arguments         = function_arglist;
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -1304,7 +1362,7 @@ fn split_point_at_non_zero_offset<'s>(pt: Point<'s>, idx: usize, e: Error) -> Pr
     }
 }
 
-fn function_generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
+fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
     sequence!(pm, pt, {
         spt       = point;
         _         = literal("<");
@@ -1329,18 +1387,15 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
 
 fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArgument> {
     sequence!(pm, pt, {
-        spt          = point;
-        is_reference = optional(ext(literal("&")));
-        ws           = optional_whitespace(Vec::new());
-        is_mutable   = optional(ext(literal("mut")));
-        ws           = optional_whitespace(ws);
-        name         = ext(literal("self"));
-        _            = optional(literal(","));
-        ws           = optional_whitespace(ws);
+        spt       = point;
+        reference = optional(typ_ref);
+        ws        = optional_whitespace(Vec::new());
+        name      = ext(literal("self"));
+        _         = optional(literal(","));
+        ws        = optional_whitespace(ws);
     }, |_, pt| SelfArgument {
         extent: ex(spt, pt),
-        is_reference,
-        is_mutable,
+        reference,
         name: Ident { extent: name },
         whitespace: ws,
     })
@@ -1518,6 +1573,12 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                     target: Box::new(expression),
                     range,
                     whitespace,
+                })
+            }
+            Some(ExpressionTail::TryOperator) => {
+                expression = Expression::TryOperator(TryOperator {
+                    extent: ex(spt, pt),
+                    target: Box::new(expression),
                 })
             }
             None => break,
@@ -2008,6 +2069,7 @@ fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         .one(expr_tail_field_access)
         .one(expr_tail_range)
         .one(expr_tail_slice)
+        .one(expr_tail_try_operator)
         .finish()
 }
 
@@ -2086,6 +2148,12 @@ fn expr_tail_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         ws    = optional_whitespace(ws);
         _     = literal("]");
     }, |_, _| ExpressionTail::Slice { range: Box::new(range), whitespace: ws })
+}
+
+fn expr_tail_try_operator<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        _     = literal("?");
+    }, |_, _| ExpressionTail::TryOperator)
 }
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
@@ -2237,8 +2305,17 @@ fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
+        generics   = optional(generic_declarations);
+        ws         = optional_whitespace(ws);
         body       = struct_defn_body;
-    }, |_, pt| Struct { extent: ex(spt, pt), visibility, name, body, whitespace: ws })
+    }, |_, pt| Struct {
+        extent: ex(spt, pt),
+        visibility,
+        name,
+        generics,
+        body,
+        whitespace: ws,
+    })
 }
 
 fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBody> {
@@ -2286,6 +2363,8 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
+        generics   = optional(generic_declarations);
+        ws         = optional_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
         variants   = zero_or_more(tail(",", enum_variant));
@@ -2295,6 +2374,7 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         extent: ex(spt, pt),
         visibility,
         name,
+        generics,
         variants,
         whitespace: ws,
     })
@@ -2323,7 +2403,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
         _          = literal("trait");
         ws         = whitespace;
         name       = ident;
-        generics   = optional(function_generic_declarations);
+        generics   = optional(generic_declarations);
         ws         = append_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
@@ -2372,7 +2452,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         _                 = literal("fn");
         ws                = optional_whitespace(Vec::new());
         name              = ident;
-        generics          = optional(function_generic_declarations);
+        generics          = optional(generic_declarations);
         arguments         = trait_impl_function_arglist;
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -2426,7 +2506,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     sequence!(pm, pt, {
         spt              = point;
         _                = literal("impl");
-        generics         = optional(function_generic_declarations);
+        generics         = optional(generic_declarations);
         ws               = whitespace;
         (trait_name, ws) = concat_whitespace(ws, optional(p_impl_of_trait));
         type_name        = typ;
@@ -2577,10 +2657,10 @@ fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference
         spt      = point;
         _        = literal("&");
         ws       = optional_whitespace(Vec::new());
-        mutable  = optional(ext(literal("mut")));
-        ws       = optional_whitespace(ws);
         lifetime = optional(lifetime);
-    }, |_, pt| TypeReference { extent: ex(spt, pt), mutable, lifetime, whitespace: ws })
+        ws       = optional_whitespace(ws);
+        mutable  = optional(ext(literal("mut")));
+    }, |_, pt| TypeReference { extent: ex(spt, pt), lifetime, mutable, whitespace: ws })
 }
 
 fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> {
@@ -2831,6 +2911,12 @@ mod test {
     }
 
     #[test]
+    fn enum_with_generic_declarations() {
+        let p = qp(p_enum, "enum A<T> { Foo(Vec<T>) }");
+        assert_eq!(unwrap_progress(p).extent, (0, 25))
+    }
+
+    #[test]
     fn enum_with_struct_variant() {
         let p = qp(p_enum, "enum A { Foo { a: u8 } }");
         assert_eq!(unwrap_progress(p).extent, (0, 24))
@@ -2852,6 +2938,12 @@ mod test {
     fn fn_with_self_type() {
         let p = qp(function_header, "fn foo(&self)");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_self_type_with_lifetime() {
+        let p = qp(function_header, "fn foo<'a>(&'a self)");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
@@ -2906,6 +2998,18 @@ mod test {
     fn fn_with_lifetimes_and_generics() {
         let p = qp(function_header, "fn foo<'a, T>()");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn fn_with_whitespace_before_arguments() {
+        let p = qp(function_header, "fn foo () -> ()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn fn_with_whitespace_before_generics() {
+        let p = qp(function_header, "fn foo <'a, T>() -> ()");
+        assert_eq!(unwrap_progress(p).extent, (0, 22))
     }
 
     #[test]
@@ -3265,6 +3369,12 @@ mod test {
     }
 
     #[test]
+    fn expr_try_operator() {
+        let p = qp(expression, "foo?");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
     fn pattern_with_path() {
         let p = qp(pattern, "foo::Bar::Baz");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
@@ -3355,6 +3465,12 @@ mod test {
     }
 
     #[test]
+    fn type_mut_ref_with_lifetime() {
+        let p = qp(typ, "&'a mut Foo");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
     fn struct_basic() {
         let p = qp(p_struct, "struct S { field: TheType, other: OtherType }");
         assert_eq!(unwrap_progress(p).extent, (0, 45))
@@ -3364,6 +3480,12 @@ mod test {
     fn struct_with_generic_fields() {
         let p = qp(p_struct, "struct S { field: Option<u8> }");
         assert_eq!(unwrap_progress(p).extent, (0, 30))
+    }
+
+    #[test]
+    fn struct_with_generic_declarations() {
+        let p = qp(p_struct, "struct S<T> { field: Option<T> }");
+        assert_eq!(unwrap_progress(p).extent, (0, 32))
     }
 
     #[test]

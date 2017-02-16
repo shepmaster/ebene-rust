@@ -171,7 +171,14 @@ fn main() {
     let mut f = File::open(fname).expect("Can't open");
     let mut s = String::new();
     f.read_to_string(&mut s).expect("Can't read");
-    let file = strata_rs::parse_rust_file(&s).expect("Failed");
+
+    let file = match strata_rs::parse_rust_file(&s) {
+        Ok(file) => file,
+        Err(detail) => {
+            panic!("{}", detail.with_text(&s));
+        }
+    };
+
     let mut d = Indexing::default();
     d.source = s;
 
