@@ -295,6 +295,7 @@ pub struct TypeReference {
 #[derive(Debug, Visit)]
 pub enum TypeInner {
     Core(TypeCore),
+    Slice(TypeSlice),
     Tuple(Vec<Type>),
     Uninhabited(Extent),
 }
@@ -305,6 +306,13 @@ pub struct TypeCore {
     is_impl: Option<Extent>,
     name: PathedIdent,
     generics: Option<TypeGenerics>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeSlice {
+    extent: Extent,
+    typ: Box<Type>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1230,6 +1238,7 @@ pub trait Visitor {
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
+    fn visit_type_slice(&mut self, &TypeSlice) {}
     fn visit_unary(&mut self, &Unary) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_use_tail(&mut self, &UseTail) {}
@@ -1328,6 +1337,7 @@ pub trait Visitor {
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn exit_type_inner(&mut self, &TypeInner) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
+    fn exit_type_slice(&mut self, &TypeSlice) {}
     fn exit_unary(&mut self, &Unary) {}
     fn exit_use(&mut self, &Use) {}
     fn exit_use_tail(&mut self, &UseTail) {}
@@ -3105,6 +3115,7 @@ fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference
 fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> {
     pm.alternate(pt)
         .one(map(typ_core, TypeInner::Core))
+        .one(map(typ_slice, TypeInner::Slice))
         .one(map(tuple_defn_body, TypeInner::Tuple))
         .one(map(ext(literal("!")), TypeInner::Uninhabited))
         .finish()
@@ -3125,6 +3136,17 @@ fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCore> {
         name          = pathed_ident;
         generics      = optional(typ_generics);
     }, |_, pt| TypeCore { extent: ex(spt, pt), is_impl, name, generics, whitespace: ws })
+}
+
+fn typ_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeSlice> {
+    sequence!(pm, pt, {
+        spt = point;
+        _   = literal("[");
+        ws  = optional_whitespace(Vec::new());
+        typ = typ;
+        ws  = optional_whitespace(ws);
+        _   = literal("]");
+    }, |_, pt| TypeSlice { extent: ex(spt, pt), typ: Box::new(typ), whitespace: ws })
 }
 
 fn typ_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Extent, Vec<Whitespace>)> {
@@ -4046,6 +4068,12 @@ mod test {
     fn type_uninhabited() {
         let p = qp(typ, "!");
         assert_eq!(unwrap_progress(p).extent, (0, 1))
+    }
+
+    #[test]
+    fn type_slice() {
+        let p = qp(typ, "[u8]");
+        assert_eq!(unwrap_progress(p).extent, (0, 4))
     }
 
     #[test]
