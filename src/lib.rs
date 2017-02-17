@@ -521,6 +521,7 @@ pub enum Expression {
     String(String),
     Tuple(Tuple),
     TryOperator(TryOperator),
+    Unary(Unary),
     Value(Value),
 }
 
@@ -553,6 +554,7 @@ impl Expression {
             Expression::String(String { extent, .. }) |
             Expression::TryOperator(TryOperator { extent, .. }) |
             Expression::Tuple(Tuple { extent, .. }) |
+            Expression::Unary(Unary { extent, .. }) |
             Expression::Value(Value { extent, .. }) => extent,
         }
     }
@@ -658,6 +660,15 @@ pub struct ForLoop {
 pub struct Loop {
     extent: Extent,
     body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+// TODO: Should this be the same as dereference? What about reference?
+#[derive(Debug, Visit)]
+pub struct Unary {
+    extent: Extent,
+    op: Extent,
+    value: Box<Expression>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1067,6 +1078,7 @@ pub trait Visitor {
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
+    fn visit_unary(&mut self, &Unary) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_use_tail(&mut self, &UseTail) {}
     fn visit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1156,6 +1168,7 @@ pub trait Visitor {
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn exit_type_inner(&mut self, &TypeInner) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
+    fn exit_unary(&mut self, &Unary) {}
     fn exit_use(&mut self, &Use) {}
     fn exit_use_tail(&mut self, &UseTail) {}
     fn exit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1550,6 +1563,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_number, Expression::Number))
             .one(map(expr_reference, Expression::Reference))
             .one(map(expr_dereference, Expression::Dereference))
+            .one(map(expr_unary, Expression::Unary))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -2035,6 +2049,20 @@ fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dere
         extent: ex(spt, pt),
         value: Box::new(value),
         whitespace: ws,
+    })
+}
+
+fn expr_unary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Unary> {
+    sequence!(pm, pt, {
+        spt   = point;
+        op    = ext(literal("!"));
+        ws    = optional_whitespace(Vec::new());
+        value = expression;
+    }, |_, pt| Unary {
+        extent: ex(spt, pt),
+        op,
+        value: Box::new(value),
+        whitespace: ws
     })
 }
 
@@ -3429,6 +3457,12 @@ mod test {
     #[test]
     fn expr_dereference() {
         let p = qp(expression, "*foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_not() {
+        let p = qp(expression, "!foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
