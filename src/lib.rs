@@ -521,6 +521,7 @@ pub enum Expression {
     ForLoop(ForLoop),
     FunctionCall(FunctionCall),
     If(If),
+    IfLet(IfLet),
     Let(Let),
     Loop(Loop),
     MacroCall(MacroCall),
@@ -555,6 +556,7 @@ impl Expression {
             Expression::ForLoop(ForLoop { extent, .. })           |
             Expression::FunctionCall(FunctionCall { extent, .. }) |
             Expression::If(If { extent, .. })                     |
+            Expression::IfLet(IfLet { extent, .. })               |
             Expression::Let(Let { extent, .. })                   |
             Expression::Loop(Loop { extent, .. })                 |
             Expression::MacroCall(MacroCall { extent, .. })       |
@@ -672,6 +674,15 @@ pub struct ForLoop {
 #[derive(Debug, Visit)]
 pub struct Loop {
     extent: Extent,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct IfLet {
+    extent: Extent,
+    pattern: Pattern,
+    value: Box<Expression>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
 }
@@ -1150,6 +1161,7 @@ pub trait Visitor {
     fn visit_generic_declarations(&mut self, &GenericDeclarations) {}
     fn visit_ident(&mut self, &Ident) {}
     fn visit_if(&mut self, &If) {}
+    fn visit_if_let(&mut self, &IfLet) {}
     fn visit_impl(&mut self, &Impl) {}
     fn visit_impl_function(&mut self, &ImplFunction) {}
     fn visit_impl_member(&mut self, &ImplMember) {}
@@ -1246,6 +1258,7 @@ pub trait Visitor {
     fn exit_generic_declarations(&mut self, &GenericDeclarations) {}
     fn exit_ident(&mut self, &Ident) {}
     fn exit_if(&mut self, &If) {}
+    fn exit_if_let(&mut self, &IfLet) {}
     fn exit_impl(&mut self, &Impl) {}
     fn exit_impl_function(&mut self, &ImplFunction) {}
     fn exit_impl_member(&mut self, &ImplMember) {}
@@ -1709,6 +1722,7 @@ fn implicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, St
 fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     pm.alternate(pt)
         .one(map(expr_if, Expression::If))
+        .one(map(expr_if_let, Expression::IfLet))
         .one(map(expr_for_loop, Expression::ForLoop))
         .one(map(expr_loop, Expression::Loop))
         .one(map(expr_while_let, Expression::WhileLet))
@@ -1982,6 +1996,27 @@ fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
         ws   = optional_whitespace(Vec::new());
         body = block;
     }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
+}
+
+fn expr_if_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, IfLet> {
+    sequence!(pm, pt, {
+        spt           = point;
+        _             = literal("if");
+        ws            = whitespace;
+        _             = literal("let");
+        ws            = append_whitespace(ws);
+        pattern       = pattern;
+        ws            = optional_whitespace(ws);
+        _             = literal("=");
+        ws            = optional_whitespace(ws);
+        (value, body) = expr_followed_by_block;
+    }, |_, pt| IfLet {
+        extent: ex(spt, pt),
+        pattern,
+        value: Box::new(value),
+        body: Box::new(body),
+        whitespace: ws,
+    })
 }
 
 fn expr_while_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhileLet> {
@@ -3595,6 +3630,12 @@ mod test {
     fn expr_if_else_if() {
         let p = qp(expression, "if a {} else if b {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 20))
+    }
+
+    #[test]
+    fn expr_if_let() {
+        let p = qp(expression, "if let Some(a) = None {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 24))
     }
 
     #[test]
