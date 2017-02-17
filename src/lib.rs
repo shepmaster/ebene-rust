@@ -3766,8 +3766,8 @@ mod test {
 
     #[test]
     fn where_clause_with_path() {
-        let p = qp(function_where, "P: std::str::pattern::Pattern<'s>");
-        assert_eq!(unwrap_progress(p).extent, (0, 33))
+        let p = qp(function_where, "P: foo::bar::baz::Quux<'a>");
+        assert_eq!(unwrap_progress(p).extent, (0, 26))
     }
 
     #[test]
