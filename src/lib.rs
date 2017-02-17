@@ -130,17 +130,18 @@ pub struct File {
 
 #[derive(Debug, Visit)]
 pub enum Item {
-    Function(Function),
-    MacroRules(MacroRules),
-    Struct(Struct),
-    Enum(Enum),
-    Trait(Trait),
-    Impl(Impl),
     Attribute(Attribute),
+    Const(Const),
+    Enum(Enum),
     ExternCrate(Crate),
-    Use(Use),
-    TypeAlias(TypeAlias),
+    Function(Function),
+    Impl(Impl),
+    MacroRules(MacroRules),
     Module(Module),
+    Struct(Struct),
+    Trait(Trait),
+    TypeAlias(TypeAlias),
+    Use(Use),
     Whitespace(Vec<Whitespace>),
 }
 
@@ -148,17 +149,18 @@ impl Item {
     #[allow(dead_code)]
     pub fn extent(&self) -> Extent {
         match *self {
-            Item::Function(Function { extent, .. })     |
-            Item::MacroRules(MacroRules { extent, .. }) |
-            Item::Struct(Struct { extent, .. })         |
-            Item::Enum(Enum { extent, .. })             |
-            Item::Trait(Trait { extent, .. })           |
-            Item::Impl(Impl { extent, .. })             |
             Item::Attribute(Attribute { extent, .. })   |
+            Item::Const(Const { extent, .. })           |
+            Item::Enum(Enum { extent, .. })             |
             Item::ExternCrate(Crate { extent, .. })     |
-            Item::Use(Use { extent, .. })               |
+            Item::Function(Function { extent, .. })     |
+            Item::Impl(Impl { extent, .. })             |
+            Item::MacroRules(MacroRules { extent, .. }) |
+            Item::Module(Module { extent, .. })         |
+            Item::Struct(Struct { extent, .. })         |
+            Item::Trait(Trait { extent, .. })           |
             Item::TypeAlias(TypeAlias { extent, .. })   |
-            Item::Module(Module { extent, .. })         => extent,
+            Item::Use(Use { extent, .. })               => extent,
             Item::Whitespace(..)                        => unimplemented!(),
         }
     }
@@ -352,6 +354,16 @@ impl From<Ident> for PathedIdent {
 }
 
 #[derive(Debug, Visit)]
+pub struct Const {
+    extent: Extent,
+    visibility: Option<Visibility>,
+    name: Ident,
+    typ: Type,
+    value: Expression,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
 pub struct Struct {
     pub extent: Extent,
     visibility: Option<Visibility>,
@@ -521,6 +533,7 @@ pub enum Expression {
     String(String),
     Tuple(Tuple),
     TryOperator(TryOperator),
+    Unary(Unary),
     Value(Value),
 }
 
@@ -553,6 +566,7 @@ impl Expression {
             Expression::String(String { extent, .. }) |
             Expression::TryOperator(TryOperator { extent, .. }) |
             Expression::Tuple(Tuple { extent, .. }) |
+            Expression::Unary(Unary { extent, .. }) |
             Expression::Value(Value { extent, .. }) => extent,
         }
     }
@@ -658,6 +672,15 @@ pub struct ForLoop {
 pub struct Loop {
     extent: Extent,
     body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+// TODO: Should this be the same as dereference? What about reference?
+#[derive(Debug, Visit)]
+pub struct Unary {
+    extent: Extent,
+    op: Extent,
+    value: Box<Expression>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -786,25 +809,26 @@ enum ExpressionTail {
 
 #[derive(Debug, Visit)]
 pub enum Pattern {
-    // TODO: split into ident and enumtuple
-    Ident(PatternIdent),
+    Character(PatternCharacter),
+    Ident(PatternIdent), // TODO: split into ident and enumtuple
+    Ref(PatternRef),
+    Reference(PatternReference),
     Struct(PatternStruct),
     Tuple(PatternTuple),
     Wildcard(PatternWildcard),
-    Character(PatternCharacter),
-    Reference(PatternReference),
 }
 
 impl Pattern {
     #[allow(dead_code)]
     fn extent(&self) -> Extent {
         match *self {
-            Pattern::Ident(PatternIdent { extent, .. }) |
-            Pattern::Tuple(PatternTuple { extent, .. }) |
-            Pattern::Struct(PatternStruct { extent, .. }) |
-            Pattern::Wildcard(PatternWildcard { extent, .. }) |
             Pattern::Character(PatternCharacter { extent, .. }) |
-            Pattern::Reference(PatternReference { extent, .. }) => extent
+            Pattern::Ident(PatternIdent { extent, .. })         |
+            Pattern::Ref(PatternRef { extent, .. })             |
+            Pattern::Reference(PatternReference { extent, .. }) |
+            Pattern::Struct(PatternStruct { extent, .. })       |
+            Pattern::Tuple(PatternTuple { extent, .. })         |
+            Pattern::Wildcard(PatternWildcard { extent, .. })   => extent
         }
     }
 }
@@ -850,6 +874,15 @@ pub struct PatternWildcard {
 pub struct PatternCharacter {
     extent: Extent,
     value: Character,
+}
+
+// TODO: Should we actually have a "qualifier" that applies to all
+// patterns equally? Could include `mut` in there too...
+#[derive(Debug, Visit)]
+pub struct PatternRef {
+    extent: Extent,
+    pattern: Box<Pattern>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -999,6 +1032,7 @@ pub trait Visitor {
     fn visit_closure(&mut self, &Closure) {}
     fn visit_closure_arg(&mut self, &ClosureArg) {}
     fn visit_comment(&mut self, &Comment) {}
+    fn visit_const(&mut self, &Const) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_dereference(&mut self, &Dereference) {}
     fn visit_enum(&mut self, &Enum) {}
@@ -1034,6 +1068,7 @@ pub trait Visitor {
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
+    fn visit_pattern_ref(&mut self, &PatternRef) {}
     fn visit_pattern_reference(&mut self, &PatternReference) {}
     fn visit_pattern_struct(&mut self, &PatternStruct) {}
     fn visit_pattern_struct_field(&mut self, &PatternStructField) {}
@@ -1067,6 +1102,7 @@ pub trait Visitor {
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
+    fn visit_unary(&mut self, &Unary) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_use_tail(&mut self, &UseTail) {}
     fn visit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1088,6 +1124,7 @@ pub trait Visitor {
     fn exit_closure(&mut self, &Closure) {}
     fn exit_closure_arg(&mut self, &ClosureArg) {}
     fn exit_comment(&mut self, &Comment) {}
+    fn exit_const(&mut self, &Const) {}
     fn exit_crate(&mut self, &Crate) {}
     fn exit_dereference(&mut self, &Dereference) {}
     fn exit_enum(&mut self, &Enum) {}
@@ -1123,6 +1160,7 @@ pub trait Visitor {
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
+    fn exit_pattern_ref(&mut self, &PatternRef) {}
     fn exit_pattern_reference(&mut self, &PatternReference) {}
     fn exit_pattern_struct(&mut self, &PatternStruct) {}
     fn exit_pattern_struct_field(&mut self, &PatternStructField) {}
@@ -1156,6 +1194,7 @@ pub trait Visitor {
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn exit_type_inner(&mut self, &TypeInner) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
+    fn exit_unary(&mut self, &Unary) {}
     fn exit_use(&mut self, &Use) {}
     fn exit_use_tail(&mut self, &UseTail) {}
     fn exit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1264,17 +1303,18 @@ fn concat_whitespace<'s, F, T>
 
 fn item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Item> {
     pm.alternate(pt)
+        .one(map(attribute, Item::Attribute))
+        .one(map(p_const, Item::Const))
+        .one(map(extern_crate, Item::ExternCrate))
         .one(map(function, Item::Function))
         .one(map(macro_rules, Item::MacroRules))
-        .one(map(p_struct, Item::Struct))
+        .one(map(module, Item::Module))
         .one(map(p_enum, Item::Enum))
-        .one(map(p_trait, Item::Trait))
         .one(map(p_impl, Item::Impl))
-        .one(map(attribute, Item::Attribute))
-        .one(map(extern_crate, Item::ExternCrate))
+        .one(map(p_struct, Item::Struct))
+        .one(map(p_trait, Item::Trait))
         .one(map(p_use, Item::Use))
         .one(map(type_alias, Item::TypeAlias))
-        .one(map(module, Item::Module))
         .one(map(whitespace, Item::Whitespace))
         .finish()
 }
@@ -1550,6 +1590,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_number, Expression::Number))
             .one(map(expr_reference, Expression::Reference))
             .one(map(expr_dereference, Expression::Dereference))
+            .one(map(expr_unary, Expression::Unary))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -2038,6 +2079,20 @@ fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dere
     })
 }
 
+fn expr_unary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Unary> {
+    sequence!(pm, pt, {
+        spt   = point;
+        op    = ext(literal("!"));
+        ws    = optional_whitespace(Vec::new());
+        value = expression;
+    }, |_, pt| Unary {
+        extent: ex(spt, pt),
+        op,
+        value: Box::new(value),
+        whitespace: ws
+    })
+}
+
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
     sequence!(pm, pt, {
         spt           = point;
@@ -2215,11 +2270,13 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> 
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     pm.alternate(pt)
-        .one(map(pattern_struct, Pattern::Struct))
-        .one(map(pattern_ident, Pattern::Ident))
-        .one(map(pattern_tuple, Pattern::Tuple))
         .one(map(pattern_char, Pattern::Character))
+        .one(map(pattern_ref, Pattern::Ref))
         .one(map(pattern_reference, Pattern::Reference))
+        .one(map(pattern_struct, Pattern::Struct))
+        .one(map(pattern_tuple, Pattern::Tuple))
+        // Must be last, otherwise it collides with struct names
+        .one(map(pattern_ident, Pattern::Ident))
         .finish()
 }
 
@@ -2314,6 +2371,19 @@ fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternC
         spt   = point;
         value = character_literal;
     }, |_, pt| PatternCharacter { extent: ex(spt, pt), value })
+}
+
+fn pattern_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRef> {
+    sequence!(pm, pt, {
+        spt     = point;
+        _       = literal("ref");
+        ws      = whitespace;
+        pattern = pattern;
+    }, |_, pt| PatternRef {
+        extent: ex(spt, pt),
+        pattern: Box::new(pattern),
+        whitespace: ws
+    })
 }
 
 fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternReference> {
@@ -2596,6 +2666,32 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> 
         text          = parse_nested_until('[', ']');
         _             = literal("]");
     }, |_, pt| Attribute { extent: ex(spt, pt), is_containing, text })
+}
+
+fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
+    sequence!(pm, pt, {
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("const");
+        ws         = whitespace;
+        name       = ident;
+        ws         = optional_whitespace(ws);
+        _          = literal(":");
+        ws         = optional_whitespace(ws);
+        typ        = typ;
+        ws         = optional_whitespace(ws);
+        _          = literal("=");
+        ws         = optional_whitespace(ws);
+        value      = expression;
+        _          = literal(";");
+    }, |_, pt| Const {
+        extent: ex(spt, pt),
+        visibility,
+        name,
+        typ,
+        value,
+        whitespace: ws,
+    })
 }
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
@@ -2924,6 +3020,18 @@ mod test {
     fn item_type_alias_public() {
         let p = qp(item, "pub type Foo<T> = Bar<T, u8>;");
         assert_eq!(unwrap_progress(p).extent(), (0, 29))
+    }
+
+    #[test]
+    fn item_const() {
+        let p = qp(item, r#"const FOO: &'static str = "hi";"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 31))
+    }
+
+    #[test]
+    fn item_const_public() {
+        let p = qp(item, "pub const FOO: u8 = 42;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 23))
     }
 
     #[test]
@@ -3433,6 +3541,12 @@ mod test {
     }
 
     #[test]
+    fn expr_not() {
+        let p = qp(expression, "!foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
     fn expr_try_operator() {
         let p = qp(expression, "foo?");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
@@ -3490,6 +3604,12 @@ mod test {
     fn pattern_with_reference() {
         let p = qp(pattern, "&a");
         assert_eq!(unwrap_progress(p).extent(), (0, 2))
+    }
+
+    #[test]
+    fn pattern_with_ref() {
+        let p = qp(pattern, "ref a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
