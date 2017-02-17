@@ -188,15 +188,32 @@ pub struct Comment {
 #[derive(Debug, Visit)]
 pub struct Use {
     extent: Extent,
-    names: Vec<Ident>,
-    tail: Option<Extent>,
+    path: Vec<Ident>,
+    tail: UseTail,
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug)]
-pub struct UsePath {
+#[derive(Debug, Visit)]
+pub enum UseTail {
+    Ident(UseTailIdent),
+    Glob(UseTailGlob),
+    Multi(UseTailMulti),
+}
+
+#[derive(Debug, Visit)]
+pub struct UseTailIdent {
+    name: Ident,
+}
+
+#[derive(Debug, Visit)]
+pub struct UseTailGlob {
+    extent: Extent,
+}
+
+#[derive(Debug, Visit)]
+pub struct UseTailMulti {
+    extent: Extent,
     names: Vec<Ident>,
-    tail: Option<Extent>,
 }
 
 #[derive(Debug, Visit)]
@@ -1045,6 +1062,10 @@ pub trait Visitor {
     fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_use(&mut self, &Use) {}
+    fn visit_use_tail(&mut self, &UseTail) {}
+    fn visit_use_tail_glob(&mut self, &UseTailGlob) {}
+    fn visit_use_tail_ident(&mut self, &UseTailIdent) {}
+    fn visit_use_tail_multi(&mut self, &UseTailMulti) {}
     fn visit_value(&mut self, &Value) {}
     fn visit_visibility(&mut self, &Visibility) {}
     fn visit_where(&mut self, &Where) {}
@@ -1129,6 +1150,10 @@ pub trait Visitor {
     fn exit_type_inner(&mut self, &TypeInner) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
     fn exit_use(&mut self, &Use) {}
+    fn exit_use_tail(&mut self, &UseTail) {}
+    fn exit_use_tail_glob(&mut self, &UseTailGlob) {}
+    fn exit_use_tail_ident(&mut self, &UseTailIdent) {}
+    fn exit_use_tail_multi(&mut self, &UseTailMulti) {}
     fn exit_value(&mut self, &Value) {}
     fn exit_visibility(&mut self, &Visibility) {}
     fn exit_where(&mut self, &Where) {}
@@ -2584,34 +2609,48 @@ fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
         spt  = point;
         _    = literal("use");
         ws   = whitespace;
-        path = use_path;
+        _    = optional(literal("::"));
+        path = zero_or_more(use_path_component);
+        tail = use_tail;
         _    = literal(";");
     }, move |_, pt| {
-        let UsePath { names, tail } = path;
-        Use { extent: ex(spt, pt), names, tail, whitespace: ws }
+        Use { extent: ex(spt, pt), path, tail, whitespace: ws }
     })
-}
-
-fn use_path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UsePath> {
-    sequence!(pm, pt, {
-        name  = ident;
-        names = zero_or_more_append(vec![name], use_path_component);
-        tail  = optional(use_path_tail);
-    }, |_, _| UsePath { names, tail })
 }
 
 fn use_path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
     sequence!(pm, pt, {
-        _   = literal("::");
-        name  = ident;
+        name = ident;
+        _    = literal("::");
     }, |_, _| name)
 }
 
-fn use_path_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn use_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTail> {
+    pm.alternate(pt)
+        .one(map(use_tail_ident, UseTail::Ident))
+        .one(map(use_tail_glob, UseTail::Glob))
+        .one(map(use_tail_multi, UseTail::Multi))
+        .finish()
+}
+
+fn use_tail_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTailIdent> {
+    ident(pm, pt).map(|name| UseTailIdent { name })
+}
+
+fn use_tail_glob<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTailGlob> {
     sequence!(pm, pt, {
         spt = point;
-        _   = literal("::*");
-    }, |_, pt| ex(spt, pt))
+        _   = literal("*");
+    }, |_, pt| UseTailGlob { extent: ex(spt, pt) })
+}
+
+fn use_tail_multi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTailMulti> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("{");
+        names = zero_or_more(tail(",", ident));
+        _     = literal("}");
+    }, |_, pt| UseTailMulti { extent: ex(spt, pt), names })
 }
 
 fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias> {
@@ -2785,9 +2824,27 @@ mod test {
     }
 
     #[test]
-    fn top_level_use_wildcard() {
+    fn top_level_use_glob() {
         let p = qp(p_use, "use foo::*;");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn top_level_use_with_multi() {
+        let p = qp(p_use, "use foo::{Bar, Baz};");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
+    }
+
+    #[test]
+    fn top_level_use_no_path() {
+        let p = qp(p_use, "use {Bar, Baz};");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn top_level_use_absolute_path() {
+        let p = qp(p_use, "use ::{Bar, Baz};");
+        assert_eq!(unwrap_progress(p).extent, (0, 17))
     }
 
     #[test]
