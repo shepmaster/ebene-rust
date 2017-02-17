@@ -735,6 +735,7 @@ pub struct Match {
 pub struct MatchArm {
     extent: Extent,
     pattern: Vec<Pattern>,
+    guard: Option<Expression>,
     body: Expression,
     whitespace: Vec<Whitespace>,
 }
@@ -1939,13 +1940,23 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
         ws      = optional_whitespace(Vec::new());
         pattern = one_or_more(tail("|", pattern));
         ws      = optional_whitespace(ws);
+        guard   = optional(match_arm_guard);
+        ws      = optional_whitespace(ws);
         _       = literal("=>");
         ws      = optional_whitespace(ws);
         body    = expression;
         ws      = optional_whitespace(ws);
         _       = optional(literal(","));
         ws      = optional_whitespace(ws);
-    }, |_, pt| MatchArm { extent: ex(spt, pt), pattern, body, whitespace: ws })
+    }, |_, pt| MatchArm { extent: ex(spt, pt), pattern, guard, body, whitespace: ws })
+}
+
+fn match_arm_guard<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+    sequence!(pm, pt, {
+        _     = literal("if");
+        _x    = whitespace;
+        guard = expression;
+    }, |_, _| guard)
 }
 
 fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
@@ -3740,6 +3751,12 @@ mod test {
     fn match_arm_with_alternate() {
         let p = qp(match_arm, "a | b => 1");
         assert_eq!(unwrap_progress(p).extent, (0, 10))
+    }
+
+    #[test]
+    fn match_arm_with_guard() {
+        let p = qp(match_arm, "a if a > 2 => 1");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
