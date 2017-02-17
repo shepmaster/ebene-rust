@@ -510,6 +510,7 @@ impl Statement {
 #[derive(Debug, Visit)]
 pub enum Expression {
     Array(Array),
+    AsType(AsType),
     Binary(Binary),
     Block(Box<Block>),
     Call(Call),
@@ -542,31 +543,32 @@ impl Expression {
         match *self {
             Expression::Block(ref x) => x.extent,
 
-            Expression::Array(Array { extent, .. }) |
-            Expression::Binary(Binary { extent, .. }) |
-            Expression::Call(Call { extent, .. }) |
-            Expression::Character(Character { extent, .. }) |
-            Expression::Closure(Closure { extent, .. }) |
-            Expression::Dereference(Dereference { extent, .. }) |
-            Expression::FieldAccess(FieldAccess { extent, .. }) |
-            Expression::ForLoop(ForLoop { extent, .. }) |
+            Expression::Array(Array { extent, .. })               |
+            Expression::AsType(AsType { extent, .. })             |
+            Expression::Binary(Binary { extent, .. })             |
+            Expression::Call(Call { extent, .. })                 |
+            Expression::Character(Character { extent, .. })       |
+            Expression::Closure(Closure { extent, .. })           |
+            Expression::Dereference(Dereference { extent, .. })   |
+            Expression::FieldAccess(FieldAccess { extent, .. })   |
+            Expression::ForLoop(ForLoop { extent, .. })           |
             Expression::FunctionCall(FunctionCall { extent, .. }) |
-            Expression::If(If { extent, .. }) |
-            Expression::Let(Let { extent, .. }) |
-            Expression::Loop(Loop { extent, .. }) |
-            Expression::MacroCall(MacroCall { extent, .. }) |
-            Expression::Match(Match { extent, .. }) |
-            Expression::MethodCall(MethodCall { extent, .. }) |
-            Expression::Number(Number { extent, .. }) => extent,
-            Expression::Range(Range { extent, .. }) |
-            Expression::Reference(Reference { extent, .. }) |
-            Expression::Return(Return { extent, .. }) |
-            Expression::Slice(Slice { extent, .. }) |
-            Expression::String(String { extent, .. }) |
-            Expression::TryOperator(TryOperator { extent, .. }) |
-            Expression::Tuple(Tuple { extent, .. }) |
-            Expression::Unary(Unary { extent, .. }) |
-            Expression::Value(Value { extent, .. }) => extent,
+            Expression::If(If { extent, .. })                     |
+            Expression::Let(Let { extent, .. })                   |
+            Expression::Loop(Loop { extent, .. })                 |
+            Expression::MacroCall(MacroCall { extent, .. })       |
+            Expression::Match(Match { extent, .. })               |
+            Expression::MethodCall(MethodCall { extent, .. })     |
+            Expression::Number(Number { extent, .. })             |
+            Expression::Range(Range { extent, .. })               |
+            Expression::Reference(Reference { extent, .. })       |
+            Expression::Return(Return { extent, .. })             |
+            Expression::Slice(Slice { extent, .. })               |
+            Expression::String(String { extent, .. })             |
+            Expression::TryOperator(TryOperator { extent, .. })   |
+            Expression::Tuple(Tuple { extent, .. })               |
+            Expression::Unary(Unary { extent, .. })               |
+            Expression::Value(Value { extent, .. })               => extent,
         }
     }
 }
@@ -754,6 +756,14 @@ pub struct Array {
 }
 
 #[derive(Debug, Visit)]
+pub struct AsType {
+    extent: Extent,
+    value: Box<Expression>,
+    typ: Type,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
 pub struct Character {
     extent: Extent,
     value: Extent,
@@ -814,6 +824,7 @@ pub struct Return {
 
 #[derive(Debug)]
 enum ExpressionTail {
+    AsType { typ: Type, whitespace: Vec<Whitespace> },
     Binary { op: BinaryOp, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
     FieldAccess { field: FieldName },
     Call { args: Vec<Expression> },
@@ -1078,6 +1089,7 @@ impl Visit for FieldName {
 pub trait Visitor {
     fn visit_argument(&mut self, &Argument) {}
     fn visit_array(&mut self, &Array) {}
+    fn visit_as_type(&mut self, &AsType) {}
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
@@ -1171,6 +1183,7 @@ pub trait Visitor {
 
     fn exit_argument(&mut self, &Argument) {}
     fn exit_array(&mut self, &Array) {}
+    fn exit_as_type(&mut self, &AsType) {}
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
@@ -1486,6 +1499,7 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
 // Treat `self` as an identifier though.
 fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
     match s {
+        "as"     |
         "const"  |
         "crate"  |
         "else"   |
@@ -1691,6 +1705,14 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
         let (pt2, tail) = try_parse!(optional(expression_tail)(pm, pt));
         pt = pt2;
         match tail {
+            Some(ExpressionTail::AsType { typ, whitespace }) => {
+                expression = Expression::AsType(AsType {
+                    extent: ex(spt, pt),
+                    value: Box::new(expression),
+                    typ,
+                    whitespace,
+                })
+            }
             Some(ExpressionTail::Binary { op, rhs, whitespace }) => {
                 expression = Expression::Binary(Binary {
                     extent: ex(spt, pt),
@@ -2239,6 +2261,7 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Fu
 
 fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     pm.alternate(pt)
+        .one(expr_tail_as_type)
         .one(expr_tail_binary)
         .one(expr_tail_call)
         .one(expr_tail_method_call)
@@ -2247,6 +2270,15 @@ fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         .one(expr_tail_slice)
         .one(expr_tail_try_operator)
         .finish()
+}
+
+fn expr_tail_as_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        ws  = whitespace;
+        _   = literal("as");
+        ws  = append_whitespace(ws);
+        typ = typ;
+    }, |_, _| ExpressionTail::AsType { typ, whitespace: ws })
 }
 
 fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
@@ -3673,6 +3705,12 @@ mod test {
     fn expr_not() {
         let p = qp(expression, "!foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_as_type() {
+        let p = qp(expression, "42 as u8");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
