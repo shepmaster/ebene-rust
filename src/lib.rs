@@ -334,6 +334,7 @@ pub struct Ident {
     pub extent: Extent,
 }
 
+// TODO: Can we reuse the path from the `use` statement?
 #[derive(Debug, Visit)]
 pub struct PathedIdent {
     extent: Extent,
@@ -2257,6 +2258,7 @@ fn expr_tail_try_operator<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
     sequence!(pm, pt, {
         spt       = point;
+        _         = optional(literal("::"));
         ident     = ident;
         idents    = zero_or_more_append(vec![ident], path_component);
         turbofish = optional(turbofish);
@@ -3287,6 +3289,12 @@ mod test {
     fn expr_function_call() {
         let p = qp(expression, "foo()");
         assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
+    fn pathed_ident_with_leading_separator() {
+        let p = qp(pathed_ident, "::foo");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
     }
 
     #[test]
