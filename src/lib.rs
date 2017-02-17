@@ -808,7 +808,7 @@ pub struct Dereference {
 #[derive(Debug, Visit)]
 pub struct Return {
     extent: Extent,
-    value: Box<Expression>,
+    value: Option<Box<Expression>>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -2116,12 +2116,12 @@ fn expr_closure_arg_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
     sequence!(pm, pt, {
         spt   = point;
-        _     = optional(literal("return"));
-        ws    = append_whitespace(Vec::new());
-        value = expression;
+        _     = literal("return");
+        ws    = optional_whitespace(Vec::new());
+        value = optional(expression);
     }, |_, pt| Return {
         extent: ex(spt, pt),
-        value: Box::new(value),
+        value: value.map(Box::new),
         whitespace: ws,
     })
 }
@@ -3601,6 +3601,12 @@ mod test {
     fn expr_return() {
         let p = qp(expression, "return 1");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_return_no_value() {
+        let p = qp(expression, "return");
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
