@@ -521,6 +521,7 @@ pub enum Expression {
     ForLoop(ForLoop),
     FunctionCall(FunctionCall),
     If(If),
+    IfLet(IfLet),
     Let(Let),
     Loop(Loop),
     MacroCall(MacroCall),
@@ -536,6 +537,8 @@ pub enum Expression {
     TryOperator(TryOperator),
     Unary(Unary),
     Value(Value),
+    While(While),
+    WhileLet(WhileLet),
 }
 
 impl Expression {
@@ -554,6 +557,7 @@ impl Expression {
             Expression::ForLoop(ForLoop { extent, .. })           |
             Expression::FunctionCall(FunctionCall { extent, .. }) |
             Expression::If(If { extent, .. })                     |
+            Expression::IfLet(IfLet { extent, .. })               |
             Expression::Let(Let { extent, .. })                   |
             Expression::Loop(Loop { extent, .. })                 |
             Expression::MacroCall(MacroCall { extent, .. })       |
@@ -568,7 +572,9 @@ impl Expression {
             Expression::TryOperator(TryOperator { extent, .. })   |
             Expression::Tuple(Tuple { extent, .. })               |
             Expression::Unary(Unary { extent, .. })               |
-            Expression::Value(Value { extent, .. })               => extent,
+            Expression::Value(Value { extent, .. })               |
+            Expression::While(While { extent, .. })               |
+            Expression::WhileLet(WhileLet { extent, .. })         => extent,
         }
     }
 }
@@ -670,6 +676,32 @@ pub struct ForLoop {
 #[derive(Debug, Visit)]
 pub struct Loop {
     extent: Extent,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct IfLet {
+    extent: Extent,
+    pattern: Pattern,
+    value: Box<Expression>,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct While {
+    extent: Extent,
+    value: Box<Expression>,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct WhileLet {
+    extent: Extent,
+    pattern: Pattern,
+    value: Box<Expression>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
 }
@@ -1139,6 +1171,7 @@ pub trait Visitor {
     fn visit_generic_declarations(&mut self, &GenericDeclarations) {}
     fn visit_ident(&mut self, &Ident) {}
     fn visit_if(&mut self, &If) {}
+    fn visit_if_let(&mut self, &IfLet) {}
     fn visit_impl(&mut self, &Impl) {}
     fn visit_impl_function(&mut self, &ImplFunction) {}
     fn visit_impl_member(&mut self, &ImplMember) {}
@@ -1204,6 +1237,8 @@ pub trait Visitor {
     fn visit_value(&mut self, &Value) {}
     fn visit_visibility(&mut self, &Visibility) {}
     fn visit_where(&mut self, &Where) {}
+    fn visit_while(&mut self, &While) {}
+    fn visit_while_let(&mut self, &WhileLet) {}
     fn visit_whitespace(&mut self, &Whitespace) {}
 
     fn exit_argument(&mut self, &Argument) {}
@@ -1234,6 +1269,7 @@ pub trait Visitor {
     fn exit_generic_declarations(&mut self, &GenericDeclarations) {}
     fn exit_ident(&mut self, &Ident) {}
     fn exit_if(&mut self, &If) {}
+    fn exit_if_let(&mut self, &IfLet) {}
     fn exit_impl(&mut self, &Impl) {}
     fn exit_impl_function(&mut self, &ImplFunction) {}
     fn exit_impl_member(&mut self, &ImplMember) {}
@@ -1299,6 +1335,8 @@ pub trait Visitor {
     fn exit_value(&mut self, &Value) {}
     fn exit_visibility(&mut self, &Visibility) {}
     fn exit_where(&mut self, &Where) {}
+    fn exit_while(&mut self, &While) {}
+    fn exit_while_let(&mut self, &WhileLet) {}
     fn exit_whitespace(&mut self, &Whitespace) {}
 }
 
@@ -1549,7 +1587,8 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "trait"  |
         "type"   |
         "use"    |
-        "where"  => Err(Error::ExpectedIdentifier),
+        "where"  |
+        "while"  => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
     }
 }
@@ -1695,8 +1734,11 @@ fn implicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, St
 fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     pm.alternate(pt)
         .one(map(expr_if, Expression::If))
+        .one(map(expr_if_let, Expression::IfLet))
         .one(map(expr_for_loop, Expression::ForLoop))
         .one(map(expr_loop, Expression::Loop))
+        .one(map(expr_while, Expression::While))
+        .one(map(expr_while_let, Expression::WhileLet))
         .one(map(expr_match, Expression::Match))
         .one(map(expr_block, Expression::Block))
         .finish()
@@ -1967,6 +2009,62 @@ fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
         ws   = optional_whitespace(Vec::new());
         body = block;
     }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
+}
+
+fn expr_if_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, IfLet> {
+    sequence!(pm, pt, {
+        spt           = point;
+        _             = literal("if");
+        ws            = whitespace;
+        _             = literal("let");
+        ws            = append_whitespace(ws);
+        pattern       = pattern;
+        ws            = optional_whitespace(ws);
+        _             = literal("=");
+        ws            = optional_whitespace(ws);
+        (value, body) = expr_followed_by_block;
+    }, |_, pt| IfLet {
+        extent: ex(spt, pt),
+        pattern,
+        value: Box::new(value),
+        body: Box::new(body),
+        whitespace: ws,
+    })
+}
+
+fn expr_while<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, While> {
+    sequence!(pm, pt, {
+        spt           = point;
+        _             = literal("while");
+        ws            = whitespace;
+        (value, body) = expr_followed_by_block;
+    }, |_, pt| While {
+        extent: ex(spt, pt),
+        value: Box::new(value),
+        body: Box::new(body),
+        whitespace: ws,
+    })
+}
+
+fn expr_while_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhileLet> {
+    sequence!(pm, pt, {
+        spt           = point;
+        _             = literal("while");
+        ws            = whitespace;
+        _             = literal("let");
+        ws            = append_whitespace(ws);
+        pattern       = pattern;
+        ws            = optional_whitespace(ws);
+        _             = literal("=");
+        ws            = optional_whitespace(ws);
+        (value, body) = expr_followed_by_block;
+    }, |_, pt| WhileLet {
+        extent: ex(spt, pt),
+        pattern,
+        value: Box::new(value),
+        body: Box::new(body),
+        whitespace: ws,
+    })
 }
 
 fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
@@ -3559,6 +3657,24 @@ mod test {
     fn expr_if_else_if() {
         let p = qp(expression, "if a {} else if b {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 20))
+    }
+
+    #[test]
+    fn expr_if_let() {
+        let p = qp(expression, "if let Some(a) = None {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 24))
+    }
+
+    #[test]
+    fn expr_while() {
+        let p = qp(expression, "while is_awesome() {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 21))
+    }
+
+    #[test]
+    fn expr_while_let() {
+        let p = qp(expression, "while let Some(a) = None {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 27))
     }
 
     #[test]
