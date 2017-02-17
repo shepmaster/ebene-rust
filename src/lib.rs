@@ -1056,6 +1056,7 @@ pub struct TypeAlias {
 #[derive(Debug, Visit)]
 pub struct Module {
     extent: Extent,
+    visibility: Option<Visibility>,
     name: Ident,
     body: Option<Vec<Item>>,
     whitespace: Vec<Whitespace>,
@@ -3055,13 +3056,14 @@ fn type_alias<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAlias>
 
 fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("mod");
-        ws   = whitespace;
-        name = ident;
-        ws   = optional_whitespace(ws);
-        body = module_body_or_not;
-    }, |_, pt| Module { extent: ex(spt, pt), name, body, whitespace: ws })
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("mod");
+        ws         = whitespace;
+        name       = ident;
+        ws         = optional_whitespace(ws);
+        body       = module_body_or_not;
+    }, |_, pt| Module { extent: ex(spt, pt), visibility, name, body, whitespace: ws })
 }
 
 fn module_body_or_not<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Option<Vec<Item>>> {
@@ -3260,6 +3262,12 @@ mod test {
     fn item_mod() {
         let p = qp(module, "mod foo { }");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn item_mod_public() {
+        let p = qp(module, "pub mod foo;");
+        assert_eq!(unwrap_progress(p).extent, (0, 12))
     }
 
     #[test]
