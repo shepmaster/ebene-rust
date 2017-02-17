@@ -1057,7 +1057,7 @@ pub struct TypeAlias {
 pub struct Module {
     extent: Extent,
     name: Ident,
-    body: Vec<Item>,
+    body: Option<Vec<Item>>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -3060,10 +3060,23 @@ fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
         ws   = whitespace;
         name = ident;
         ws   = optional_whitespace(ws);
+        body = module_body_or_not;
+    }, |_, pt| Module { extent: ex(spt, pt), name, body, whitespace: ws })
+}
+
+fn module_body_or_not<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Option<Vec<Item>>> {
+    pm.alternate(pt)
+        .one(map(module_body, Some))
+        .one(map(literal(";"), |_| None))
+        .finish()
+}
+
+fn module_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Item>> {
+    sequence!(pm, pt, {
         _    = literal("{");
         body = zero_or_more(item);
         _    = literal("}");
-    }, |_, pt| Module { extent: ex(spt, pt), name, body, whitespace: ws })
+    }, |_, _| body)
 }
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
@@ -3247,6 +3260,12 @@ mod test {
     fn item_mod() {
         let p = qp(module, "mod foo { }");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn item_mod_another_file() {
+        let p = qp(module, "mod foo;");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
