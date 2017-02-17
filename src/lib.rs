@@ -831,6 +831,7 @@ enum ExpressionTail {
 pub enum Pattern {
     Character(PatternCharacter),
     Ident(PatternIdent), // TODO: split into ident and enumtuple
+    Number(PatternNumber),
     Ref(PatternRef),
     Reference(PatternReference),
     String(PatternString),
@@ -845,6 +846,7 @@ impl Pattern {
         match *self {
             Pattern::Character(PatternCharacter { extent, .. }) |
             Pattern::Ident(PatternIdent { extent, .. })         |
+            Pattern::Number(PatternNumber { extent, .. })       |
             Pattern::Ref(PatternRef { extent, .. })             |
             Pattern::Reference(PatternReference { extent, .. }) |
             Pattern::String(PatternString { extent, .. })       |
@@ -902,6 +904,12 @@ pub struct PatternCharacter {
 pub struct PatternString {
     extent: Extent,
     value: String,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternNumber {
+    extent: Extent,
+    value: Number,
 }
 
 // TODO: Should we actually have a "qualifier" that applies to all
@@ -1113,6 +1121,7 @@ pub trait Visitor {
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
+    fn visit_pattern_number(&mut self, &PatternNumber) {}
     fn visit_pattern_ref(&mut self, &PatternRef) {}
     fn visit_pattern_reference(&mut self, &PatternReference) {}
     fn visit_pattern_string(&mut self, &PatternString) {}
@@ -1205,6 +1214,7 @@ pub trait Visitor {
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
+    fn exit_pattern_number(&mut self, &PatternNumber) {}
     fn exit_pattern_ref(&mut self, &PatternRef) {}
     fn exit_pattern_reference(&mut self, &PatternReference) {}
     fn exit_pattern_string(&mut self, &PatternString) {}
@@ -1632,7 +1642,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(string_literal, Expression::String))
             .one(map(expr_closure, Expression::Closure))
             .one(map(expr_return, Expression::Return))
-            .one(map(expr_number, Expression::Number))
+            .one(map(number_literal, Expression::Number))
             .one(map(expr_reference, Expression::Reference))
             .one(map(expr_dereference, Expression::Dereference))
             .one(map(expr_unary, Expression::Unary))
@@ -2074,7 +2084,7 @@ fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>
     block(pm, pt).map(Box::new)
 }
 
-fn expr_number<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
+fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
     pure_number(pm, pt).map(|extent| Number { extent })
 }
 
@@ -2313,6 +2323,7 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     pm.alternate(pt)
         .one(map(pattern_char, Pattern::Character))
+        .one(map(pattern_number, Pattern::Number))
         .one(map(pattern_ref, Pattern::Ref))
         .one(map(pattern_reference, Pattern::Reference))
         .one(map(pattern_string, Pattern::String))
@@ -2410,17 +2421,15 @@ fn pattern_struct_field_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
 }
 
 fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternCharacter> {
-    sequence!(pm, pt, {
-        spt   = point;
-        value = character_literal;
-    }, |_, pt| PatternCharacter { extent: ex(spt, pt), value })
+    character_literal(pm, pt).map(|value| PatternCharacter { extent: value.extent, value })
 }
 
 fn pattern_string<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternString> {
-    sequence!(pm, pt, {
-        spt   = point;
-        value = string_literal;
-    }, |_, pt| PatternString { extent: ex(spt, pt), value })
+    string_literal(pm, pt).map(|value| PatternString { extent: value.extent, value })
+}
+
+fn pattern_number<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternNumber> {
+    number_literal(pm, pt).map(|value| PatternNumber { extent: value.extent, value })
 }
 
 fn pattern_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRef> {
@@ -3672,6 +3681,12 @@ mod test {
     fn pattern_with_string_literal() {
         let p = qp(pattern, r#""hello""#);
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn pattern_with_numeric_literal() {
+        let p = qp(pattern, "42");
+        assert_eq!(unwrap_progress(p).extent(), (0, 2))
     }
 
     #[test]
