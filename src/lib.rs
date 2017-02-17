@@ -536,6 +536,7 @@ pub enum Expression {
     TryOperator(TryOperator),
     Unary(Unary),
     Value(Value),
+    WhileLet(WhileLet),
 }
 
 impl Expression {
@@ -568,7 +569,8 @@ impl Expression {
             Expression::TryOperator(TryOperator { extent, .. })   |
             Expression::Tuple(Tuple { extent, .. })               |
             Expression::Unary(Unary { extent, .. })               |
-            Expression::Value(Value { extent, .. })               => extent,
+            Expression::Value(Value { extent, .. })               |
+            Expression::WhileLet(WhileLet { extent, .. })         => extent,
         }
     }
 }
@@ -670,6 +672,15 @@ pub struct ForLoop {
 #[derive(Debug, Visit)]
 pub struct Loop {
     extent: Extent,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct WhileLet {
+    extent: Extent,
+    pattern: Pattern,
+    value: Box<Expression>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
 }
@@ -1204,6 +1215,7 @@ pub trait Visitor {
     fn visit_value(&mut self, &Value) {}
     fn visit_visibility(&mut self, &Visibility) {}
     fn visit_where(&mut self, &Where) {}
+    fn visit_while_let(&mut self, &WhileLet) {}
     fn visit_whitespace(&mut self, &Whitespace) {}
 
     fn exit_argument(&mut self, &Argument) {}
@@ -1299,6 +1311,7 @@ pub trait Visitor {
     fn exit_value(&mut self, &Value) {}
     fn exit_visibility(&mut self, &Visibility) {}
     fn exit_where(&mut self, &Where) {}
+    fn exit_while_let(&mut self, &WhileLet) {}
     fn exit_whitespace(&mut self, &Whitespace) {}
 }
 
@@ -1549,7 +1562,8 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "trait"  |
         "type"   |
         "use"    |
-        "where"  => Err(Error::ExpectedIdentifier),
+        "where"  |
+        "while"  => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
     }
 }
@@ -1697,6 +1711,7 @@ fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         .one(map(expr_if, Expression::If))
         .one(map(expr_for_loop, Expression::ForLoop))
         .one(map(expr_loop, Expression::Loop))
+        .one(map(expr_while_let, Expression::WhileLet))
         .one(map(expr_match, Expression::Match))
         .one(map(expr_block, Expression::Block))
         .finish()
@@ -1967,6 +1982,27 @@ fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
         ws   = optional_whitespace(Vec::new());
         body = block;
     }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
+}
+
+fn expr_while_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhileLet> {
+    sequence!(pm, pt, {
+        spt           = point;
+        _             = literal("while");
+        ws            = whitespace;
+        _             = literal("let");
+        ws            = append_whitespace(ws);
+        pattern       = pattern;
+        ws            = optional_whitespace(ws);
+        _             = literal("=");
+        ws            = optional_whitespace(ws);
+        (value, body) = expr_followed_by_block;
+    }, |_, pt| WhileLet {
+        extent: ex(spt, pt),
+        pattern,
+        value: Box::new(value),
+        body: Box::new(body),
+        whitespace: ws,
+    })
 }
 
 fn expr_match<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Match> {
@@ -3559,6 +3595,12 @@ mod test {
     fn expr_if_else_if() {
         let p = qp(expression, "if a {} else if b {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 20))
+    }
+
+    #[test]
+    fn expr_while_let() {
+        let p = qp(expression, "while let Some(a) = None {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 27))
     }
 
     #[test]
