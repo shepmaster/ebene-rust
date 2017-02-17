@@ -89,17 +89,17 @@ pub fn parse_rust_file(file: &str) -> Result<File, ErrorDetail> {
     loop {
         let next_pt;
 
-        let top_level = top_level(&mut pm, pt);
-        let top_level = pm.finish(top_level);
+        let item = item(&mut pm, pt);
+        let item = pm.finish(item);
 
-        match top_level.status {
+        match item.status {
             peresil::Status::Success(s) => {
                 items.push(s);
-                next_pt = top_level.point;
+                next_pt = item.point;
             },
             peresil::Status::Failure(e) => {
                 return Err(ErrorDetail {
-                    location: top_level.point.offset,
+                    location: item.point.offset,
                     errors: e.into_iter().collect(),
                 })
             },
@@ -125,11 +125,11 @@ pub type Extent = (usize, usize);
 
 #[derive(Debug, Visit)]
 pub struct File {
-    items: Vec<TopLevel>,
+    items: Vec<Item>,
 }
 
 #[derive(Debug, Visit)]
-pub enum TopLevel {
+pub enum Item {
     Function(Function),
     MacroRules(MacroRules),
     Struct(Struct),
@@ -144,22 +144,22 @@ pub enum TopLevel {
     Whitespace(Vec<Whitespace>),
 }
 
-impl TopLevel {
+impl Item {
     #[allow(dead_code)]
     pub fn extent(&self) -> Extent {
         match *self {
-            TopLevel::Function(Function { extent, .. })     |
-            TopLevel::MacroRules(MacroRules { extent, .. }) |
-            TopLevel::Struct(Struct { extent, .. })         |
-            TopLevel::Enum(Enum { extent, .. })             |
-            TopLevel::Trait(Trait { extent, .. })           |
-            TopLevel::Impl(Impl { extent, .. })             |
-            TopLevel::Attribute(Attribute { extent, .. })   |
-            TopLevel::ExternCrate(Crate { extent, .. })     |
-            TopLevel::Use(Use { extent, .. })               |
-            TopLevel::TypeAlias(TypeAlias { extent, .. })   |
-            TopLevel::Module(Module { extent, .. })         => extent,
-            TopLevel::Whitespace(..)                        => unimplemented!(),
+            Item::Function(Function { extent, .. })     |
+            Item::MacroRules(MacroRules { extent, .. }) |
+            Item::Struct(Struct { extent, .. })         |
+            Item::Enum(Enum { extent, .. })             |
+            Item::Trait(Trait { extent, .. })           |
+            Item::Impl(Impl { extent, .. })             |
+            Item::Attribute(Attribute { extent, .. })   |
+            Item::ExternCrate(Crate { extent, .. })     |
+            Item::Use(Use { extent, .. })               |
+            Item::TypeAlias(TypeAlias { extent, .. })   |
+            Item::Module(Module { extent, .. })         => extent,
+            Item::Whitespace(..)                        => unimplemented!(),
         }
     }
 }
@@ -928,7 +928,7 @@ pub struct TypeAlias {
 pub struct Module {
     extent: Extent,
     name: Ident,
-    body: Vec<TopLevel>,
+    body: Vec<Item>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1018,6 +1018,7 @@ pub trait Visitor {
     fn visit_impl(&mut self, &Impl) {}
     fn visit_impl_function(&mut self, &ImplFunction) {}
     fn visit_impl_member(&mut self, &ImplMember) {}
+    fn visit_item(&mut self, &Item) {}
     fn visit_let(&mut self, &Let) {}
     fn visit_lifetime(&mut self, &Lifetime) {}
     fn visit_loop(&mut self, &Loop) {}
@@ -1049,7 +1050,6 @@ pub trait Visitor {
     fn visit_struct_definition_body(&mut self, &StructDefinitionBody) {}
     fn visit_struct_field(&mut self, &StructField) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
-    fn visit_top_level(&mut self, &TopLevel) {}
     fn visit_trait(&mut self, &Trait) {}
     fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
@@ -1107,6 +1107,7 @@ pub trait Visitor {
     fn exit_impl(&mut self, &Impl) {}
     fn exit_impl_function(&mut self, &ImplFunction) {}
     fn exit_impl_member(&mut self, &ImplMember) {}
+    fn exit_item(&mut self, &Item) {}
     fn exit_let(&mut self, &Let) {}
     fn exit_lifetime(&mut self, &Lifetime) {}
     fn exit_loop(&mut self, &Loop) {}
@@ -1138,7 +1139,6 @@ pub trait Visitor {
     fn exit_struct_definition_body(&mut self, &StructDefinitionBody) {}
     fn exit_struct_field(&mut self, &StructField) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
-    fn exit_top_level(&mut self, &TopLevel) {}
     fn exit_trait(&mut self, &Trait) {}
     fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
@@ -1262,20 +1262,20 @@ fn concat_whitespace<'s, F, T>
 
 // --------------------------------------------------
 
-fn top_level<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TopLevel> {
+fn item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Item> {
     pm.alternate(pt)
-        .one(map(function, TopLevel::Function))
-        .one(map(macro_rules, TopLevel::MacroRules))
-        .one(map(p_struct, TopLevel::Struct))
-        .one(map(p_enum, TopLevel::Enum))
-        .one(map(p_trait, TopLevel::Trait))
-        .one(map(p_impl, TopLevel::Impl))
-        .one(map(attribute, TopLevel::Attribute))
-        .one(map(extern_crate, TopLevel::ExternCrate))
-        .one(map(p_use, TopLevel::Use))
-        .one(map(type_alias, TopLevel::TypeAlias))
-        .one(map(module, TopLevel::Module))
-        .one(map(whitespace, TopLevel::Whitespace))
+        .one(map(function, Item::Function))
+        .one(map(macro_rules, Item::MacroRules))
+        .one(map(p_struct, Item::Struct))
+        .one(map(p_enum, Item::Enum))
+        .one(map(p_trait, Item::Trait))
+        .one(map(p_impl, Item::Impl))
+        .one(map(attribute, Item::Attribute))
+        .one(map(extern_crate, Item::ExternCrate))
+        .one(map(p_use, Item::Use))
+        .one(map(type_alias, Item::TypeAlias))
+        .one(map(module, Item::Module))
+        .one(map(whitespace, Item::Whitespace))
         .finish()
 }
 
@@ -2684,7 +2684,7 @@ fn module<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Module> {
         name = ident;
         ws   = optional_whitespace(ws);
         _    = literal("{");
-        body = zero_or_more(top_level);
+        body = zero_or_more(item);
         _    = literal("}");
     }, |_, pt| Module { extent: ex(spt, pt), name, body, whitespace: ws })
 }
@@ -2825,104 +2825,104 @@ mod test {
     }
 
     #[test]
-    fn top_level_use() {
+    fn parse_use() {
         let p = qp(p_use, "use foo::Bar;");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
     }
 
     #[test]
-    fn top_level_use_glob() {
+    fn parse_use_glob() {
         let p = qp(p_use, "use foo::*;");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
-    fn top_level_use_with_multi() {
+    fn parse_use_with_multi() {
         let p = qp(p_use, "use foo::{Bar, Baz};");
         assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
-    fn top_level_use_no_path() {
+    fn parse_use_no_path() {
         let p = qp(p_use, "use {Bar, Baz};");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
-    fn top_level_use_absolute_path() {
+    fn parse_use_absolute_path() {
         let p = qp(p_use, "use ::{Bar, Baz};");
         assert_eq!(unwrap_progress(p).extent, (0, 17))
     }
 
     #[test]
-    fn top_level_mod_multiple() {
-        let p = qp(top_level, "mod foo { use super::*; }");
+    fn item_mod_multiple() {
+        let p = qp(item, "mod foo { use super::*; }");
         assert_eq!(unwrap_progress(p).extent(), (0, 25))
     }
 
     #[test]
-    fn top_level_macro_rules() {
+    fn item_macro_rules() {
         let p = qp(macro_rules, "macro_rules! foo { }");
         assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
-    fn top_level_mod() {
+    fn item_mod() {
         let p = qp(module, "mod foo { }");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
-    fn top_level_trait() {
-        let p = qp(top_level, "trait Foo {}");
+    fn item_trait() {
+        let p = qp(item, "trait Foo {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 12))
     }
 
     #[test]
-    fn top_level_trait_public() {
-        let p = qp(top_level, "pub trait Foo {}");
+    fn item_trait_public() {
+        let p = qp(item, "pub trait Foo {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 16))
     }
 
     #[test]
-    fn top_level_trait_with_generics() {
-        let p = qp(top_level, "trait Foo<T> {}");
+    fn item_trait_with_generics() {
+        let p = qp(item, "trait Foo<T> {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
-    fn top_level_trait_with_members() {
-        let p = qp(top_level, "trait Foo { fn bar(&self) -> u8; }");
+    fn item_trait_with_members() {
+        let p = qp(item, "trait Foo { fn bar(&self) -> u8; }");
         assert_eq!(unwrap_progress(p).extent(), (0, 34))
     }
 
     #[test]
-    fn top_level_trait_with_members_with_patterns() {
-        let p = qp(top_level, "trait Foo { fn bar(&self, &a: &u8) -> u8; }");
+    fn item_trait_with_members_with_patterns() {
+        let p = qp(item, "trait Foo { fn bar(&self, &a: &u8) -> u8; }");
         assert_eq!(unwrap_progress(p).extent(), (0, 43))
     }
 
     #[test]
-    fn top_level_trait_with_members_with_body() {
-        let p = qp(top_level, "trait Foo { fn bar(&self) -> u8 { 42 } }");
+    fn item_trait_with_members_with_body() {
+        let p = qp(item, "trait Foo { fn bar(&self) -> u8 { 42 } }");
         assert_eq!(unwrap_progress(p).extent(), (0, 40))
     }
 
     #[test]
-    fn top_level_trait_with_unnamed_parameters() {
-        let p = qp(top_level, "trait Foo { fn bar(&self, u8); }");
+    fn item_trait_with_unnamed_parameters() {
+        let p = qp(item, "trait Foo { fn bar(&self, u8); }");
         assert_eq!(unwrap_progress(p).extent(), (0, 32))
     }
 
     #[test]
-    fn top_level_type_alias() {
-        let p = qp(top_level, "type Foo<T> = Bar<T, u8>;");
+    fn item_type_alias() {
+        let p = qp(item, "type Foo<T> = Bar<T, u8>;");
         assert_eq!(unwrap_progress(p).extent(), (0, 25))
     }
 
     #[test]
-    fn top_level_type_alias_public() {
-        let p = qp(top_level, "pub type Foo<T> = Bar<T, u8>;");
+    fn item_type_alias_public() {
+        let p = qp(item, "pub type Foo<T> = Bar<T, u8>;");
         assert_eq!(unwrap_progress(p).extent(), (0, 29))
     }
 
