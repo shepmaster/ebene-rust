@@ -277,28 +277,41 @@ pub struct Generic {
 }
 
 #[derive(Debug, Visit)]
-pub struct Type {
-    extent: Extent,
-    reference: Option<TypeReference>,
-    inner: TypeInner,
-    whitespace: Vec<Whitespace>,
+pub enum Type {
+    Array(TypeArray),
+    Core(TypeCore),
+    Reference(TypeReference),
+    Slice(TypeSlice),
+    Tuple(TypeTuple),
+    Uninhabited(Extent),
+}
+
+impl Type {
+    pub fn extent(&self) -> Extent {
+        match *self {
+            Type::Array(TypeArray { extent, .. })         |
+            Type::Core(TypeCore { extent, .. })           |
+            Type::Reference(TypeReference { extent, .. }) |
+            Type::Slice(TypeSlice { extent, .. })         |
+            Type::Tuple(TypeTuple { extent, .. })         => extent,
+            Type::Uninhabited(extent) => extent,
+        }
+    }
 }
 
 #[derive(Debug, Visit)]
 pub struct TypeReference {
     extent: Extent,
-    lifetime: Option<Lifetime>,
-    mutable: Option<Extent>,
-    whitespace: Vec<Whitespace>,
+    kind: TypeReferenceKind,
+    typ: Box<Type>,
 }
 
 #[derive(Debug, Visit)]
-pub enum TypeInner {
-    Array(TypeArray),
-    Core(TypeCore),
-    Slice(TypeSlice),
-    Tuple(Vec<Type>),
-    Uninhabited(Extent),
+pub struct TypeReferenceKind {
+    extent: Extent,
+    lifetime: Option<Lifetime>,
+    mutable: Option<Extent>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -323,6 +336,12 @@ pub struct TypeSlice {
     extent: Extent,
     typ: Box<Type>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeTuple {
+    extent: Extent,
+    types: Vec<Type>,
 }
 
 #[derive(Debug, Visit)]
@@ -442,7 +461,7 @@ pub enum Argument {
 #[derive(Debug, Visit)]
 pub struct SelfArgument {
     extent: Extent,
-    reference: Option<TypeReference>,
+    kind: Option<TypeReferenceKind>,
     name: Ident,
     whitespace: Vec<Whitespace>,
 }
@@ -1246,9 +1265,10 @@ pub trait Visitor {
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
-    fn visit_type_inner(&mut self, &TypeInner) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
+    fn visit_type_reference_kind(&mut self, &TypeReferenceKind) {}
     fn visit_type_slice(&mut self, &TypeSlice) {}
+    fn visit_type_tuple(&mut self, &TypeTuple) {}
     fn visit_unary(&mut self, &Unary) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_use_tail(&mut self, &UseTail) {}
@@ -1346,9 +1366,10 @@ pub trait Visitor {
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
-    fn exit_type_inner(&mut self, &TypeInner) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
+    fn exit_type_reference_kind(&mut self, &TypeReferenceKind) {}
     fn exit_type_slice(&mut self, &TypeSlice) {}
+    fn exit_type_tuple(&mut self, &TypeTuple) {}
     fn exit_unary(&mut self, &Unary) {}
     fn exit_use(&mut self, &Use) {}
     fn exit_use_tail(&mut self, &UseTail) {}
@@ -1653,15 +1674,14 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
 
 fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArgument> {
     sequence!(pm, pt, {
-        spt       = point;
-        reference = optional(typ_ref);
-        ws        = optional_whitespace(Vec::new());
-        name      = ext(literal("self"));
-        _         = optional(literal(","));
-        ws        = optional_whitespace(ws);
+        spt  = point;
+        kind = optional(typ_reference_kind);
+        name = ext(literal("self"));
+        _    = optional(literal(","));
+        ws   = optional_whitespace(Vec::new());
     }, |_, pt| SelfArgument {
         extent: ex(spt, pt),
-        reference,
+        kind,
         name: Ident { extent: name },
         whitespace: ws,
     })
@@ -3104,15 +3124,25 @@ fn module_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Item>
 }
 
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
-    sequence!(pm, pt, {
-        spt       = point;
-        reference = optional(typ_ref);
-        ws        = optional_whitespace(Vec::new());
-        inner     = typ_inner;
-    }, |_, pt| Type { extent: ex(spt, pt), reference, inner, whitespace: ws })
+    pm.alternate(pt)
+        .one(map(typ_array, Type::Array))
+        .one(map(typ_core, Type::Core))
+        .one(map(typ_slice, Type::Slice))
+        .one(map(typ_tuple, Type::Tuple))
+        .one(map(ext(literal("!")), Type::Uninhabited))
+        .one(map(typ_reference, Type::Reference))
+        .finish()
 }
 
-fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference> {
+fn typ_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference> {
+    sequence!(pm, pt, {
+        spt  = point;
+        kind = typ_reference_kind;
+        typ  = typ;
+    }, |_, pt| TypeReference { extent: ex(spt, pt), kind, typ: Box::new(typ) })
+}
+
+fn typ_reference_kind<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReferenceKind> {
     sequence!(pm, pt, {
         spt      = point;
         _        = literal("&");
@@ -3120,17 +3150,15 @@ fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference
         lifetime = optional(lifetime);
         ws       = optional_whitespace(ws);
         mutable  = optional(ext(literal("mut")));
-    }, |_, pt| TypeReference { extent: ex(spt, pt), lifetime, mutable, whitespace: ws })
+        ws       = optional_whitespace(ws);
+    }, |_, pt| TypeReferenceKind { extent: ex(spt, pt), lifetime, mutable, whitespace: ws })
 }
 
-fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> {
-    pm.alternate(pt)
-        .one(map(typ_array, TypeInner::Array))
-        .one(map(typ_core, TypeInner::Core))
-        .one(map(typ_slice, TypeInner::Slice))
-        .one(map(tuple_defn_body, TypeInner::Tuple))
-        .one(map(ext(literal("!")), TypeInner::Uninhabited))
-        .finish()
+fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> {
+    sequence!(pm, pt, {
+        spt      = point;
+        types = tuple_defn_body;
+    }, |_, pt| TypeTuple { extent: ex(spt, pt), types })
 }
 
 fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
@@ -4058,55 +4086,55 @@ mod test {
     #[test]
     fn type_tuple() {
         let p = qp(typ, "(u8, u8)");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn type_with_generics() {
         let p = qp(typ, "A<T>");
-        assert_eq!(unwrap_progress(p).extent, (0, 4))
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
     fn type_impl_trait() {
         let p = qp(typ, "impl Foo");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn type_fn_trait() {
         let p = qp(typ, "Fn(u8) -> u8");
-        assert_eq!(unwrap_progress(p).extent, (0, 12))
+        assert_eq!(unwrap_progress(p).extent(), (0, 12))
     }
 
     #[test]
     fn type_mut_ref() {
         let p = qp(typ, "&mut Foo");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn type_mut_ref_with_lifetime() {
         let p = qp(typ, "&'a mut Foo");
-        assert_eq!(unwrap_progress(p).extent, (0, 11))
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
     fn type_uninhabited() {
         let p = qp(typ, "!");
-        assert_eq!(unwrap_progress(p).extent, (0, 1))
+        assert_eq!(unwrap_progress(p).extent(), (0, 1))
     }
 
     #[test]
     fn type_slice() {
         let p = qp(typ, "[u8]");
-        assert_eq!(unwrap_progress(p).extent, (0, 4))
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
     #[test]
     fn type_array() {
         let p = qp(typ, "[u8; 42]");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
