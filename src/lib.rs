@@ -1445,6 +1445,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         }})
 }
 
+// TODO: We should support whitespace before the `!`
 fn macro_rules<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroRules> {
     sequence!(pm, pt, {
         spt  = point;
@@ -1475,18 +1476,52 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
         }
     }
 
-    split_point_at_non_zero_offset(pt, idx, Error::IdentNotFound).map(|extent| Ident { extent })
+    split_point_at_non_zero_offset(pt, idx, Error::IdentNotFound)
+        .and_then(reject_keywords)
+        .map(|extent| Ident { extent })
 }
 
-fn split_point_at_non_zero_offset<'s>(pt: Point<'s>, idx: usize, e: Error) -> Progress<'s, Extent> {
+// Keywords should mostly match up with all the `literal(...)` calls
+// Treat `self` as an identifier though.
+fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
+    match s {
+        "const"  |
+        "crate"  |
+        "else"   |
+        "enum"   |
+        "extern" |
+        "fn"     |
+        "for"    |
+        "if"     |
+        "impl"   |
+        "in"     |
+        "let"    |
+        "loop"   |
+        "match"  |
+        "mod"    |
+        "move"   |
+        "mut"    |
+        "pub"    |
+        "ref"    |
+        "return" |
+        "struct" |
+        "trait"  |
+        "type"   |
+        "use"    |
+        "where"  => Err(Error::IdentNotFound),
+        _ => Ok(ex),
+    }
+}
+
+fn split_point_at_non_zero_offset<'s>(pt: Point<'s>, idx: usize, e: Error) -> Progress<'s, (&'s str, Extent)> {
     if idx == 0 {
         Progress::failure(pt, e)
     } else {
-        let (_matched, tail) = pt.s.split_at(idx);
+        let (matched, tail) = pt.s.split_at(idx);
         let end = pt.offset + idx;
         let end_pt = Point { s: tail, offset: end };
 
-        Progress::success(end_pt, (pt.offset, end))
+        Progress::success(end_pt, (matched, (pt.offset, end)))
     }
 }
 
@@ -2091,7 +2126,7 @@ fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number
 fn pure_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let idx = pt.s.chars().take_while(|&c| c.is_digit(10)).map(|c| c.len_utf8()).sum();
 
-    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound)
+    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound).map(|(_, ex)| ex)
 }
 
 fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Reference> {
