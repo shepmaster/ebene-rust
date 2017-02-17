@@ -813,6 +813,7 @@ pub enum Pattern {
     Ident(PatternIdent), // TODO: split into ident and enumtuple
     Ref(PatternRef),
     Reference(PatternReference),
+    String(PatternString),
     Struct(PatternStruct),
     Tuple(PatternTuple),
     Wildcard(PatternWildcard),
@@ -826,6 +827,7 @@ impl Pattern {
             Pattern::Ident(PatternIdent { extent, .. })         |
             Pattern::Ref(PatternRef { extent, .. })             |
             Pattern::Reference(PatternReference { extent, .. }) |
+            Pattern::String(PatternString { extent, .. })       |
             Pattern::Struct(PatternStruct { extent, .. })       |
             Pattern::Tuple(PatternTuple { extent, .. })         |
             Pattern::Wildcard(PatternWildcard { extent, .. })   => extent
@@ -874,6 +876,12 @@ pub struct PatternWildcard {
 pub struct PatternCharacter {
     extent: Extent,
     value: Character,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternString {
+    extent: Extent,
+    value: String,
 }
 
 // TODO: Should we actually have a "qualifier" that applies to all
@@ -1070,6 +1078,7 @@ pub trait Visitor {
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
     fn visit_pattern_ref(&mut self, &PatternRef) {}
     fn visit_pattern_reference(&mut self, &PatternReference) {}
+    fn visit_pattern_string(&mut self, &PatternString) {}
     fn visit_pattern_struct(&mut self, &PatternStruct) {}
     fn visit_pattern_struct_field(&mut self, &PatternStructField) {}
     fn visit_pattern_tuple(&mut self, &PatternTuple) {}
@@ -1162,6 +1171,7 @@ pub trait Visitor {
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
     fn exit_pattern_ref(&mut self, &PatternRef) {}
     fn exit_pattern_reference(&mut self, &PatternReference) {}
+    fn exit_pattern_string(&mut self, &PatternString) {}
     fn exit_pattern_struct(&mut self, &PatternStruct) {}
     fn exit_pattern_struct_field(&mut self, &PatternStructField) {}
     fn exit_pattern_tuple(&mut self, &PatternTuple) {}
@@ -2273,6 +2283,7 @@ fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
         .one(map(pattern_char, Pattern::Character))
         .one(map(pattern_ref, Pattern::Ref))
         .one(map(pattern_reference, Pattern::Reference))
+        .one(map(pattern_string, Pattern::String))
         .one(map(pattern_struct, Pattern::Struct))
         .one(map(pattern_tuple, Pattern::Tuple))
         // Must be last, otherwise it collides with struct names
@@ -2371,6 +2382,13 @@ fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternC
         spt   = point;
         value = character_literal;
     }, |_, pt| PatternCharacter { extent: ex(spt, pt), value })
+}
+
+fn pattern_string<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternString> {
+    sequence!(pm, pt, {
+        spt   = point;
+        value = string_literal;
+    }, |_, pt| PatternString { extent: ex(spt, pt), value })
 }
 
 fn pattern_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRef> {
@@ -3598,6 +3616,12 @@ mod test {
     fn pattern_with_char_literal() {
         let p = qp(pattern, "'a'");
         assert_eq!(unwrap_progress(p).extent(), (0, 3))
+    }
+
+    #[test]
+    fn pattern_with_string_literal() {
+        let p = qp(pattern, r#""hello""#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
