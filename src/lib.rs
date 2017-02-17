@@ -509,7 +509,6 @@ impl Statement {
 #[derive(Debug, Visit)]
 pub enum Expression {
     Array(Array),
-    Assign(Assign),
     Binary(Binary),
     Block(Box<Block>),
     Call(Call),
@@ -543,7 +542,6 @@ impl Expression {
             Expression::Block(ref x) => x.extent,
 
             Expression::Array(Array { extent, .. }) |
-            Expression::Assign(Assign { extent, .. }) |
             Expression::Binary(Binary { extent, .. }) |
             Expression::Call(Call { extent, .. }) |
             Expression::Character(Character { extent, .. }) |
@@ -585,14 +583,6 @@ pub struct Let {
     pattern: Pattern,
     typ: Option<Type>,
     value: Option<Box<Expression>>,
-    whitespace: Vec<Whitespace>,
-}
-
-#[derive(Debug, Visit)]
-pub struct Assign {
-    extent: Extent,
-    name: Ident,
-    value: Box<Expression>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1031,7 +1021,6 @@ impl Visit for Extent {
 pub trait Visitor {
     fn visit_argument(&mut self, &Argument) {}
     fn visit_array(&mut self, &Array) {}
-    fn visit_assign(&mut self, &Assign) {}
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
@@ -1124,7 +1113,6 @@ pub trait Visitor {
 
     fn exit_argument(&mut self, &Argument) {}
     fn exit_array(&mut self, &Array) {}
-    fn exit_assign(&mut self, &Assign) {}
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
@@ -1588,7 +1576,6 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(expression_ending_in_brace)
             .one(map(expr_macro_call, Expression::MacroCall))
             .one(map(expr_let, Expression::Let))
-            .one(map(expr_assign, Expression::Assign))
             .one(map(expr_function_call, Expression::FunctionCall))
             .one(map(expr_tuple, Expression::Tuple))
             .one(map(expr_range, Expression::Range))
@@ -1736,22 +1723,6 @@ fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Express
         ws    = optional_whitespace(Vec::new());
         value = expression;
     }, |_, _| (value, ws))
-}
-
-fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assign> {
-    sequence!(pm, pt, {
-        spt   = point;
-        name  = ident;
-        ws    = optional_whitespace(Vec::new());
-        _     = literal("=");
-        ws    = optional_whitespace(ws);
-        value = expression;
-    }, |_, pt| Assign {
-        extent: ex(spt, pt),
-        name,
-        value: Box::new(value),
-        whitespace: ws,
-    })
 }
 
 fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
@@ -2200,6 +2171,7 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
         .one(ext(literal("%")))
         .one(ext(literal("<")))
         .one(ext(literal(">")))
+        .one(ext(literal("=")))
         .finish()
 }
 
@@ -3256,6 +3228,12 @@ mod test {
     fn expr_assign() {
         let p = qp(expression, "a = b");
         assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
+    fn expr_assign_to_field() {
+        let p = qp(expression, "a.b = c");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
