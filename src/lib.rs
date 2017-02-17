@@ -677,10 +677,33 @@ pub struct Unary {
 #[derive(Debug, Visit)]
 pub struct Binary {
     extent: Extent,
-    op: Extent,
+    op: BinaryOp,
     lhs: Box<Expression>,
     rhs: Box<Expression>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    AddAssign,
+    Assign,
+    BooleanAnd,
+    BooleanOr,
+    Div,
+    DivAssign,
+    Equal,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+    Mod,
+    ModAssign,
+    Mul,
+    MulAssign,
+    NotEqual,
+    Sub,
+    SubAssign,
 }
 
 #[derive(Debug, Visit)]
@@ -783,7 +806,7 @@ pub struct Return {
 
 #[derive(Debug)]
 enum ExpressionTail {
-    Binary { op: Extent, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
+    Binary { op: BinaryOp, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
     FieldAccess { field: Ident },
     Call { args: Vec<Expression> },
     MethodCall {
@@ -1010,9 +1033,15 @@ impl<T> Visit for Vec<T>
     }
 }
 
-// Cheap hack to avoid having to annotate every terminal `Extent`;
-// just visit it and don't do anything.
+// Cheap hacks to avoid having to annotate every terminal `Extent` and
+// `BinaryOp`; just visit them and don't do anything.
 impl Visit for Extent {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
+impl Visit for BinaryOp {
     fn visit<V>(&self, _v: &mut V)
         where V: Visitor
     {}
@@ -2150,28 +2179,28 @@ fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expr
     }, |_, _| ExpressionTail::Binary { op, rhs: Box::new(rhs), whitespace: ws })
 }
 
-fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
     // Two characters before one to avoid matching += as +
     pm.alternate(pt)
-        .one(ext(literal("!=")))
-        .one(ext(literal("==")))
-        .one(ext(literal("&&")))
-        .one(ext(literal("||")))
-        .one(ext(literal("+=")))
-        .one(ext(literal("-=")))
-        .one(ext(literal("*=")))
-        .one(ext(literal("/=")))
-        .one(ext(literal("%=")))
-        .one(ext(literal("<=")))
-        .one(ext(literal(">=")))
-        .one(ext(literal("+")))
-        .one(ext(literal("-")))
-        .one(ext(literal("*")))
-        .one(ext(literal("/")))
-        .one(ext(literal("%")))
-        .one(ext(literal("<")))
-        .one(ext(literal(">")))
-        .one(ext(literal("=")))
+        .one(map(literal("!="), |_| BinaryOp::NotEqual))
+        .one(map(literal("=="), |_| BinaryOp::Equal))
+        .one(map(literal("&&"), |_| BinaryOp::BooleanAnd))
+        .one(map(literal("||"), |_| BinaryOp::BooleanOr))
+        .one(map(literal("+="), |_| BinaryOp::AddAssign))
+        .one(map(literal("-="), |_| BinaryOp::SubAssign))
+        .one(map(literal("*="), |_| BinaryOp::MulAssign))
+        .one(map(literal("/="), |_| BinaryOp::DivAssign))
+        .one(map(literal("%="), |_| BinaryOp::ModAssign))
+        .one(map(literal("<="), |_| BinaryOp::LessThanOrEqual))
+        .one(map(literal(">="), |_| BinaryOp::GreaterThanOrEqual))
+        .one(map(literal("+"), |_| BinaryOp::Add))
+        .one(map(literal("-"), |_| BinaryOp::Sub))
+        .one(map(literal("*"), |_| BinaryOp::Mul))
+        .one(map(literal("/"), |_| BinaryOp::Div))
+        .one(map(literal("%"), |_| BinaryOp::Mod))
+        .one(map(literal("<"), |_| BinaryOp::LessThan))
+        .one(map(literal(">"), |_| BinaryOp::GreaterThan))
+        .one(map(literal("="), |_| BinaryOp::Assign))
         .finish()
 }
 
