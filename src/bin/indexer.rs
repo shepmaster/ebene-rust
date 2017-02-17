@@ -182,9 +182,7 @@ fn main() {
     let mut d = Indexing::default();
     d.source = s;
 
-    for i in &file {
-        i.visit(&mut d);
-    }
+    file.visit(&mut d);
 
     let d: IndexedFile = d.into();
     d.validate();

@@ -81,10 +81,10 @@ impl<'a> fmt::Display for ErrorDetailText<'a> {
 // Construct a point, initialize  the master. This is what stores errors
 // todo: rename?
 
-pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ErrorDetail> {
+pub fn parse_rust_file(file: &str) -> Result<File, ErrorDetail> {
     let mut pt = Point::new(file);
     let mut pm = Master::new();
-    let mut results = Vec::new();
+    let mut items = Vec::new();
 
     loop {
         let next_pt;
@@ -94,7 +94,7 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ErrorDetail> {
 
         match top_level.status {
             peresil::Status::Success(s) => {
-                results.push(s);
+                items.push(s);
                 next_pt = top_level.point;
             },
             peresil::Status::Failure(e) => {
@@ -114,7 +114,7 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ErrorDetail> {
         if pt.s.is_empty() { break }
     }
 
-    Ok(results)
+    Ok(File { items: items })
 
     // TODO: add `expect` to progress?
 }
@@ -122,6 +122,11 @@ pub fn parse_rust_file(file: &str) -> Result<Vec<TopLevel>, ErrorDetail> {
 // TODO: enum variants track whole extent, enum delegates
 
 pub type Extent = (usize, usize);
+
+#[derive(Debug, Visit)]
+pub struct File {
+    items: Vec<TopLevel>,
+}
 
 #[derive(Debug, Visit)]
 pub enum TopLevel {
@@ -1001,6 +1006,7 @@ pub trait Visitor {
     fn visit_enum_variant_body(&mut self, &EnumVariantBody) {}
     fn visit_expression(&mut self, &Expression) {}
     fn visit_field_access(&mut self, &FieldAccess) {}
+    fn visit_file(&mut self, &File) {}
     fn visit_for_loop(&mut self, &ForLoop) {}
     fn visit_function(&mut self, &Function) {}
     fn visit_function_call(&mut self, &FunctionCall) {}
@@ -1089,6 +1095,7 @@ pub trait Visitor {
     fn exit_enum_variant_body(&mut self, &EnumVariantBody) {}
     fn exit_expression(&mut self, &Expression) {}
     fn exit_field_access(&mut self, &FieldAccess) {}
+    fn exit_file(&mut self, &File) {}
     fn exit_for_loop(&mut self, &ForLoop) {}
     fn exit_function(&mut self, &Function) {}
     fn exit_function_call(&mut self, &FunctionCall) {}
