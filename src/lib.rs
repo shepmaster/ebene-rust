@@ -294,10 +294,19 @@ pub struct TypeReference {
 
 #[derive(Debug, Visit)]
 pub enum TypeInner {
+    Array(TypeArray),
     Core(TypeCore),
     Slice(TypeSlice),
     Tuple(Vec<Type>),
     Uninhabited(Extent),
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeArray {
+    extent: Extent,
+    typ: Box<Type>,
+    count: Number,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1232,6 +1241,7 @@ pub trait Visitor {
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
+    fn visit_type_array(&mut self, &TypeArray) {}
     fn visit_type_core(&mut self, &TypeCore) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -1331,6 +1341,7 @@ pub trait Visitor {
     fn exit_turbofish(&mut self, &Turbofish) {}
     fn exit_type(&mut self, &Type) {}
     fn exit_type_alias(&mut self, &TypeAlias) {}
+    fn exit_type_array(&mut self, &TypeArray) {}
     fn exit_type_core(&mut self, &TypeCore) {}
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -3114,6 +3125,7 @@ fn typ_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeReference
 
 fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> {
     pm.alternate(pt)
+        .one(map(typ_array, TypeInner::Array))
         .one(map(typ_core, TypeInner::Core))
         .one(map(typ_slice, TypeInner::Slice))
         .one(map(tuple_defn_body, TypeInner::Tuple))
@@ -3136,6 +3148,21 @@ fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCore> {
         name          = pathed_ident;
         generics      = optional(typ_generics);
     }, |_, pt| TypeCore { extent: ex(spt, pt), is_impl, name, generics, whitespace: ws })
+}
+
+fn typ_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeArray> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("[");
+        ws    = optional_whitespace(Vec::new());
+        typ   = typ;
+        ws    = optional_whitespace(ws);
+        _     = literal(";");
+        ws    = optional_whitespace(ws);
+        count = number_literal;
+        ws    = optional_whitespace(ws);
+        _     = literal("]");
+    }, |_, pt| TypeArray { extent: ex(spt, pt), typ: Box::new(typ), count, whitespace: ws })
 }
 
 fn typ_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeSlice> {
@@ -4074,6 +4101,12 @@ mod test {
     fn type_slice() {
         let p = qp(typ, "[u8]");
         assert_eq!(unwrap_progress(p).extent, (0, 4))
+    }
+
+    #[test]
+    fn type_array() {
+        let p = qp(typ, "[u8; 42]");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
