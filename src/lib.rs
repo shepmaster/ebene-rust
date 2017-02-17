@@ -296,6 +296,7 @@ pub struct TypeReference {
 pub enum TypeInner {
     Core(TypeCore),
     Tuple(Vec<Type>),
+    Uninhabited(Extent),
 }
 
 #[derive(Debug, Visit)]
@@ -3105,6 +3106,7 @@ fn typ_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeInner> 
     pm.alternate(pt)
         .one(map(typ_core, TypeInner::Core))
         .one(map(tuple_defn_body, TypeInner::Tuple))
+        .one(map(ext(literal("!")), TypeInner::Uninhabited))
         .finish()
 }
 
@@ -4038,6 +4040,12 @@ mod test {
     fn type_mut_ref_with_lifetime() {
         let p = qp(typ, "&'a mut Foo");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn type_uninhabited() {
+        let p = qp(typ, "!");
+        assert_eq!(unwrap_progress(p).extent, (0, 1))
     }
 
     #[test]
