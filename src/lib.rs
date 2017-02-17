@@ -537,6 +537,7 @@ pub enum Expression {
     TryOperator(TryOperator),
     Unary(Unary),
     Value(Value),
+    While(While),
     WhileLet(WhileLet),
 }
 
@@ -572,6 +573,7 @@ impl Expression {
             Expression::Tuple(Tuple { extent, .. })               |
             Expression::Unary(Unary { extent, .. })               |
             Expression::Value(Value { extent, .. })               |
+            Expression::While(While { extent, .. })               |
             Expression::WhileLet(WhileLet { extent, .. })         => extent,
         }
     }
@@ -682,6 +684,14 @@ pub struct Loop {
 pub struct IfLet {
     extent: Extent,
     pattern: Pattern,
+    value: Box<Expression>,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct While {
+    extent: Extent,
     value: Box<Expression>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
@@ -1227,6 +1237,7 @@ pub trait Visitor {
     fn visit_value(&mut self, &Value) {}
     fn visit_visibility(&mut self, &Visibility) {}
     fn visit_where(&mut self, &Where) {}
+    fn visit_while(&mut self, &While) {}
     fn visit_while_let(&mut self, &WhileLet) {}
     fn visit_whitespace(&mut self, &Whitespace) {}
 
@@ -1324,6 +1335,7 @@ pub trait Visitor {
     fn exit_value(&mut self, &Value) {}
     fn exit_visibility(&mut self, &Visibility) {}
     fn exit_where(&mut self, &Where) {}
+    fn exit_while(&mut self, &While) {}
     fn exit_while_let(&mut self, &WhileLet) {}
     fn exit_whitespace(&mut self, &Whitespace) {}
 }
@@ -1725,6 +1737,7 @@ fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         .one(map(expr_if_let, Expression::IfLet))
         .one(map(expr_for_loop, Expression::ForLoop))
         .one(map(expr_loop, Expression::Loop))
+        .one(map(expr_while, Expression::While))
         .one(map(expr_while_let, Expression::WhileLet))
         .one(map(expr_match, Expression::Match))
         .one(map(expr_block, Expression::Block))
@@ -2013,6 +2026,20 @@ fn expr_if_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, IfLet> {
     }, |_, pt| IfLet {
         extent: ex(spt, pt),
         pattern,
+        value: Box::new(value),
+        body: Box::new(body),
+        whitespace: ws,
+    })
+}
+
+fn expr_while<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, While> {
+    sequence!(pm, pt, {
+        spt           = point;
+        _             = literal("while");
+        ws            = whitespace;
+        (value, body) = expr_followed_by_block;
+    }, |_, pt| While {
+        extent: ex(spt, pt),
         value: Box::new(value),
         body: Box::new(body),
         whitespace: ws,
@@ -3636,6 +3663,12 @@ mod test {
     fn expr_if_let() {
         let p = qp(expression, "if let Some(a) = None {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 24))
+    }
+
+    #[test]
+    fn expr_while() {
+        let p = qp(expression, "while is_awesome() {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 21))
     }
 
     #[test]
