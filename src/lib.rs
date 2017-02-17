@@ -130,17 +130,18 @@ pub struct File {
 
 #[derive(Debug, Visit)]
 pub enum Item {
-    Function(Function),
-    MacroRules(MacroRules),
-    Struct(Struct),
-    Enum(Enum),
-    Trait(Trait),
-    Impl(Impl),
     Attribute(Attribute),
+    Const(Const),
+    Enum(Enum),
     ExternCrate(Crate),
-    Use(Use),
-    TypeAlias(TypeAlias),
+    Function(Function),
+    Impl(Impl),
+    MacroRules(MacroRules),
     Module(Module),
+    Struct(Struct),
+    Trait(Trait),
+    TypeAlias(TypeAlias),
+    Use(Use),
     Whitespace(Vec<Whitespace>),
 }
 
@@ -148,17 +149,18 @@ impl Item {
     #[allow(dead_code)]
     pub fn extent(&self) -> Extent {
         match *self {
-            Item::Function(Function { extent, .. })     |
-            Item::MacroRules(MacroRules { extent, .. }) |
-            Item::Struct(Struct { extent, .. })         |
-            Item::Enum(Enum { extent, .. })             |
-            Item::Trait(Trait { extent, .. })           |
-            Item::Impl(Impl { extent, .. })             |
             Item::Attribute(Attribute { extent, .. })   |
+            Item::Const(Const { extent, .. })           |
+            Item::Enum(Enum { extent, .. })             |
             Item::ExternCrate(Crate { extent, .. })     |
-            Item::Use(Use { extent, .. })               |
+            Item::Function(Function { extent, .. })     |
+            Item::Impl(Impl { extent, .. })             |
+            Item::MacroRules(MacroRules { extent, .. }) |
+            Item::Module(Module { extent, .. })         |
+            Item::Struct(Struct { extent, .. })         |
+            Item::Trait(Trait { extent, .. })           |
             Item::TypeAlias(TypeAlias { extent, .. })   |
-            Item::Module(Module { extent, .. })         => extent,
+            Item::Use(Use { extent, .. })               => extent,
             Item::Whitespace(..)                        => unimplemented!(),
         }
     }
@@ -349,6 +351,16 @@ impl From<Ident> for PathedIdent {
     fn from(other: Ident) -> PathedIdent {
         PathedIdent { extent: other.extent, idents: vec![other], turbofish: None }
     }
+}
+
+#[derive(Debug, Visit)]
+pub struct Const {
+    extent: Extent,
+    visibility: Option<Visibility>,
+    name: Ident,
+    typ: Type,
+    value: Expression,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1010,6 +1022,7 @@ pub trait Visitor {
     fn visit_closure(&mut self, &Closure) {}
     fn visit_closure_arg(&mut self, &ClosureArg) {}
     fn visit_comment(&mut self, &Comment) {}
+    fn visit_const(&mut self, &Const) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_dereference(&mut self, &Dereference) {}
     fn visit_enum(&mut self, &Enum) {}
@@ -1100,6 +1113,7 @@ pub trait Visitor {
     fn exit_closure(&mut self, &Closure) {}
     fn exit_closure_arg(&mut self, &ClosureArg) {}
     fn exit_comment(&mut self, &Comment) {}
+    fn exit_const(&mut self, &Const) {}
     fn exit_crate(&mut self, &Crate) {}
     fn exit_dereference(&mut self, &Dereference) {}
     fn exit_enum(&mut self, &Enum) {}
@@ -1277,17 +1291,18 @@ fn concat_whitespace<'s, F, T>
 
 fn item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Item> {
     pm.alternate(pt)
+        .one(map(attribute, Item::Attribute))
+        .one(map(p_const, Item::Const))
+        .one(map(extern_crate, Item::ExternCrate))
         .one(map(function, Item::Function))
         .one(map(macro_rules, Item::MacroRules))
-        .one(map(p_struct, Item::Struct))
+        .one(map(module, Item::Module))
         .one(map(p_enum, Item::Enum))
-        .one(map(p_trait, Item::Trait))
         .one(map(p_impl, Item::Impl))
-        .one(map(attribute, Item::Attribute))
-        .one(map(extern_crate, Item::ExternCrate))
+        .one(map(p_struct, Item::Struct))
+        .one(map(p_trait, Item::Trait))
         .one(map(p_use, Item::Use))
         .one(map(type_alias, Item::TypeAlias))
-        .one(map(module, Item::Module))
         .one(map(whitespace, Item::Whitespace))
         .finish()
 }
@@ -2626,6 +2641,32 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> 
     }, |_, pt| Attribute { extent: ex(spt, pt), is_containing, text })
 }
 
+fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
+    sequence!(pm, pt, {
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("const");
+        ws         = whitespace;
+        name       = ident;
+        ws         = optional_whitespace(ws);
+        _          = literal(":");
+        ws         = optional_whitespace(ws);
+        typ        = typ;
+        ws         = optional_whitespace(ws);
+        _          = literal("=");
+        ws         = optional_whitespace(ws);
+        value      = expression;
+        _          = literal(";");
+    }, |_, pt| Const {
+        extent: ex(spt, pt),
+        visibility,
+        name,
+        typ,
+        value,
+        whitespace: ws,
+    })
+}
+
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
     sequence!(pm, pt, {
         spt  = point;
@@ -2952,6 +2993,18 @@ mod test {
     fn item_type_alias_public() {
         let p = qp(item, "pub type Foo<T> = Bar<T, u8>;");
         assert_eq!(unwrap_progress(p).extent(), (0, 29))
+    }
+
+    #[test]
+    fn item_const() {
+        let p = qp(item, r#"const FOO: &'static str = "hi";"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 31))
+    }
+
+    #[test]
+    fn item_const_public() {
+        let p = qp(item, "pub const FOO: u8 = 42;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 23))
     }
 
     #[test]
