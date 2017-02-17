@@ -334,6 +334,7 @@ pub struct Ident {
     pub extent: Extent,
 }
 
+// TODO: Can we reuse the path from the `use` statement?
 #[derive(Debug, Visit)]
 pub struct PathedIdent {
     extent: Extent,
@@ -509,7 +510,6 @@ impl Statement {
 #[derive(Debug, Visit)]
 pub enum Expression {
     Array(Array),
-    Assign(Assign),
     Binary(Binary),
     Block(Box<Block>),
     Call(Call),
@@ -543,7 +543,6 @@ impl Expression {
             Expression::Block(ref x) => x.extent,
 
             Expression::Array(Array { extent, .. }) |
-            Expression::Assign(Assign { extent, .. }) |
             Expression::Binary(Binary { extent, .. }) |
             Expression::Call(Call { extent, .. }) |
             Expression::Character(Character { extent, .. }) |
@@ -589,14 +588,6 @@ pub struct Let {
 }
 
 #[derive(Debug, Visit)]
-pub struct Assign {
-    extent: Extent,
-    name: Ident,
-    value: Box<Expression>,
-    whitespace: Vec<Whitespace>,
-}
-
-#[derive(Debug, Visit)]
 pub struct Tuple {
     extent: Extent,
     members: Vec<Expression>,
@@ -612,7 +603,13 @@ pub struct TryOperator {
 pub struct FieldAccess {
     extent: Extent,
     value: Box<Expression>,
-    field: Ident
+    field: FieldName,
+}
+
+#[derive(Debug)]
+pub enum FieldName {
+    Ident(Ident),
+    Number(Extent),
 }
 
 #[derive(Debug, Visit)]
@@ -687,10 +684,33 @@ pub struct Unary {
 #[derive(Debug, Visit)]
 pub struct Binary {
     extent: Extent,
-    op: Extent,
+    op: BinaryOp,
     lhs: Box<Expression>,
     rhs: Box<Expression>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    AddAssign,
+    Assign,
+    BooleanAnd,
+    BooleanOr,
+    Div,
+    DivAssign,
+    Equal,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+    Mod,
+    ModAssign,
+    Mul,
+    MulAssign,
+    NotEqual,
+    Sub,
+    SubAssign,
 }
 
 #[derive(Debug, Visit)]
@@ -793,8 +813,8 @@ pub struct Return {
 
 #[derive(Debug)]
 enum ExpressionTail {
-    Binary { op: Extent, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
-    FieldAccess { field: Ident },
+    Binary { op: BinaryOp, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
+    FieldAccess { field: FieldName },
     Call { args: Vec<Expression> },
     MethodCall {
         name: Ident,
@@ -813,6 +833,7 @@ pub enum Pattern {
     Ident(PatternIdent), // TODO: split into ident and enumtuple
     Ref(PatternRef),
     Reference(PatternReference),
+    String(PatternString),
     Struct(PatternStruct),
     Tuple(PatternTuple),
     Wildcard(PatternWildcard),
@@ -826,6 +847,7 @@ impl Pattern {
             Pattern::Ident(PatternIdent { extent, .. })         |
             Pattern::Ref(PatternRef { extent, .. })             |
             Pattern::Reference(PatternReference { extent, .. }) |
+            Pattern::String(PatternString { extent, .. })       |
             Pattern::Struct(PatternStruct { extent, .. })       |
             Pattern::Tuple(PatternTuple { extent, .. })         |
             Pattern::Wildcard(PatternWildcard { extent, .. })   => extent
@@ -874,6 +896,12 @@ pub struct PatternWildcard {
 pub struct PatternCharacter {
     extent: Extent,
     value: Character,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternString {
+    extent: Extent,
+    value: String,
 }
 
 // TODO: Should we actually have a "qualifier" that applies to all
@@ -1012,9 +1040,27 @@ impl<T> Visit for Vec<T>
     }
 }
 
-// Cheap hack to avoid having to annotate every terminal `Extent`;
-// just visit it and don't do anything.
+// Cheap hacks to avoid having to annotate every terminal `Extent` and
+// enum; just visit them and don't do anything.
+
+// An extent without any context is pretty useless.
 impl Visit for Extent {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
+// Can't imagine we'd ever want to count the number of additions;
+// without the lhs/rhs there's not much benefit.
+impl Visit for BinaryOp {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
+// We *might* want to visit this, to enable checking for "large" tuple
+// indexes or poor variable names?
+impl Visit for FieldName {
     fn visit<V>(&self, _v: &mut V)
         where V: Visitor
     {}
@@ -1023,7 +1069,6 @@ impl Visit for Extent {
 pub trait Visitor {
     fn visit_argument(&mut self, &Argument) {}
     fn visit_array(&mut self, &Array) {}
-    fn visit_assign(&mut self, &Assign) {}
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
@@ -1070,6 +1115,7 @@ pub trait Visitor {
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
     fn visit_pattern_ref(&mut self, &PatternRef) {}
     fn visit_pattern_reference(&mut self, &PatternReference) {}
+    fn visit_pattern_string(&mut self, &PatternString) {}
     fn visit_pattern_struct(&mut self, &PatternStruct) {}
     fn visit_pattern_struct_field(&mut self, &PatternStructField) {}
     fn visit_pattern_tuple(&mut self, &PatternTuple) {}
@@ -1115,7 +1161,6 @@ pub trait Visitor {
 
     fn exit_argument(&mut self, &Argument) {}
     fn exit_array(&mut self, &Array) {}
-    fn exit_assign(&mut self, &Assign) {}
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
@@ -1162,6 +1207,7 @@ pub trait Visitor {
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
     fn exit_pattern_ref(&mut self, &PatternRef) {}
     fn exit_pattern_reference(&mut self, &PatternReference) {}
+    fn exit_pattern_string(&mut self, &PatternString) {}
     fn exit_pattern_struct(&mut self, &PatternStruct) {}
     fn exit_pattern_struct_field(&mut self, &PatternStructField) {}
     fn exit_pattern_tuple(&mut self, &PatternTuple) {}
@@ -1578,7 +1624,6 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(expression_ending_in_brace)
             .one(map(expr_macro_call, Expression::MacroCall))
             .one(map(expr_let, Expression::Let))
-            .one(map(expr_assign, Expression::Assign))
             .one(map(expr_function_call, Expression::FunctionCall))
             .one(map(expr_tuple, Expression::Tuple))
             .one(map(expr_range, Expression::Range))
@@ -1726,22 +1771,6 @@ fn expr_let_rhs<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Express
         ws    = optional_whitespace(Vec::new());
         value = expression;
     }, |_, _| (value, ws))
-}
-
-fn expr_assign<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assign> {
-    sequence!(pm, pt, {
-        spt   = point;
-        name  = ident;
-        ws    = optional_whitespace(Vec::new());
-        _     = literal("=");
-        ws    = optional_whitespace(ws);
-        value = expression;
-    }, |_, pt| Assign {
-        extent: ex(spt, pt),
-        name,
-        value: Box::new(value),
-        whitespace: ws,
-    })
 }
 
 fn expr_if<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, If> {
@@ -2045,10 +2074,14 @@ fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>
     block(pm, pt).map(Box::new)
 }
 
-fn expr_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
+fn expr_number<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
+    pure_number(pm, pt).map(|extent| Number { extent })
+}
+
+fn pure_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let idx = pt.s.chars().take_while(|&c| c.is_digit(10)).map(|c| c.len_utf8()).sum();
 
-    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound).map(|extent| Number { extent })
+    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound)
 }
 
 fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Reference> {
@@ -2169,27 +2202,28 @@ fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expr
     }, |_, _| ExpressionTail::Binary { op, rhs: Box::new(rhs), whitespace: ws })
 }
 
-fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
     // Two characters before one to avoid matching += as +
     pm.alternate(pt)
-        .one(ext(literal("!=")))
-        .one(ext(literal("==")))
-        .one(ext(literal("&&")))
-        .one(ext(literal("||")))
-        .one(ext(literal("+=")))
-        .one(ext(literal("-=")))
-        .one(ext(literal("*=")))
-        .one(ext(literal("/=")))
-        .one(ext(literal("%=")))
-        .one(ext(literal("<=")))
-        .one(ext(literal(">=")))
-        .one(ext(literal("+")))
-        .one(ext(literal("-")))
-        .one(ext(literal("*")))
-        .one(ext(literal("/")))
-        .one(ext(literal("%")))
-        .one(ext(literal("<")))
-        .one(ext(literal(">")))
+        .one(map(literal("!="), |_| BinaryOp::NotEqual))
+        .one(map(literal("=="), |_| BinaryOp::Equal))
+        .one(map(literal("&&"), |_| BinaryOp::BooleanAnd))
+        .one(map(literal("||"), |_| BinaryOp::BooleanOr))
+        .one(map(literal("+="), |_| BinaryOp::AddAssign))
+        .one(map(literal("-="), |_| BinaryOp::SubAssign))
+        .one(map(literal("*="), |_| BinaryOp::MulAssign))
+        .one(map(literal("/="), |_| BinaryOp::DivAssign))
+        .one(map(literal("%="), |_| BinaryOp::ModAssign))
+        .one(map(literal("<="), |_| BinaryOp::LessThanOrEqual))
+        .one(map(literal(">="), |_| BinaryOp::GreaterThanOrEqual))
+        .one(map(literal("+"), |_| BinaryOp::Add))
+        .one(map(literal("-"), |_| BinaryOp::Sub))
+        .one(map(literal("*"), |_| BinaryOp::Mul))
+        .one(map(literal("/"), |_| BinaryOp::Div))
+        .one(map(literal("%"), |_| BinaryOp::Mod))
+        .one(map(literal("<"), |_| BinaryOp::LessThan))
+        .one(map(literal(">"), |_| BinaryOp::GreaterThan))
+        .one(map(literal("="), |_| BinaryOp::Assign))
         .finish()
 }
 
@@ -2216,8 +2250,15 @@ fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expres
 fn expr_tail_field_access<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _  = literal(".");
-        field = ident;
+        field = field_name;
     }, |_, _| ExpressionTail::FieldAccess { field })
+}
+
+fn field_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FieldName> {
+    pm.alternate(pt)
+        .one(map(ident, FieldName::Ident))
+        .one(map(pure_number, FieldName::Number))
+        .finish()
 }
 
 fn expr_tail_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
@@ -2246,6 +2287,7 @@ fn expr_tail_try_operator<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
     sequence!(pm, pt, {
         spt       = point;
+        _         = optional(literal("::"));
         ident     = ident;
         idents    = zero_or_more_append(vec![ident], path_component);
         turbofish = optional(turbofish);
@@ -2273,6 +2315,7 @@ fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
         .one(map(pattern_char, Pattern::Character))
         .one(map(pattern_ref, Pattern::Ref))
         .one(map(pattern_reference, Pattern::Reference))
+        .one(map(pattern_string, Pattern::String))
         .one(map(pattern_struct, Pattern::Struct))
         .one(map(pattern_tuple, Pattern::Tuple))
         // Must be last, otherwise it collides with struct names
@@ -2371,6 +2414,13 @@ fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternC
         spt   = point;
         value = character_literal;
     }, |_, pt| PatternCharacter { extent: ex(spt, pt), value })
+}
+
+fn pattern_string<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternString> {
+    sequence!(pm, pt, {
+        spt   = point;
+        value = string_literal;
+    }, |_, pt| PatternString { extent: ex(spt, pt), value })
 }
 
 fn pattern_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRef> {
@@ -3241,15 +3291,27 @@ mod test {
     }
 
     #[test]
+    fn expr_assign_to_field() {
+        let p = qp(expression, "a.b = c");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
     fn expr_value_with_path() {
         let p = qp(expression, "Master::new()");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
-    fn expr_field_access() {
+    fn expr_field_access_name() {
         let p = qp(expression, "foo.bar");
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn expr_field_access_number() {
+        let p = qp(expression, "foo.0");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
@@ -3262,6 +3324,12 @@ mod test {
     fn expr_function_call() {
         let p = qp(expression, "foo()");
         assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
+    fn pathed_ident_with_leading_separator() {
+        let p = qp(pathed_ident, "::foo");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
     }
 
     #[test]
@@ -3598,6 +3666,12 @@ mod test {
     fn pattern_with_char_literal() {
         let p = qp(pattern, "'a'");
         assert_eq!(unwrap_progress(p).extent(), (0, 3))
+    }
+
+    #[test]
+    fn pattern_with_string_literal() {
+        let p = qp(pattern, r#""hello""#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
