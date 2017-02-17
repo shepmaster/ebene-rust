@@ -26,8 +26,8 @@ type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Error {
     Literal(&'static str),
-    IdentNotFound,
-    NumberNotFound,
+    ExpectedIdentifier,
+    ExpectedNumber,
     UnterminatedRawString,
 }
 
@@ -1516,8 +1516,8 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
         }
     }
 
-    split_point_at_non_zero_offset(pt, idx, Error::IdentNotFound)
-        .and_then(reject_keywords)
+    split_point_at_non_zero_offset(pt, idx, Error::ExpectedIdentifier)
+        .and_then(pt, reject_keywords)
         .map(|extent| Ident { extent })
 }
 
@@ -1549,7 +1549,7 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "trait"  |
         "type"   |
         "use"    |
-        "where"  => Err(Error::IdentNotFound),
+        "where"  => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
     }
 }
@@ -2185,7 +2185,7 @@ fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number
 fn pure_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let idx = pt.s.chars().take_while(|&c| c.is_digit(10)).map(|c| c.len_utf8()).sum();
 
-    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound).map(|(_, ex)| ex)
+    split_point_at_non_zero_offset(pt, idx, Error::ExpectedNumber).map(|(_, ex)| ex)
 }
 
 fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Reference> {
@@ -3970,6 +3970,12 @@ mod test {
         assert_eq!(unwrap_progress(p).extent, (0, 4))
     }
 
+    #[test]
+    fn ident_can_not_be_keyword() {
+        let p = qp(ident, "for");
+        assert_eq!(unwrap_progress_err(p), (0, vec![Error::ExpectedIdentifier]))
+    }
+
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
         where P: std::fmt::Debug,
               E: std::fmt::Debug,
@@ -3980,5 +3986,21 @@ mod test {
                 panic!("Failed parsing at {:?}: {:?}", point, e)
             }
         }
+    }
+
+    fn unwrap_progress_err_generic<P, T, E>(p: peresil::Progress<P, T, E>) -> (P, E) {
+        match p {
+            peresil::Progress { status: peresil::Status::Success(_), .. } => {
+                panic!("Parsing should have failed, but it did not");
+            }
+            peresil::Progress { status: peresil::Status::Failure(e), point } => {
+                (point, e)
+            }
+        }
+    }
+
+    fn unwrap_progress_err<T, E>(p: peresil::Progress<peresil::StringPoint, T, E>) -> (usize, E) {
+        let (pt, e) = unwrap_progress_err_generic(p);
+        (pt.offset, e)
     }
 }
