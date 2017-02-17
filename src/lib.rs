@@ -26,8 +26,8 @@ type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Error {
     Literal(&'static str),
-    IdentNotFound,
-    NumberNotFound,
+    ExpectedIdentifier,
+    ExpectedNumber,
     UnterminatedRawString,
 }
 
@@ -510,6 +510,7 @@ impl Statement {
 #[derive(Debug, Visit)]
 pub enum Expression {
     Array(Array),
+    AsType(AsType),
     Binary(Binary),
     Block(Box<Block>),
     Call(Call),
@@ -542,31 +543,32 @@ impl Expression {
         match *self {
             Expression::Block(ref x) => x.extent,
 
-            Expression::Array(Array { extent, .. }) |
-            Expression::Binary(Binary { extent, .. }) |
-            Expression::Call(Call { extent, .. }) |
-            Expression::Character(Character { extent, .. }) |
-            Expression::Closure(Closure { extent, .. }) |
-            Expression::Dereference(Dereference { extent, .. }) |
-            Expression::FieldAccess(FieldAccess { extent, .. }) |
-            Expression::ForLoop(ForLoop { extent, .. }) |
+            Expression::Array(Array { extent, .. })               |
+            Expression::AsType(AsType { extent, .. })             |
+            Expression::Binary(Binary { extent, .. })             |
+            Expression::Call(Call { extent, .. })                 |
+            Expression::Character(Character { extent, .. })       |
+            Expression::Closure(Closure { extent, .. })           |
+            Expression::Dereference(Dereference { extent, .. })   |
+            Expression::FieldAccess(FieldAccess { extent, .. })   |
+            Expression::ForLoop(ForLoop { extent, .. })           |
             Expression::FunctionCall(FunctionCall { extent, .. }) |
-            Expression::If(If { extent, .. }) |
-            Expression::Let(Let { extent, .. }) |
-            Expression::Loop(Loop { extent, .. }) |
-            Expression::MacroCall(MacroCall { extent, .. }) |
-            Expression::Match(Match { extent, .. }) |
-            Expression::MethodCall(MethodCall { extent, .. }) |
-            Expression::Number(Number { extent, .. }) => extent,
-            Expression::Range(Range { extent, .. }) |
-            Expression::Reference(Reference { extent, .. }) |
-            Expression::Return(Return { extent, .. }) |
-            Expression::Slice(Slice { extent, .. }) |
-            Expression::String(String { extent, .. }) |
-            Expression::TryOperator(TryOperator { extent, .. }) |
-            Expression::Tuple(Tuple { extent, .. }) |
-            Expression::Unary(Unary { extent, .. }) |
-            Expression::Value(Value { extent, .. }) => extent,
+            Expression::If(If { extent, .. })                     |
+            Expression::Let(Let { extent, .. })                   |
+            Expression::Loop(Loop { extent, .. })                 |
+            Expression::MacroCall(MacroCall { extent, .. })       |
+            Expression::Match(Match { extent, .. })               |
+            Expression::MethodCall(MethodCall { extent, .. })     |
+            Expression::Number(Number { extent, .. })             |
+            Expression::Range(Range { extent, .. })               |
+            Expression::Reference(Reference { extent, .. })       |
+            Expression::Return(Return { extent, .. })             |
+            Expression::Slice(Slice { extent, .. })               |
+            Expression::String(String { extent, .. })             |
+            Expression::TryOperator(TryOperator { extent, .. })   |
+            Expression::Tuple(Tuple { extent, .. })               |
+            Expression::Unary(Unary { extent, .. })               |
+            Expression::Value(Value { extent, .. })               => extent,
         }
     }
 }
@@ -754,6 +756,14 @@ pub struct Array {
 }
 
 #[derive(Debug, Visit)]
+pub struct AsType {
+    extent: Extent,
+    value: Box<Expression>,
+    typ: Type,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
 pub struct Character {
     extent: Extent,
     value: Extent,
@@ -814,6 +824,7 @@ pub struct Return {
 
 #[derive(Debug)]
 enum ExpressionTail {
+    AsType { typ: Type, whitespace: Vec<Whitespace> },
     Binary { op: BinaryOp, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
     FieldAccess { field: FieldName },
     Call { args: Vec<Expression> },
@@ -833,6 +844,7 @@ pub enum Pattern {
     Character(PatternCharacter),
     Ident(PatternIdent), // TODO: split into ident and enumtuple
     Number(PatternNumber),
+    Range(PatternRange),
     Ref(PatternRef),
     Reference(PatternReference),
     String(PatternString),
@@ -848,6 +860,7 @@ impl Pattern {
             Pattern::Character(PatternCharacter { extent, .. }) |
             Pattern::Ident(PatternIdent { extent, .. })         |
             Pattern::Number(PatternNumber { extent, .. })       |
+            Pattern::Range(PatternRange { extent, .. })         |
             Pattern::Ref(PatternRef { extent, .. })             |
             Pattern::Reference(PatternReference { extent, .. }) |
             Pattern::String(PatternString { extent, .. })       |
@@ -911,6 +924,20 @@ pub struct PatternString {
 pub struct PatternNumber {
     extent: Extent,
     value: Number,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternRange {
+    extent: Extent,
+    start: PatternRangeComponent,
+    end: PatternRangeComponent,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub enum PatternRangeComponent {
+    Character(Character),
+    Number(Number),
 }
 
 // TODO: Should we actually have a "qualifier" that applies to all
@@ -1075,9 +1102,18 @@ impl Visit for FieldName {
     {}
 }
 
+// We *might* want to continue visiting the children to be able to
+// inspect the character / number?
+impl Visit for PatternRangeComponent {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
 pub trait Visitor {
     fn visit_argument(&mut self, &Argument) {}
     fn visit_array(&mut self, &Array) {}
+    fn visit_as_type(&mut self, &AsType) {}
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
@@ -1123,6 +1159,7 @@ pub trait Visitor {
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
     fn visit_pattern_number(&mut self, &PatternNumber) {}
+    fn visit_pattern_range(&mut self, &PatternRange) {}
     fn visit_pattern_ref(&mut self, &PatternRef) {}
     fn visit_pattern_reference(&mut self, &PatternReference) {}
     fn visit_pattern_string(&mut self, &PatternString) {}
@@ -1171,6 +1208,7 @@ pub trait Visitor {
 
     fn exit_argument(&mut self, &Argument) {}
     fn exit_array(&mut self, &Array) {}
+    fn exit_as_type(&mut self, &AsType) {}
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
@@ -1216,6 +1254,7 @@ pub trait Visitor {
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
     fn exit_pattern_number(&mut self, &PatternNumber) {}
+    fn exit_pattern_range(&mut self, &PatternRange) {}
     fn exit_pattern_ref(&mut self, &PatternRef) {}
     fn exit_pattern_reference(&mut self, &PatternReference) {}
     fn exit_pattern_string(&mut self, &PatternString) {}
@@ -1477,8 +1516,8 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
         }
     }
 
-    split_point_at_non_zero_offset(pt, idx, Error::IdentNotFound)
-        .and_then(reject_keywords)
+    split_point_at_non_zero_offset(pt, idx, Error::ExpectedIdentifier)
+        .and_then(pt, reject_keywords)
         .map(|extent| Ident { extent })
 }
 
@@ -1486,6 +1525,7 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
 // Treat `self` as an identifier though.
 fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
     match s {
+        "as"     |
         "const"  |
         "crate"  |
         "else"   |
@@ -1509,7 +1549,7 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "trait"  |
         "type"   |
         "use"    |
-        "where"  => Err(Error::IdentNotFound),
+        "where"  => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
     }
 }
@@ -1691,6 +1731,14 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
         let (pt2, tail) = try_parse!(optional(expression_tail)(pm, pt));
         pt = pt2;
         match tail {
+            Some(ExpressionTail::AsType { typ, whitespace }) => {
+                expression = Expression::AsType(AsType {
+                    extent: ex(spt, pt),
+                    value: Box::new(expression),
+                    typ,
+                    whitespace,
+                })
+            }
             Some(ExpressionTail::Binary { op, rhs, whitespace }) => {
                 expression = Expression::Binary(Binary {
                     extent: ex(spt, pt),
@@ -2137,7 +2185,7 @@ fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number
 fn pure_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let idx = pt.s.chars().take_while(|&c| c.is_digit(10)).map(|c| c.len_utf8()).sum();
 
-    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound).map(|(_, ex)| ex)
+    split_point_at_non_zero_offset(pt, idx, Error::ExpectedNumber).map(|(_, ex)| ex)
 }
 
 fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Reference> {
@@ -2239,6 +2287,7 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Fu
 
 fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     pm.alternate(pt)
+        .one(expr_tail_as_type)
         .one(expr_tail_binary)
         .one(expr_tail_call)
         .one(expr_tail_method_call)
@@ -2247,6 +2296,15 @@ fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
         .one(expr_tail_slice)
         .one(expr_tail_try_operator)
         .finish()
+}
+
+fn expr_tail_as_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
+    sequence!(pm, pt, {
+        ws  = whitespace;
+        _   = literal("as");
+        ws  = append_whitespace(ws);
+        typ = typ;
+    }, |_, _| ExpressionTail::AsType { typ, whitespace: ws })
 }
 
 fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
@@ -2368,6 +2426,8 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> 
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     pm.alternate(pt)
+        // Must precede character and number as it contains them
+        .one(map(pattern_range, Pattern::Range))
         .one(map(pattern_char, Pattern::Character))
         .one(map(pattern_number, Pattern::Number))
         .one(map(pattern_ref, Pattern::Ref))
@@ -2502,6 +2562,24 @@ fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pat
         pattern: Box::new(pattern),
         whitespace: ws
     })
+}
+
+fn pattern_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRange> {
+    sequence!(pm, pt, {
+        spt   = point;
+        start = pattern_range_component;
+        ws    = optional_whitespace(Vec::new());
+        _     = literal("...");
+        ws    = optional_whitespace(ws);
+        end   = pattern_range_component;
+    }, |_, pt| PatternRange { extent: ex(spt, pt), start, end, whitespace: ws })
+}
+
+fn pattern_range_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRangeComponent> {
+    pm.alternate(pt)
+        .one(map(character_literal, PatternRangeComponent::Character))
+        .one(map(number_literal, PatternRangeComponent::Number))
+        .finish()
 }
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
@@ -3676,6 +3754,12 @@ mod test {
     }
 
     #[test]
+    fn expr_as_type() {
+        let p = qp(expression, "42 as u8");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
     fn expr_try_operator() {
         let p = qp(expression, "foo?");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
@@ -3751,6 +3835,18 @@ mod test {
     fn pattern_with_ref() {
         let p = qp(pattern, "ref a");
         assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
+    fn pattern_with_numeric_range() {
+        let p = qp(pattern, "1 ... 10");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn pattern_with_character_range() {
+        let p = qp(pattern, "'a'...'z'");
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
     }
 
     #[test]
@@ -3874,6 +3970,12 @@ mod test {
         assert_eq!(unwrap_progress(p).extent, (0, 4))
     }
 
+    #[test]
+    fn ident_can_not_be_keyword() {
+        let p = qp(ident, "for");
+        assert_eq!(unwrap_progress_err(p), (0, vec![Error::ExpectedIdentifier]))
+    }
+
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
         where P: std::fmt::Debug,
               E: std::fmt::Debug,
@@ -3884,5 +3986,21 @@ mod test {
                 panic!("Failed parsing at {:?}: {:?}", point, e)
             }
         }
+    }
+
+    fn unwrap_progress_err_generic<P, T, E>(p: peresil::Progress<P, T, E>) -> (P, E) {
+        match p {
+            peresil::Progress { status: peresil::Status::Success(_), .. } => {
+                panic!("Parsing should have failed, but it did not");
+            }
+            peresil::Progress { status: peresil::Status::Failure(e), point } => {
+                (point, e)
+            }
+        }
+    }
+
+    fn unwrap_progress_err<T, E>(p: peresil::Progress<peresil::StringPoint, T, E>) -> (usize, E) {
+        let (pt, e) = unwrap_progress_err_generic(p);
+        (pt.offset, e)
     }
 }
