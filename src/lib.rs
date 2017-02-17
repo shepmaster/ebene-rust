@@ -603,7 +603,13 @@ pub struct TryOperator {
 pub struct FieldAccess {
     extent: Extent,
     value: Box<Expression>,
-    field: Ident
+    field: FieldName,
+}
+
+#[derive(Debug)]
+pub enum FieldName {
+    Ident(Ident),
+    Number(Extent),
 }
 
 #[derive(Debug, Visit)]
@@ -808,7 +814,7 @@ pub struct Return {
 #[derive(Debug)]
 enum ExpressionTail {
     Binary { op: BinaryOp, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
-    FieldAccess { field: Ident },
+    FieldAccess { field: FieldName },
     Call { args: Vec<Expression> },
     MethodCall {
         name: Ident,
@@ -1035,14 +1041,26 @@ impl<T> Visit for Vec<T>
 }
 
 // Cheap hacks to avoid having to annotate every terminal `Extent` and
-// `BinaryOp`; just visit them and don't do anything.
+// enum; just visit them and don't do anything.
+
+// An extent without any context is pretty useless.
 impl Visit for Extent {
     fn visit<V>(&self, _v: &mut V)
         where V: Visitor
     {}
 }
 
+// Can't imagine we'd ever want to count the number of additions;
+// without the lhs/rhs there's not much benefit.
 impl Visit for BinaryOp {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
+// We *might* want to visit this, to enable checking for "large" tuple
+// indexes or poor variable names?
+impl Visit for FieldName {
     fn visit<V>(&self, _v: &mut V)
         where V: Visitor
     {}
@@ -2056,10 +2074,14 @@ fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>
     block(pm, pt).map(Box::new)
 }
 
-fn expr_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
+fn expr_number<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
+    pure_number(pm, pt).map(|extent| Number { extent })
+}
+
+fn pure_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
     let idx = pt.s.chars().take_while(|&c| c.is_digit(10)).map(|c| c.len_utf8()).sum();
 
-    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound).map(|extent| Number { extent })
+    split_point_at_non_zero_offset(pt, idx, Error::NumberNotFound)
 }
 
 fn expr_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Reference> {
@@ -2228,8 +2250,15 @@ fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expres
 fn expr_tail_field_access<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _  = literal(".");
-        field = ident;
+        field = field_name;
     }, |_, _| ExpressionTail::FieldAccess { field })
+}
+
+fn field_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FieldName> {
+    pm.alternate(pt)
+        .one(map(ident, FieldName::Ident))
+        .one(map(pure_number, FieldName::Number))
+        .finish()
 }
 
 fn expr_tail_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
@@ -3274,9 +3303,15 @@ mod test {
     }
 
     #[test]
-    fn expr_field_access() {
+    fn expr_field_access_name() {
         let p = qp(expression, "foo.bar");
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn expr_field_access_number() {
+        let p = qp(expression, "foo.0");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
