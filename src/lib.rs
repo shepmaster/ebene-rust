@@ -809,25 +809,26 @@ enum ExpressionTail {
 
 #[derive(Debug, Visit)]
 pub enum Pattern {
-    // TODO: split into ident and enumtuple
-    Ident(PatternIdent),
+    Character(PatternCharacter),
+    Ident(PatternIdent), // TODO: split into ident and enumtuple
+    Ref(PatternRef),
+    Reference(PatternReference),
     Struct(PatternStruct),
     Tuple(PatternTuple),
     Wildcard(PatternWildcard),
-    Character(PatternCharacter),
-    Reference(PatternReference),
 }
 
 impl Pattern {
     #[allow(dead_code)]
     fn extent(&self) -> Extent {
         match *self {
-            Pattern::Ident(PatternIdent { extent, .. }) |
-            Pattern::Tuple(PatternTuple { extent, .. }) |
-            Pattern::Struct(PatternStruct { extent, .. }) |
-            Pattern::Wildcard(PatternWildcard { extent, .. }) |
             Pattern::Character(PatternCharacter { extent, .. }) |
-            Pattern::Reference(PatternReference { extent, .. }) => extent
+            Pattern::Ident(PatternIdent { extent, .. })         |
+            Pattern::Ref(PatternRef { extent, .. })             |
+            Pattern::Reference(PatternReference { extent, .. }) |
+            Pattern::Struct(PatternStruct { extent, .. })       |
+            Pattern::Tuple(PatternTuple { extent, .. })         |
+            Pattern::Wildcard(PatternWildcard { extent, .. })   => extent
         }
     }
 }
@@ -873,6 +874,15 @@ pub struct PatternWildcard {
 pub struct PatternCharacter {
     extent: Extent,
     value: Character,
+}
+
+// TODO: Should we actually have a "qualifier" that applies to all
+// patterns equally? Could include `mut` in there too...
+#[derive(Debug, Visit)]
+pub struct PatternRef {
+    extent: Extent,
+    pattern: Box<Pattern>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1058,6 +1068,7 @@ pub trait Visitor {
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
+    fn visit_pattern_ref(&mut self, &PatternRef) {}
     fn visit_pattern_reference(&mut self, &PatternReference) {}
     fn visit_pattern_struct(&mut self, &PatternStruct) {}
     fn visit_pattern_struct_field(&mut self, &PatternStructField) {}
@@ -1149,6 +1160,7 @@ pub trait Visitor {
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
+    fn exit_pattern_ref(&mut self, &PatternRef) {}
     fn exit_pattern_reference(&mut self, &PatternReference) {}
     fn exit_pattern_struct(&mut self, &PatternStruct) {}
     fn exit_pattern_struct_field(&mut self, &PatternStructField) {}
@@ -2258,11 +2270,13 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> 
 
 fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
     pm.alternate(pt)
-        .one(map(pattern_struct, Pattern::Struct))
-        .one(map(pattern_ident, Pattern::Ident))
-        .one(map(pattern_tuple, Pattern::Tuple))
         .one(map(pattern_char, Pattern::Character))
+        .one(map(pattern_ref, Pattern::Ref))
         .one(map(pattern_reference, Pattern::Reference))
+        .one(map(pattern_struct, Pattern::Struct))
+        .one(map(pattern_tuple, Pattern::Tuple))
+        // Must be last, otherwise it collides with struct names
+        .one(map(pattern_ident, Pattern::Ident))
         .finish()
 }
 
@@ -2357,6 +2371,19 @@ fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternC
         spt   = point;
         value = character_literal;
     }, |_, pt| PatternCharacter { extent: ex(spt, pt), value })
+}
+
+fn pattern_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRef> {
+    sequence!(pm, pt, {
+        spt     = point;
+        _       = literal("ref");
+        ws      = whitespace;
+        pattern = pattern;
+    }, |_, pt| PatternRef {
+        extent: ex(spt, pt),
+        pattern: Box::new(pattern),
+        whitespace: ws
+    })
 }
 
 fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternReference> {
@@ -3577,6 +3604,12 @@ mod test {
     fn pattern_with_reference() {
         let p = qp(pattern, "&a");
         assert_eq!(unwrap_progress(p).extent(), (0, 2))
+    }
+
+    #[test]
+    fn pattern_with_ref() {
+        let p = qp(pattern, "ref a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
