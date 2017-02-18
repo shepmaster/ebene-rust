@@ -235,6 +235,7 @@ pub struct Function {
 pub struct FunctionHeader {
     pub extent: Extent,
     visibility: Option<Visibility>,
+    is_unsafe: Option<Extent>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
@@ -1581,6 +1582,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
     sequence!(pm, pt, {
         spt               = point;
         visibility        = optional(visibility);
+        is_unsafe         = optional(function_header_unsafe);
         _                 = literal("fn");
         ws                = whitespace;
         name              = ident;
@@ -1596,6 +1598,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         FunctionHeader {
             extent: ex(spt, pt),
             visibility,
+            is_unsafe,
             name,
             generics,
             arguments,
@@ -1603,6 +1606,14 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
             wheres: wheres.unwrap_or_else(Vec::new),
             whitespace: ws,
         }})
+}
+
+fn function_header_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        spt = point;
+        _   = literal("unsafe");
+        _x  = whitespace;
+    }, |_, pt| ex(spt, pt))
 }
 
 // TODO: We should support whitespace before the `!`
@@ -3639,6 +3650,12 @@ mod test {
     fn fn_with_whitespace_before_generics() {
         let p = qp(function_header, "fn foo <'a, T>() -> ()");
         assert_eq!(unwrap_progress(p).extent, (0, 22))
+    }
+
+    #[test]
+    fn fn_with_unsafe_qualifier() {
+        let p = qp(function_header, "unsafe fn foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
