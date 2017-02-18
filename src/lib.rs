@@ -531,7 +531,7 @@ pub struct UnsafeBlock {
 pub enum Statement {
     Explicit(Expression),
     Implicit(Expression),
-    Use(Use),
+    Item(Item),
 }
 
 impl Statement {
@@ -541,7 +541,7 @@ impl Statement {
         match *self {
             Explicit(ref e) |
             Implicit(ref e) => e.extent(),
-            Use(ref u) => u.extent,
+            Item(ref i) => i.extent(),
         }
     }
 
@@ -1808,7 +1808,7 @@ fn statement_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, State
     pm.alternate(pt)
         .one(explicit_statement)
         .one(implicit_statement)
-        .one(map(p_use, Statement::Use))
+        .one(map(item, Statement::Item))
         .finish()
 }
 
@@ -3683,6 +3683,12 @@ mod test {
     #[test]
     fn statement_use() {
         let p = qp(statement, "use foo::Bar;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
+    }
+
+    #[test]
+    fn statement_any_item() {
+        let p = qp(statement, "struct Foo {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
