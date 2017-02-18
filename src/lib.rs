@@ -1175,6 +1175,7 @@ pub struct ImplFunction {
 pub struct Crate {
     extent: Extent,
     name: Ident,
+    rename: Option<Ident>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -3262,15 +3263,25 @@ fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("extern");
-        ws   = whitespace;
-        _    = literal("crate");
-        ws   = append_whitespace(ws);
+        spt    = point;
+        _      = literal("extern");
+        ws     = whitespace;
+        _      = literal("crate");
+        ws     = append_whitespace(ws);
+        name   = ident;
+        rename = optional(extern_crate_rename);
+        ws     = optional_whitespace(ws);
+        _      = literal(";");
+    }, |_, pt| Crate { extent: ex(spt, pt), name, rename, whitespace: ws })
+}
+
+fn extern_crate_rename<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+    sequence!(pm, pt, {
+        _x   = whitespace;
+        _    = literal("as");
+        _x   = whitespace;
         name = ident;
-        ws   = optional_whitespace(ws);
-        _    = literal(";");
-    }, |_, pt| Crate { extent: ex(spt, pt), name, whitespace: ws })
+    }, |_, _| name)
 }
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
@@ -3687,6 +3698,18 @@ mod test {
     fn item_const_public() {
         let p = qp(item, "pub const FOO: u8 = 42;");
         assert_eq!(unwrap_progress(p).extent(), (0, 23))
+    }
+
+    #[test]
+    fn item_extern_crate() {
+        let p = qp(item, "extern crate foo;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 17))
+    }
+
+    #[test]
+    fn item_extern_crate_rename() {
+        let p = qp(item, "extern crate foo as bar;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 24))
     }
 
     #[test]
