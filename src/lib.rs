@@ -278,6 +278,7 @@ pub struct MacroRules {
 pub struct Generic {
     extent: Extent,
     name: Ident,
+    bounds: Option<TraitBounds>,
 }
 
 #[derive(Debug, Visit)]
@@ -534,8 +535,14 @@ pub struct TraitImplArgumentNamed {
 pub struct Where {
     pub extent: Extent,
     name: Type,
-    bounds: Vec<Type>,
+    bounds: TraitBounds,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitBounds {
+    pub extent: Extent,
+    types: Vec<Type>,
 }
 
 #[derive(Debug, Visit)]
@@ -1386,6 +1393,7 @@ pub trait Visitor {
     fn visit_struct_field(&mut self, &StructField) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
+    fn visit_trait_bounds(&mut self, &TraitBounds) {}
     fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
     fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
@@ -1497,6 +1505,7 @@ pub trait Visitor {
     fn exit_struct_field(&mut self, &StructField) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
+    fn exit_trait_bounds(&mut self, &TraitBounds) {}
     fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
     fn exit_trait_impl_function(&mut self, &TraitImplFunction) {}
@@ -1822,7 +1831,19 @@ fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
 }
 
 fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
-    ident(pm, pt).map(|name| Generic { extent: name.extent, name })
+    sequence!(pm, pt, {
+        spt    = point;
+        name   = ident;
+        bounds = optional(generic_declaration_bounds);
+    }, |_, pt| Generic { extent: ex(spt, pt), name, bounds })
+}
+
+fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
+    sequence!(pm, pt, {
+        _      = literal(":");
+        _x     = optional_whitespace(Vec::new());
+        bounds = trait_bounds;
+    }, |_, _| bounds)
 }
 
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
@@ -1880,8 +1901,15 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
         name   = typ;
         _      = literal(":");
         ws     = optional_whitespace(Vec::new());
-        bounds = one_or_more(tail("+", typ));
+        bounds = trait_bounds;
     }, |_, pt| Where { extent: ex(spt, pt), name, bounds, whitespace: ws })
+}
+
+fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
+    sequence!(pm, pt, {
+        spt = point;
+        types = one_or_more(tail("+", typ));
+    }, |_, _| TraitBounds { extent: ex(spt, pt), types })
 }
 
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
@@ -4723,6 +4751,18 @@ mod test {
     fn lifetime_static() {
         let p = qp(lifetime, "'static");
         assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn generic_declarations_() {
+        let p = qp(generic_declarations, "<A>");
+        assert_eq!(unwrap_progress(p).extent, (0, 3))
+    }
+
+    #[test]
+    fn generic_declarations_allow_bounds() {
+        let p = qp(generic_declarations, "<A: Foo>");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
