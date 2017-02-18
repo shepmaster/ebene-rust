@@ -608,6 +608,7 @@ impl Expression {
     pub fn extent(&self) -> Extent {
         match *self {
             Expression::Block(ref x) => x.extent,
+            Expression::Number(ref x) => x.extent(),
 
             Expression::Array(Array { extent, .. })               |
             Expression::AsType(AsType { extent, .. })             |
@@ -626,7 +627,6 @@ impl Expression {
             Expression::MacroCall(MacroCall { extent, .. })       |
             Expression::Match(Match { extent, .. })               |
             Expression::MethodCall(MethodCall { extent, .. })     |
-            Expression::Number(Number { extent, .. })             |
             Expression::Range(Range { extent, .. })               |
             Expression::Reference(Reference { extent, .. })       |
             Expression::Return(Return { extent, .. })             |
@@ -685,8 +685,46 @@ pub enum FieldName {
 }
 
 #[derive(Debug, Visit)]
-pub struct Number {
+pub enum Number {
+    Binary(NumberBinary),
+    Decimal(NumberDecimal),
+    Hexadecimal(NumberHexadecimal),
+    Octal(NumberOctal),
+}
+
+impl Number {
+    fn extent(&self) -> Extent {
+        match *self {
+            Number::Binary(NumberBinary { extent, .. })           |
+            Number::Decimal(NumberDecimal { extent, .. })         |
+            Number::Hexadecimal(NumberHexadecimal { extent, .. }) |
+            Number::Octal(NumberOctal { extent, .. })             => extent,
+        }
+    }
+}
+
+#[derive(Debug, Visit)]
+pub struct NumberBinary {
     extent: Extent,
+    value: Extent,
+}
+
+#[derive(Debug, Visit)]
+pub struct NumberDecimal {
+    extent: Extent,
+    value: Extent,
+}
+
+#[derive(Debug, Visit)]
+pub struct NumberHexadecimal {
+    extent: Extent,
+    value: Extent,
+}
+
+#[derive(Debug, Visit)]
+pub struct NumberOctal {
+    extent: Extent,
+    value: Extent,
 }
 
 #[derive(Debug, Visit)]
@@ -1261,6 +1299,10 @@ pub trait Visitor {
     fn visit_module(&mut self, &Module) {}
     fn visit_named_argument(&mut self, &NamedArgument) {}
     fn visit_number(&mut self, &Number) {}
+    fn visit_number_binary(&mut self, &NumberBinary) {}
+    fn visit_number_decimal(&mut self, &NumberDecimal) {}
+    fn visit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
+    fn visit_number_octal(&mut self, &NumberOctal) {}
     fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
@@ -1364,6 +1406,10 @@ pub trait Visitor {
     fn exit_module(&mut self, &Module) {}
     fn exit_named_argument(&mut self, &NamedArgument) {}
     fn exit_number(&mut self, &Number) {}
+    fn exit_number_binary(&mut self, &NumberBinary) {}
+    fn exit_number_decimal(&mut self, &NumberDecimal) {}
+    fn exit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
+    fn exit_number_octal(&mut self, &NumberOctal) {}
     fn exit_pathed_ident(&mut self, &PathedIdent) {}
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
@@ -2381,7 +2427,58 @@ fn expr_unsafe_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Uns
 }
 
 fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
-    pure_number(pm, pt).map(|extent| Number { extent })
+    pm.alternate(pt)
+        .one(map(number_literal_binary, Number::Binary))
+        .one(map(number_literal_hexadecimal, Number::Hexadecimal))
+        .one(map(number_literal_octal, Number::Octal))
+        // Must be last as all the others start with `0`
+        .one(map(number_literal_decimal, Number::Decimal))
+        .finish()
+}
+
+fn number_literal_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberBinary> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("0b");
+        value = number_literal_base(16);
+    }, |_, pt| NumberBinary { extent: ex(spt, pt), value: value })
+}
+
+fn number_literal_decimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberDecimal> {
+    sequence!(pm, pt, {
+        spt   = point;
+        value = number_literal_base(10);
+    }, |_, pt| NumberDecimal { extent: ex(spt, pt), value: value })
+}
+
+fn number_literal_hexadecimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberHexadecimal> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("0x");
+        value = number_literal_base(16);
+    }, |_, pt| NumberHexadecimal { extent: ex(spt, pt), value: value })
+}
+
+fn number_literal_octal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberOctal> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("0o");
+        value = number_literal_base(16);
+    }, |_, pt| NumberOctal { extent: ex(spt, pt), value: value })
+}
+
+fn number_literal_base<'s>(base: u32) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
+{
+    move |_, pt| {
+        let idx = pt.s.chars()
+            .take_while(|&c| c.is_digit(base))
+            .map(|c| c.len_utf8())
+            .sum();
+
+        split_point_at_non_zero_offset(pt, idx, Error::ExpectedNumber)
+            .map(|(_, ex)| ex)
+    }
 }
 
 fn pure_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -2739,7 +2836,7 @@ fn pattern_string<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
 }
 
 fn pattern_number<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternNumber> {
-    number_literal(pm, pt).map(|value| PatternNumber { extent: value.extent, value })
+    number_literal(pm, pt).map(|value| PatternNumber { extent: value.extent(), value })
 }
 
 fn pattern_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRef> {
@@ -3699,9 +3796,27 @@ mod test {
     }
 
     #[test]
-    fn expr_number() {
+    fn expr_number_binary() {
+        let p = qp(expression, "0x0101");
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn expr_number_decimal() {
         let p = qp(expression, "123");
         assert_eq!(unwrap_progress(p).extent(), (0, 3))
+    }
+
+    #[test]
+    fn expr_number_hexadecimal() {
+        let p = qp(expression, "0xDEADBEEF");
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
+    }
+
+    #[test]
+    fn expr_number_octal() {
+        let p = qp(expression, "0o777");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
