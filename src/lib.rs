@@ -572,6 +572,7 @@ impl Statement {
 #[derive(Debug, Visit)]
 pub enum Expression {
     Array(Array),
+    Box(ExpressionBox),
     AsType(AsType),
     Binary(Binary),
     Block(Box<Block>),
@@ -611,6 +612,7 @@ impl Expression {
             Expression::Number(ref x) => x.extent(),
 
             Expression::Array(Array { extent, .. })               |
+            Expression::Box(ExpressionBox { extent, .. })         |
             Expression::AsType(AsType { extent, .. })             |
             Expression::Binary(Binary { extent, .. })             |
             Expression::Call(Call { extent, .. })                 |
@@ -895,6 +897,14 @@ pub struct Range {
 pub struct Array {
     extent: Extent,
     members: Vec<Expression>,
+}
+
+// TODO: Rename this visitor function?
+#[derive(Debug, Visit)]
+pub struct ExpressionBox {
+    extent: Extent,
+    value: Box<Expression>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1279,6 +1289,7 @@ pub trait Visitor {
     fn visit_enum_variant(&mut self, &EnumVariant) {}
     fn visit_enum_variant_body(&mut self, &EnumVariantBody) {}
     fn visit_expression(&mut self, &Expression) {}
+    fn visit_expression_box(&mut self, &ExpressionBox) {}
     fn visit_field_access(&mut self, &FieldAccess) {}
     fn visit_file(&mut self, &File) {}
     fn visit_for_loop(&mut self, &ForLoop) {}
@@ -1386,6 +1397,7 @@ pub trait Visitor {
     fn exit_enum_variant(&mut self, &EnumVariant) {}
     fn exit_enum_variant_body(&mut self, &EnumVariantBody) {}
     fn exit_expression(&mut self, &Expression) {}
+    fn exit_expression_box(&mut self, &ExpressionBox) {}
     fn exit_field_access(&mut self, &FieldAccess) {}
     fn exit_file(&mut self, &File) {}
     fn exit_for_loop(&mut self, &ForLoop) {}
@@ -1710,6 +1722,7 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
 fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
     match s {
         "as"     |
+        "box"    |
         "const"  |
         "crate"  |
         "else"   |
@@ -1911,6 +1924,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_reference, Expression::Reference))
             .one(map(expr_dereference, Expression::Dereference))
             .one(map(expr_unary, Expression::Unary))
+            .one(map(expr_box, Expression::Box))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -2534,6 +2548,19 @@ fn expr_unary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Unary> {
     }, |_, pt| Unary {
         extent: ex(spt, pt),
         op,
+        value: Box::new(value),
+        whitespace: ws
+    })
+}
+
+fn expr_box<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionBox> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("box");
+        ws    = whitespace;
+        value = expression;
+    }, |_, pt| ExpressionBox {
+        extent: ex(spt, pt),
         value: Box::new(value),
         whitespace: ws
     })
@@ -4247,6 +4274,12 @@ mod test {
     fn expr_try_operator() {
         let p = qp(expression, "foo?");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_box() {
+        let p = qp(expression, "box foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
