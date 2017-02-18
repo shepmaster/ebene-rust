@@ -138,6 +138,7 @@ pub enum Item {
     Impl(Impl),
     MacroRules(MacroRules),
     Module(Module),
+    Static(Static),
     Struct(Struct),
     Trait(Trait),
     TypeAlias(TypeAlias),
@@ -157,6 +158,7 @@ impl Item {
             Item::Impl(Impl { extent, .. })             |
             Item::MacroRules(MacroRules { extent, .. }) |
             Item::Module(Module { extent, .. })         |
+            Item::Static(Static { extent, .. })         |
             Item::Struct(Struct { extent, .. })         |
             Item::Trait(Trait { extent, .. })           |
             Item::TypeAlias(TypeAlias { extent, .. })   |
@@ -411,6 +413,16 @@ impl From<Ident> for PathedIdent {
 
 #[derive(Debug, Visit)]
 pub struct Const {
+    extent: Extent,
+    visibility: Option<Visibility>,
+    name: Ident,
+    typ: Type,
+    value: Expression,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct Static {
     extent: Extent,
     visibility: Option<Visibility>,
     name: Ident,
@@ -1354,6 +1366,7 @@ pub trait Visitor {
     fn visit_self_argument(&mut self, &SelfArgument) {}
     fn visit_slice(&mut self, &Slice) {}
     fn visit_statement(&mut self, &Statement) {}
+    fn visit_static(&mut self, &Static) {}
     fn visit_string(&mut self, &String) {}
     fn visit_struct(&mut self, &Struct) {}
     fn visit_struct_definition_body(&mut self, &StructDefinitionBody) {}
@@ -1464,6 +1477,7 @@ pub trait Visitor {
     fn exit_self_argument(&mut self, &SelfArgument) {}
     fn exit_slice(&mut self, &Slice) {}
     fn exit_statement(&mut self, &Statement) {}
+    fn exit_static(&mut self, &Static) {}
     fn exit_string(&mut self, &String) {}
     fn exit_struct(&mut self, &Struct) {}
     fn exit_struct_definition_body(&mut self, &StructDefinitionBody) {}
@@ -1612,6 +1626,7 @@ fn item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Item> {
         .one(map(module, Item::Module))
         .one(map(p_enum, Item::Enum))
         .one(map(p_impl, Item::Impl))
+        .one(map(p_static, Item::Static))
         .one(map(p_struct, Item::Struct))
         .one(map(p_trait, Item::Trait))
         .one(map(p_use, Item::Use))
@@ -1761,6 +1776,7 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "pub"    |
         "ref"    |
         "return" |
+        "static" |
         "struct" |
         "trait"  |
         "type"   |
@@ -3236,10 +3252,32 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> 
 }
 
 fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
+    p_const_static(
+        pm, pt, "const",
+        |extent, visibility, name, typ, value, whitespace| {
+            Const { extent, visibility, name, typ, value, whitespace }
+        }
+    )
+}
+
+fn p_static<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Static> {
+    p_const_static(
+        pm, pt, "static",
+        |extent, visibility, name, typ, value, whitespace| {
+            Static { extent, visibility, name, typ, value, whitespace }
+        }
+    )
+}
+
+fn p_const_static<'s, F, T>
+    (pm: &mut Master<'s>, pt: Point<'s>, keyword: &'static str, constructor: F)
+     -> Progress<'s, T>
+    where F: FnOnce(Extent, Option<Visibility>, Ident, Type, Expression, Vec<Whitespace>) -> T
+{
     sequence!(pm, pt, {
         spt        = point;
         visibility = optional(visibility);
-        _          = literal("const");
+        _          = literal(keyword);
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
@@ -3251,13 +3289,8 @@ fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
         ws         = optional_whitespace(ws);
         value      = expression;
         _          = literal(";");
-    }, |_, pt| Const {
-        extent: ex(spt, pt),
-        visibility,
-        name,
-        typ,
-        value,
-        whitespace: ws,
+    }, |_, pt| {
+        constructor(ex(spt, pt), visibility, name, typ, value, ws)
     })
 }
 
@@ -3524,8 +3557,16 @@ fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
         spt  = point;
         _    = literal("'");
         ws   = optional_whitespace(Vec::new());
-        name = ident;
+        name = ident_or_static;
     }, |_, pt| Lifetime { extent: ex(spt, pt), name, whitespace: ws })
+}
+
+// TODO: Should this be an enum?
+fn ident_or_static<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+    pm.alternate(pt)
+        .one(map(ext(literal("static")), |extent| Ident { extent }))
+        .one(ident)
+        .finish()
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Whitespace>> {
@@ -3698,6 +3739,18 @@ mod test {
     fn item_const_public() {
         let p = qp(item, "pub const FOO: u8 = 42;");
         assert_eq!(unwrap_progress(p).extent(), (0, 23))
+    }
+
+    #[test]
+    fn item_static() {
+        let p = qp(item, r#"static FOO: &'static str = "hi";"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 32))
+    }
+
+    #[test]
+    fn item_static_public() {
+        let p = qp(item, "pub static FOO: u8 = 42;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 24))
     }
 
     #[test]
@@ -4615,6 +4668,18 @@ mod test {
     fn ident_can_not_be_keyword() {
         let p = qp(ident, "for");
         assert_eq!(unwrap_progress_err(p), (0, vec![Error::ExpectedIdentifier]))
+    }
+
+    #[test]
+    fn lifetime_ident() {
+        let p = qp(lifetime, "'a");
+        assert_eq!(unwrap_progress(p).extent, (0, 2))
+    }
+
+    #[test]
+    fn lifetime_static() {
+        let p = qp(lifetime, "'static");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
