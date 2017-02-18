@@ -280,6 +280,7 @@ pub struct Generic {
 pub enum Type {
     Array(TypeArray),
     Core(TypeCore),
+    Pointer(TypePointer),
     Reference(TypeReference),
     Slice(TypeSlice),
     Tuple(TypeTuple),
@@ -291,6 +292,7 @@ impl Type {
         match *self {
             Type::Array(TypeArray { extent, .. })         |
             Type::Core(TypeCore { extent, .. })           |
+            Type::Pointer(TypePointer { extent, .. })     |
             Type::Reference(TypeReference { extent, .. }) |
             Type::Slice(TypeSlice { extent, .. })         |
             Type::Tuple(TypeTuple { extent, .. })         => extent,
@@ -312,6 +314,20 @@ pub struct TypeReferenceKind {
     lifetime: Option<Lifetime>,
     mutable: Option<Extent>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypePointer {
+    extent: Extent,
+    kind: TypePointerKind,
+    typ: Box<Type>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub enum TypePointerKind {
+    Const,
+    Mutable,
 }
 
 #[derive(Debug, Visit)]
@@ -1180,6 +1196,13 @@ impl Visit for PatternRangeComponent {
     {}
 }
 
+// Knowing if an unknown pointer is mutable has no benefit.
+impl Visit for TypePointerKind {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
 pub trait Visitor {
     fn visit_argument(&mut self, &Argument) {}
     fn visit_array(&mut self, &Array) {}
@@ -1265,6 +1288,7 @@ pub trait Visitor {
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
+    fn visit_type_pointer(&mut self, &TypePointer) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_type_reference_kind(&mut self, &TypeReferenceKind) {}
     fn visit_type_slice(&mut self, &TypeSlice) {}
@@ -1366,6 +1390,7 @@ pub trait Visitor {
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
+    fn exit_type_pointer(&mut self, &TypePointer) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
     fn exit_type_reference_kind(&mut self, &TypeReferenceKind) {}
     fn exit_type_slice(&mut self, &TypeSlice) {}
@@ -3127,10 +3152,11 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     pm.alternate(pt)
         .one(map(typ_array, Type::Array))
         .one(map(typ_core, Type::Core))
+        .one(map(typ_pointer, Type::Pointer))
+        .one(map(typ_reference, Type::Reference))
         .one(map(typ_slice, Type::Slice))
         .one(map(typ_tuple, Type::Tuple))
         .one(map(ext(literal("!")), Type::Uninhabited))
-        .one(map(typ_reference, Type::Reference))
         .finish()
 }
 
@@ -3152,6 +3178,24 @@ fn typ_reference_kind<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
         mutable  = optional(ext(literal("mut")));
         ws       = optional_whitespace(ws);
     }, |_, pt| TypeReferenceKind { extent: ex(spt, pt), lifetime, mutable, whitespace: ws })
+}
+
+fn typ_pointer<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypePointer> {
+    sequence!(pm, pt, {
+        spt  = point;
+        _    = literal("*");
+        ws   = optional_whitespace(Vec::new());
+        kind = typ_pointer_kind;
+        ws   = append_whitespace(ws);
+        typ  = typ;
+    }, |_, pt| TypePointer { extent: ex(spt, pt), kind, typ: Box::new(typ), whitespace: ws })
+}
+
+fn typ_pointer_kind<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypePointerKind> {
+    pm.alternate(pt)
+        .one(map(literal("const"), |_| TypePointerKind::Const))
+        .one(map(literal("mut"), |_| TypePointerKind::Mutable))
+        .finish()
 }
 
 fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> {
@@ -4108,6 +4152,12 @@ mod test {
     }
 
     #[test]
+    fn type_ref() {
+        let p = qp(typ, "&mut Foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
     fn type_mut_ref() {
         let p = qp(typ, "&mut Foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
@@ -4117,6 +4167,18 @@ mod test {
     fn type_mut_ref_with_lifetime() {
         let p = qp(typ, "&'a mut Foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn type_const_pointer() {
+        let p = qp(typ, "*const Foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
+    }
+
+    #[test]
+    fn type_mut_pointer() {
+        let p = qp(typ, "*mut Foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
