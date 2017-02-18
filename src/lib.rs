@@ -840,9 +840,15 @@ pub struct WhileLet {
 #[derive(Debug, Visit)]
 pub struct Unary {
     extent: Extent,
-    op: Extent,
+    op: UnaryOp,
     value: Box<Expression>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Negate,
+    Not,
 }
 
 #[derive(Debug, Visit)]
@@ -1268,6 +1274,11 @@ impl Visit for Extent {
 
 // Can't imagine we'd ever want to count the number of additions;
 // without the lhs/rhs there's not much benefit.
+impl Visit for UnaryOp {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
 impl Visit for BinaryOp {
     fn visit<V>(&self, _v: &mut V)
         where V: Visitor
@@ -2577,7 +2588,7 @@ fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dere
 fn expr_unary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Unary> {
     sequence!(pm, pt, {
         spt   = point;
-        op    = ext(literal("!"));
+        op    = expr_unary_op;
         ws    = optional_whitespace(Vec::new());
         value = expression;
     }, |_, pt| Unary {
@@ -2586,6 +2597,13 @@ fn expr_unary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Unary> {
         value: Box::new(value),
         whitespace: ws
     })
+}
+
+fn expr_unary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UnaryOp> {
+    pm.alternate(pt)
+        .one(map(literal("!"), |_| UnaryOp::Not))
+        .one(map(literal("-"), |_| UnaryOp::Negate))
+        .finish()
 }
 
 fn expr_box<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionBox> {
@@ -4194,6 +4212,12 @@ mod test {
     }
 
     #[test]
+    fn expr_binary_op_math() {
+        let p = qp(expression, "a + b - c / d % e");
+        assert_eq!(unwrap_progress(p).extent(), (0, 17))
+    }
+
+    #[test]
     fn expr_binary_op_boolean_logic() {
         let p = qp(expression, "a && b || c");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
@@ -4374,8 +4398,14 @@ mod test {
     }
 
     #[test]
-    fn expr_not() {
+    fn expr_unary_not() {
         let p = qp(expression, "!foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_unary_negate() {
+        let p = qp(expression, "-foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
