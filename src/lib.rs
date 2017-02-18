@@ -3038,8 +3038,9 @@ fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Str
         attributes = zero_or_more(struct_defn_field_attr);
         visibility = optional(visibility);
         name       = ident;
-        _          = literal(":");
         ws         = optional_whitespace(Vec::new());
+        _          = literal(":");
+        ws         = optional_whitespace(ws);
         typ        = typ;
     }, |_, pt| StructField {
         extent: ex(spt, pt),
@@ -4619,6 +4620,18 @@ mod test {
     fn struct_with_generic_fields() {
         let p = qp(p_struct, "struct S { field: Option<u8> }");
         assert_eq!(unwrap_progress(p).extent, (0, 30))
+    }
+
+    #[test]
+    fn struct_with_fields_with_no_space() {
+        let p = qp(p_struct, "struct S{a:u8}");
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
+    }
+
+    #[test]
+    fn struct_with_fields_with_all_space() {
+        let p = qp(p_struct, "struct S { a : u8 }");
+        assert_eq!(unwrap_progress(p).extent, (0, 19))
     }
 
     #[test]
