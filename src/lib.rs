@@ -2440,6 +2440,7 @@ fn number_literal_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("0b");
+        _     = zero_or_more(literal("_"));
         value = number_literal_base(16);
     }, |_, pt| NumberBinary { extent: ex(spt, pt), value: value })
 }
@@ -2455,6 +2456,7 @@ fn number_literal_hexadecimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("0x");
+        _     = zero_or_more(literal("_"));
         value = number_literal_base(16);
     }, |_, pt| NumberHexadecimal { extent: ex(spt, pt), value: value })
 }
@@ -2463,6 +2465,7 @@ fn number_literal_octal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("0o");
+        _     = zero_or_more(literal("_"));
         value = number_literal_base(16);
     }, |_, pt| NumberOctal { extent: ex(spt, pt), value: value })
 }
@@ -2471,9 +2474,10 @@ fn number_literal_base<'s>(base: u32) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
 {
     move |_, pt| {
-        let idx = pt.s.chars()
-            .take_while(|&c| c.is_digit(base))
-            .map(|c| c.len_utf8())
+        let idx = pt.s.chars().enumerate()
+            // Disallow leading underscores here
+            .take_while(|&(i, c)| c.is_digit(base) || (i != 0 && c == '_'))
+            .map(|(_, c)| c.len_utf8())
             .sum();
 
         split_point_at_non_zero_offset(pt, idx, Error::ExpectedNumber)
@@ -3820,6 +3824,12 @@ mod test {
     }
 
     #[test]
+    fn expr_number_with_spacers() {
+        let p = qp(expression, "1_000_000");
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
     fn expr_let_explicit_type() {
         let p = qp(expression, "let foo: bool");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
@@ -4213,6 +4223,20 @@ mod test {
     fn expr_try_operator() {
         let p = qp(expression, "foo?");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn number_decimal_cannot_start_with_underscore() {
+        let p = qp(number_literal, "_123");
+        let (err_loc, errs) = unwrap_progress_err(p);
+        assert_eq!(err_loc, 0);
+        assert!(errs.contains(&Error::ExpectedNumber));
+    }
+
+    #[test]
+    fn number_with_prefix_can_have_underscore_after_prefix() {
+        let p = qp(number_literal, "0x_123");
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
