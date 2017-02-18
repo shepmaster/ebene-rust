@@ -796,6 +796,8 @@ pub enum BinaryOp {
     Mul,
     MulAssign,
     NotEqual,
+    ShiftLeft,
+    ShiftRight,
     Sub,
     SubAssign,
 }
@@ -2496,6 +2498,8 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
         .one(map(literal("%="), |_| BinaryOp::ModAssign))
         .one(map(literal("<="), |_| BinaryOp::LessThanOrEqual))
         .one(map(literal(">="), |_| BinaryOp::GreaterThanOrEqual))
+        .one(map(literal("<<"), |_| BinaryOp::ShiftLeft))
+        .one(map(literal(">>"), |_| BinaryOp::ShiftRight))
         .one(map(literal("+"), |_| BinaryOp::Add))
         .one(map(literal("-"), |_| BinaryOp::Sub))
         .one(map(literal("*"), |_| BinaryOp::Mul))
@@ -3854,6 +3858,12 @@ mod test {
     #[test]
     fn expr_binary_op_boolean_logic() {
         let p = qp(expression, "a && b || c");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn expr_binary_op_shifting() {
+        let p = qp(expression, "a >> b << c");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
