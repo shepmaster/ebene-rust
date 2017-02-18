@@ -519,6 +519,13 @@ pub struct Block {
 }
 
 #[derive(Debug, Visit)]
+pub struct UnsafeBlock {
+    extent: Extent,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
 pub enum Statement {
     Explicit(Expression),
     Implicit(Expression),
@@ -589,6 +596,7 @@ pub enum Expression {
     Tuple(Tuple),
     TryOperator(TryOperator),
     Unary(Unary),
+    UnsafeBlock(UnsafeBlock),
     Value(Value),
     While(While),
     WhileLet(WhileLet),
@@ -625,6 +633,7 @@ impl Expression {
             Expression::TryOperator(TryOperator { extent, .. })   |
             Expression::Tuple(Tuple { extent, .. })               |
             Expression::Unary(Unary { extent, .. })               |
+            Expression::UnsafeBlock(UnsafeBlock { extent, .. })   |
             Expression::Value(Value { extent, .. })               |
             Expression::While(While { extent, .. })               |
             Expression::WhileLet(WhileLet { extent, .. })         => extent,
@@ -1296,6 +1305,7 @@ pub trait Visitor {
     fn visit_type_slice(&mut self, &TypeSlice) {}
     fn visit_type_tuple(&mut self, &TypeTuple) {}
     fn visit_unary(&mut self, &Unary) {}
+    fn visit_unsafe_block(&mut self, &UnsafeBlock) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_use_tail(&mut self, &UseTail) {}
     fn visit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1398,6 +1408,7 @@ pub trait Visitor {
     fn exit_type_slice(&mut self, &TypeSlice) {}
     fn exit_type_tuple(&mut self, &TypeTuple) {}
     fn exit_unary(&mut self, &Unary) {}
+    fn exit_unsafe_block(&mut self, &UnsafeBlock) {}
     fn exit_use(&mut self, &Use) {}
     fn exit_use_tail(&mut self, &UseTail) {}
     fn exit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1658,6 +1669,7 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "trait"  |
         "type"   |
         "use"    |
+        "unsafe" |
         "where"  |
         "while"  => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
@@ -1810,6 +1822,7 @@ fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         .one(map(expr_while, Expression::While))
         .one(map(expr_while_let, Expression::WhileLet))
         .one(map(expr_match, Expression::Match))
+        .one(map(expr_unsafe_block, Expression::UnsafeBlock))
         .one(map(expr_block, Expression::Block))
         .finish()
 }
@@ -2344,6 +2357,15 @@ fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
     block(pm, pt).map(Box::new)
+}
+
+fn expr_unsafe_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UnsafeBlock> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("unsafe");
+        ws    = optional_whitespace(Vec::new());
+        body = block;
+    }, |_, pt| UnsafeBlock { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
 }
 
 fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
@@ -3793,6 +3815,12 @@ mod test {
     fn expr_block() {
         let p = qp(expression, "{}");
         assert_eq!(unwrap_progress(p).extent(), (0, 2))
+    }
+
+    #[test]
+    fn expr_unsafe_block() {
+        let p = qp(expression, "unsafe {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
     }
 
     #[test]
