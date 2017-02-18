@@ -195,6 +195,7 @@ pub struct Comment {
 #[derive(Debug, Visit)]
 pub struct Use {
     extent: Extent,
+    visibility: Option<Visibility>,
     path: Vec<Ident>,
     tail: UseTail,
     whitespace: Vec<Whitespace>,
@@ -3095,15 +3096,16 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("use");
-        ws   = whitespace;
-        _    = optional(literal("::"));
-        path = zero_or_more(use_path_component);
-        tail = use_tail;
-        _    = literal(";");
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("use");
+        ws         = whitespace;
+        _          = optional(literal("::"));
+        path       = zero_or_more(use_path_component);
+        tail       = use_tail;
+        _          = literal(";");
     }, move |_, pt| {
-        Use { extent: ex(spt, pt), path, tail, whitespace: ws }
+        Use { extent: ex(spt, pt), visibility, path, tail, whitespace: ws }
     })
 }
 
@@ -3380,6 +3382,12 @@ mod test {
     fn parse_use() {
         let p = qp(p_use, "use foo::Bar;");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn parse_use_public() {
+        let p = qp(p_use, "pub use foo::Bar;");
+        assert_eq!(unwrap_progress(p).extent, (0, 17))
     }
 
     #[test]
