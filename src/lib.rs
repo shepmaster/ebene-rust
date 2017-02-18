@@ -433,6 +433,7 @@ pub struct Struct {
 pub enum StructDefinitionBody {
     Brace(StructDefinitionBodyBrace),
     Tuple(StructDefinitionBodyTuple),
+    Empty(Extent),
 }
 
 #[derive(Debug, Visit)]
@@ -2968,6 +2969,7 @@ fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Stru
     pm.alternate(pt)
         .one(map(struct_defn_body_brace, StructDefinitionBody::Brace))
         .one(map(struct_defn_body_tuple, StructDefinitionBody::Tuple))
+        .one(map(ext(literal(";")), StructDefinitionBody::Empty))
         .finish()
 }
 
@@ -4541,6 +4543,12 @@ mod test {
     fn struct_with_tuple() {
         let p = qp(p_struct, "struct S(u8);");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn struct_empty() {
+        let p = qp(p_struct, "struct S;");
+        assert_eq!(unwrap_progress(p).extent, (0, 9))
     }
 
     #[test]
