@@ -831,6 +831,12 @@ pub enum BinaryOp {
     Add,
     AddAssign,
     Assign,
+    BitwiseAnd,
+    BitwiseAndAssign,
+    BitwiseOr,
+    BitwiseOrAssign,
+    BitwiseXor,
+    BitwiseXorAssign,
     BooleanAnd,
     BooleanOr,
     Div,
@@ -2635,6 +2641,9 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
         .one(map(literal(">="), |_| BinaryOp::GreaterThanOrEqual))
         .one(map(literal("<<"), |_| BinaryOp::ShiftLeft))
         .one(map(literal(">>"), |_| BinaryOp::ShiftRight))
+        .one(map(literal("&="), |_| BinaryOp::BitwiseAndAssign))
+        .one(map(literal("|="), |_| BinaryOp::BitwiseOrAssign))
+        .one(map(literal("^="), |_| BinaryOp::BitwiseXorAssign))
         .one(map(literal("+"), |_| BinaryOp::Add))
         .one(map(literal("-"), |_| BinaryOp::Sub))
         .one(map(literal("*"), |_| BinaryOp::Mul))
@@ -2643,6 +2652,9 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
         .one(map(literal("<"), |_| BinaryOp::LessThan))
         .one(map(literal(">"), |_| BinaryOp::GreaterThan))
         .one(map(literal("="), |_| BinaryOp::Assign))
+        .one(map(literal("&"), |_| BinaryOp::BitwiseAnd))
+        .one(map(literal("|"), |_| BinaryOp::BitwiseOr))
+        .one(map(literal("^"), |_| BinaryOp::BitwiseXor))
         .finish()
 }
 
@@ -4049,6 +4061,18 @@ mod test {
     fn expr_binary_op_shifting() {
         let p = qp(expression, "a >> b << c");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn expr_binary_op_bitwise() {
+        let p = qp(expression, "a & b | c ^ d");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
+    }
+
+    #[test]
+    fn expr_binary_op_bitwise_assign() {
+        let p = qp(expression, "a &= b |= c ^= d");
+        assert_eq!(unwrap_progress(p).extent(), (0, 16))
     }
 
     #[test]
