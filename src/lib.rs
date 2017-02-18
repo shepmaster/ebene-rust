@@ -430,7 +430,13 @@ pub struct Struct {
 }
 
 #[derive(Debug, Visit)]
-pub struct StructDefinitionBody {
+pub enum StructDefinitionBody {
+    Brace(StructDefinitionBodyBrace),
+    Tuple(StructDefinitionBodyTuple),
+}
+
+#[derive(Debug, Visit)]
+pub struct StructDefinitionBodyBrace {
     pub extent: Extent,
     fields: Vec<StructField>,
     whitespace: Vec<Whitespace>,
@@ -443,6 +449,13 @@ pub struct StructField {
     visibility: Option<Visibility>,
     name: Ident,
     typ: Type,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct StructDefinitionBodyTuple {
+    pub extent: Extent,
+    fields: Vec<Type>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1342,6 +1355,8 @@ pub trait Visitor {
     fn visit_string(&mut self, &String) {}
     fn visit_struct(&mut self, &Struct) {}
     fn visit_struct_definition_body(&mut self, &StructDefinitionBody) {}
+    fn visit_struct_definition_body_brace(&mut self, &StructDefinitionBodyBrace) {}
+    fn visit_struct_definition_body_tuple(&mut self, &StructDefinitionBodyTuple) {}
     fn visit_struct_field(&mut self, &StructField) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
@@ -1450,6 +1465,8 @@ pub trait Visitor {
     fn exit_string(&mut self, &String) {}
     fn exit_struct(&mut self, &Struct) {}
     fn exit_struct_definition_body(&mut self, &StructDefinitionBody) {}
+    fn exit_struct_definition_body_brace(&mut self, &StructDefinitionBodyBrace) {}
+    fn exit_struct_definition_body_tuple(&mut self, &StructDefinitionBodyTuple) {}
     fn exit_struct_field(&mut self, &StructField) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
@@ -2948,6 +2965,13 @@ fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
 }
 
 fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBody> {
+    pm.alternate(pt)
+        .one(map(struct_defn_body_brace, StructDefinitionBody::Brace))
+        .one(map(struct_defn_body_tuple, StructDefinitionBody::Tuple))
+        .finish()
+}
+
+fn struct_defn_body_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBodyBrace> {
     sequence!(pm, pt, {
         spt    = point;
         _      = literal("{");
@@ -2955,7 +2979,20 @@ fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Stru
         fields = zero_or_more(tail(",", struct_defn_field));
         ws     = optional_whitespace(ws);
         _      = literal("}");
-    }, |_, pt| StructDefinitionBody { extent: ex(spt, pt), fields, whitespace: ws })
+    }, |_, pt| StructDefinitionBodyBrace { extent: ex(spt, pt), fields, whitespace: ws })
+}
+
+fn struct_defn_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBodyTuple> {
+    sequence!(pm, pt, {
+        spt    = point;
+        _      = literal("(");
+        ws     = optional_whitespace(Vec::new());
+        fields = zero_or_more(tail(",", typ));
+        ws     = optional_whitespace(ws);
+        _      = literal(")");
+        ws     = optional_whitespace(ws);
+        _      = literal(";");
+    }, |_, pt| StructDefinitionBodyTuple { extent: ex(spt, pt), fields, whitespace: ws })
 }
 
 fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
@@ -4498,6 +4535,12 @@ mod test {
     fn struct_with_attributed_field() {
         let p = qp(p_struct, "struct S { #[foo(bar)] #[baz(quux)] field: u8 }");
         assert_eq!(unwrap_progress(p).extent, (0, 47))
+    }
+
+    #[test]
+    fn struct_with_tuple() {
+        let p = qp(p_struct, "struct S(u8);");
+        assert_eq!(unwrap_progress(p).extent, (0, 13))
     }
 
     #[test]
