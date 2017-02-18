@@ -138,6 +138,7 @@ pub enum Item {
     Impl(Impl),
     MacroRules(MacroRules),
     Module(Module),
+    Static(Static),
     Struct(Struct),
     Trait(Trait),
     TypeAlias(TypeAlias),
@@ -157,6 +158,7 @@ impl Item {
             Item::Impl(Impl { extent, .. })             |
             Item::MacroRules(MacroRules { extent, .. }) |
             Item::Module(Module { extent, .. })         |
+            Item::Static(Static { extent, .. })         |
             Item::Struct(Struct { extent, .. })         |
             Item::Trait(Trait { extent, .. })           |
             Item::TypeAlias(TypeAlias { extent, .. })   |
@@ -276,6 +278,7 @@ pub struct MacroRules {
 pub struct Generic {
     extent: Extent,
     name: Ident,
+    bounds: Option<TraitBounds>,
 }
 
 #[derive(Debug, Visit)]
@@ -420,6 +423,16 @@ pub struct Const {
 }
 
 #[derive(Debug, Visit)]
+pub struct Static {
+    extent: Extent,
+    visibility: Option<Visibility>,
+    name: Ident,
+    typ: Type,
+    value: Expression,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
 pub struct Struct {
     pub extent: Extent,
     visibility: Option<Visibility>,
@@ -522,8 +535,14 @@ pub struct TraitImplArgumentNamed {
 pub struct Where {
     pub extent: Extent,
     name: Type,
-    bounds: Vec<Type>,
+    bounds: TraitBounds,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitBounds {
+    pub extent: Extent,
+    types: Vec<Type>,
 }
 
 #[derive(Debug, Visit)]
@@ -828,9 +847,15 @@ pub struct WhileLet {
 #[derive(Debug, Visit)]
 pub struct Unary {
     extent: Extent,
-    op: Extent,
+    op: UnaryOp,
     value: Box<Expression>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Negate,
+    Not,
 }
 
 #[derive(Debug, Visit)]
@@ -1175,6 +1200,7 @@ pub struct ImplFunction {
 pub struct Crate {
     extent: Extent,
     name: Ident,
+    rename: Option<Ident>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1255,6 +1281,11 @@ impl Visit for Extent {
 
 // Can't imagine we'd ever want to count the number of additions;
 // without the lhs/rhs there's not much benefit.
+impl Visit for UnaryOp {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
 impl Visit for BinaryOp {
     fn visit<V>(&self, _v: &mut V)
         where V: Visitor
@@ -1353,6 +1384,7 @@ pub trait Visitor {
     fn visit_self_argument(&mut self, &SelfArgument) {}
     fn visit_slice(&mut self, &Slice) {}
     fn visit_statement(&mut self, &Statement) {}
+    fn visit_static(&mut self, &Static) {}
     fn visit_string(&mut self, &String) {}
     fn visit_struct(&mut self, &Struct) {}
     fn visit_struct_definition_body(&mut self, &StructDefinitionBody) {}
@@ -1361,6 +1393,7 @@ pub trait Visitor {
     fn visit_struct_field(&mut self, &StructField) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
+    fn visit_trait_bounds(&mut self, &TraitBounds) {}
     fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
     fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
@@ -1463,6 +1496,7 @@ pub trait Visitor {
     fn exit_self_argument(&mut self, &SelfArgument) {}
     fn exit_slice(&mut self, &Slice) {}
     fn exit_statement(&mut self, &Statement) {}
+    fn exit_static(&mut self, &Static) {}
     fn exit_string(&mut self, &String) {}
     fn exit_struct(&mut self, &Struct) {}
     fn exit_struct_definition_body(&mut self, &StructDefinitionBody) {}
@@ -1471,6 +1505,7 @@ pub trait Visitor {
     fn exit_struct_field(&mut self, &StructField) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
+    fn exit_trait_bounds(&mut self, &TraitBounds) {}
     fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
     fn exit_trait_impl_function(&mut self, &TraitImplFunction) {}
@@ -1611,6 +1646,7 @@ fn item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Item> {
         .one(map(module, Item::Module))
         .one(map(p_enum, Item::Enum))
         .one(map(p_impl, Item::Impl))
+        .one(map(p_static, Item::Static))
         .one(map(p_struct, Item::Struct))
         .one(map(p_trait, Item::Trait))
         .one(map(p_use, Item::Use))
@@ -1760,6 +1796,7 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "pub"    |
         "ref"    |
         "return" |
+        "static" |
         "struct" |
         "trait"  |
         "type"   |
@@ -1794,7 +1831,19 @@ fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
 }
 
 fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
-    ident(pm, pt).map(|name| Generic { extent: name.extent, name })
+    sequence!(pm, pt, {
+        spt    = point;
+        name   = ident;
+        bounds = optional(generic_declaration_bounds);
+    }, |_, pt| Generic { extent: ex(spt, pt), name, bounds })
+}
+
+fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
+    sequence!(pm, pt, {
+        _      = literal(":");
+        _x     = optional_whitespace(Vec::new());
+        bounds = trait_bounds;
+    }, |_, _| bounds)
 }
 
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
@@ -1852,8 +1901,15 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
         name   = typ;
         _      = literal(":");
         ws     = optional_whitespace(Vec::new());
-        bounds = one_or_more(tail("+", typ));
+        bounds = trait_bounds;
     }, |_, pt| Where { extent: ex(spt, pt), name, bounds, whitespace: ws })
+}
+
+fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
+    sequence!(pm, pt, {
+        spt = point;
+        types = one_or_more(tail("+", typ));
+    }, |_, _| TraitBounds { extent: ex(spt, pt), types })
 }
 
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
@@ -2560,7 +2616,7 @@ fn expr_dereference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Dere
 fn expr_unary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Unary> {
     sequence!(pm, pt, {
         spt   = point;
-        op    = ext(literal("!"));
+        op    = expr_unary_op;
         ws    = optional_whitespace(Vec::new());
         value = expression;
     }, |_, pt| Unary {
@@ -2569,6 +2625,13 @@ fn expr_unary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Unary> {
         value: Box::new(value),
         whitespace: ws
     })
+}
+
+fn expr_unary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UnaryOp> {
+    pm.alternate(pt)
+        .one(map(literal("!"), |_| UnaryOp::Not))
+        .one(map(literal("-"), |_| UnaryOp::Negate))
+        .finish()
 }
 
 fn expr_box<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionBox> {
@@ -3003,8 +3066,9 @@ fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Str
         attributes = zero_or_more(struct_defn_field_attr);
         visibility = optional(visibility);
         name       = ident;
-        _          = literal(":");
         ws         = optional_whitespace(Vec::new());
+        _          = literal(":");
+        ws         = optional_whitespace(ws);
         typ        = typ;
     }, |_, pt| StructField {
         extent: ex(spt, pt),
@@ -3235,10 +3299,32 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> 
 }
 
 fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
+    p_const_static(
+        pm, pt, "const",
+        |extent, visibility, name, typ, value, whitespace| {
+            Const { extent, visibility, name, typ, value, whitespace }
+        }
+    )
+}
+
+fn p_static<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Static> {
+    p_const_static(
+        pm, pt, "static",
+        |extent, visibility, name, typ, value, whitespace| {
+            Static { extent, visibility, name, typ, value, whitespace }
+        }
+    )
+}
+
+fn p_const_static<'s, F, T>
+    (pm: &mut Master<'s>, pt: Point<'s>, keyword: &'static str, constructor: F)
+     -> Progress<'s, T>
+    where F: FnOnce(Extent, Option<Visibility>, Ident, Type, Expression, Vec<Whitespace>) -> T
+{
     sequence!(pm, pt, {
         spt        = point;
         visibility = optional(visibility);
-        _          = literal("const");
+        _          = literal(keyword);
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
@@ -3250,27 +3336,32 @@ fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
         ws         = optional_whitespace(ws);
         value      = expression;
         _          = literal(";");
-    }, |_, pt| Const {
-        extent: ex(spt, pt),
-        visibility,
-        name,
-        typ,
-        value,
-        whitespace: ws,
+    }, |_, pt| {
+        constructor(ex(spt, pt), visibility, name, typ, value, ws)
     })
 }
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("extern");
-        ws   = whitespace;
-        _    = literal("crate");
-        ws   = append_whitespace(ws);
+        spt    = point;
+        _      = literal("extern");
+        ws     = whitespace;
+        _      = literal("crate");
+        ws     = append_whitespace(ws);
+        name   = ident;
+        rename = optional(extern_crate_rename);
+        ws     = optional_whitespace(ws);
+        _      = literal(";");
+    }, |_, pt| Crate { extent: ex(spt, pt), name, rename, whitespace: ws })
+}
+
+fn extern_crate_rename<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+    sequence!(pm, pt, {
+        _x   = whitespace;
+        _    = literal("as");
+        _x   = whitespace;
         name = ident;
-        ws   = optional_whitespace(ws);
-        _    = literal(";");
-    }, |_, pt| Crate { extent: ex(spt, pt), name, whitespace: ws })
+    }, |_, _| name)
 }
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
@@ -3513,8 +3604,16 @@ fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
         spt  = point;
         _    = literal("'");
         ws   = optional_whitespace(Vec::new());
-        name = ident;
+        name = ident_or_static;
     }, |_, pt| Lifetime { extent: ex(spt, pt), name, whitespace: ws })
+}
+
+// TODO: Should this be an enum?
+fn ident_or_static<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+    pm.alternate(pt)
+        .one(map(ext(literal("static")), |extent| Ident { extent }))
+        .one(ident)
+        .finish()
 }
 
 fn whitespace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Whitespace>> {
@@ -3687,6 +3786,30 @@ mod test {
     fn item_const_public() {
         let p = qp(item, "pub const FOO: u8 = 42;");
         assert_eq!(unwrap_progress(p).extent(), (0, 23))
+    }
+
+    #[test]
+    fn item_static() {
+        let p = qp(item, r#"static FOO: &'static str = "hi";"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 32))
+    }
+
+    #[test]
+    fn item_static_public() {
+        let p = qp(item, "pub static FOO: u8 = 42;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 24))
+    }
+
+    #[test]
+    fn item_extern_crate() {
+        let p = qp(item, "extern crate foo;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 17))
+    }
+
+    #[test]
+    fn item_extern_crate_rename() {
+        let p = qp(item, "extern crate foo as bar;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 24))
     }
 
     #[test]
@@ -4118,6 +4241,12 @@ mod test {
     }
 
     #[test]
+    fn expr_binary_op_math() {
+        let p = qp(expression, "a + b - c / d % e");
+        assert_eq!(unwrap_progress(p).extent(), (0, 17))
+    }
+
+    #[test]
     fn expr_binary_op_boolean_logic() {
         let p = qp(expression, "a && b || c");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
@@ -4298,8 +4427,14 @@ mod test {
     }
 
     #[test]
-    fn expr_not() {
+    fn expr_unary_not() {
         let p = qp(expression, "!foo");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_unary_negate() {
+        let p = qp(expression, "-foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
     }
 
@@ -4516,6 +4651,18 @@ mod test {
     }
 
     #[test]
+    fn struct_with_fields_with_no_space() {
+        let p = qp(p_struct, "struct S{a:u8}");
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
+    }
+
+    #[test]
+    fn struct_with_fields_with_all_space() {
+        let p = qp(p_struct, "struct S { a : u8 }");
+        assert_eq!(unwrap_progress(p).extent, (0, 19))
+    }
+
+    #[test]
     fn struct_with_generic_declarations() {
         let p = qp(p_struct, "struct S<T> { field: Option<T> }");
         assert_eq!(unwrap_progress(p).extent, (0, 32))
@@ -4592,6 +4739,30 @@ mod test {
     fn ident_can_not_be_keyword() {
         let p = qp(ident, "for");
         assert_eq!(unwrap_progress_err(p), (0, vec![Error::ExpectedIdentifier]))
+    }
+
+    #[test]
+    fn lifetime_ident() {
+        let p = qp(lifetime, "'a");
+        assert_eq!(unwrap_progress(p).extent, (0, 2))
+    }
+
+    #[test]
+    fn lifetime_static() {
+        let p = qp(lifetime, "'static");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn generic_declarations_() {
+        let p = qp(generic_declarations, "<A>");
+        assert_eq!(unwrap_progress(p).extent, (0, 3))
+    }
+
+    #[test]
+    fn generic_declarations_allow_bounds() {
+        let p = qp(generic_declarations, "<A: Foo>");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
