@@ -195,6 +195,7 @@ pub struct Comment {
 #[derive(Debug, Visit)]
 pub struct Use {
     extent: Extent,
+    visibility: Option<Visibility>,
     path: Vec<Ident>,
     tail: UseTail,
     whitespace: Vec<Whitespace>,
@@ -235,6 +236,7 @@ pub struct Function {
 pub struct FunctionHeader {
     pub extent: Extent,
     visibility: Option<Visibility>,
+    is_unsafe: Option<Extent>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
@@ -519,10 +521,17 @@ pub struct Block {
 }
 
 #[derive(Debug, Visit)]
+pub struct UnsafeBlock {
+    extent: Extent,
+    body: Box<Block>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
 pub enum Statement {
     Explicit(Expression),
     Implicit(Expression),
-    Use(Use),
+    Item(Item),
 }
 
 impl Statement {
@@ -532,7 +541,7 @@ impl Statement {
         match *self {
             Explicit(ref e) |
             Implicit(ref e) => e.extent(),
-            Use(ref u) => u.extent,
+            Item(ref i) => i.extent(),
         }
     }
 
@@ -589,6 +598,7 @@ pub enum Expression {
     Tuple(Tuple),
     TryOperator(TryOperator),
     Unary(Unary),
+    UnsafeBlock(UnsafeBlock),
     Value(Value),
     While(While),
     WhileLet(WhileLet),
@@ -625,6 +635,7 @@ impl Expression {
             Expression::TryOperator(TryOperator { extent, .. })   |
             Expression::Tuple(Tuple { extent, .. })               |
             Expression::Unary(Unary { extent, .. })               |
+            Expression::UnsafeBlock(UnsafeBlock { extent, .. })   |
             Expression::Value(Value { extent, .. })               |
             Expression::While(While { extent, .. })               |
             Expression::WhileLet(WhileLet { extent, .. })         => extent,
@@ -796,6 +807,8 @@ pub enum BinaryOp {
     Mul,
     MulAssign,
     NotEqual,
+    ShiftLeft,
+    ShiftRight,
     Sub,
     SubAssign,
 }
@@ -1294,6 +1307,7 @@ pub trait Visitor {
     fn visit_type_slice(&mut self, &TypeSlice) {}
     fn visit_type_tuple(&mut self, &TypeTuple) {}
     fn visit_unary(&mut self, &Unary) {}
+    fn visit_unsafe_block(&mut self, &UnsafeBlock) {}
     fn visit_use(&mut self, &Use) {}
     fn visit_use_tail(&mut self, &UseTail) {}
     fn visit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1396,6 +1410,7 @@ pub trait Visitor {
     fn exit_type_slice(&mut self, &TypeSlice) {}
     fn exit_type_tuple(&mut self, &TypeTuple) {}
     fn exit_unary(&mut self, &Unary) {}
+    fn exit_unsafe_block(&mut self, &UnsafeBlock) {}
     fn exit_use(&mut self, &Use) {}
     fn exit_use_tail(&mut self, &UseTail) {}
     fn exit_use_tail_glob(&mut self, &UseTailGlob) {}
@@ -1568,6 +1583,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
     sequence!(pm, pt, {
         spt               = point;
         visibility        = optional(visibility);
+        is_unsafe         = optional(function_header_unsafe);
         _                 = literal("fn");
         ws                = whitespace;
         name              = ident;
@@ -1583,6 +1599,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         FunctionHeader {
             extent: ex(spt, pt),
             visibility,
+            is_unsafe,
             name,
             generics,
             arguments,
@@ -1590,6 +1607,14 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
             wheres: wheres.unwrap_or_else(Vec::new),
             whitespace: ws,
         }})
+}
+
+fn function_header_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        spt = point;
+        _   = literal("unsafe");
+        _x  = whitespace;
+    }, |_, pt| ex(spt, pt))
 }
 
 // TODO: We should support whitespace before the `!`
@@ -1656,6 +1681,7 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
         "trait"  |
         "type"   |
         "use"    |
+        "unsafe" |
         "where"  |
         "while"  => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
@@ -1782,7 +1808,7 @@ fn statement_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, State
     pm.alternate(pt)
         .one(explicit_statement)
         .one(implicit_statement)
-        .one(map(p_use, Statement::Use))
+        .one(map(item, Statement::Item))
         .finish()
 }
 
@@ -1808,6 +1834,7 @@ fn expression_ending_in_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         .one(map(expr_while, Expression::While))
         .one(map(expr_while_let, Expression::WhileLet))
         .one(map(expr_match, Expression::Match))
+        .one(map(expr_unsafe_block, Expression::UnsafeBlock))
         .one(map(expr_block, Expression::Block))
         .finish()
 }
@@ -2344,6 +2371,15 @@ fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>
     block(pm, pt).map(Box::new)
 }
 
+fn expr_unsafe_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UnsafeBlock> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("unsafe");
+        ws    = optional_whitespace(Vec::new());
+        body = block;
+    }, |_, pt| UnsafeBlock { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
+}
+
 fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number> {
     pure_number(pm, pt).map(|extent| Number { extent })
 }
@@ -2496,6 +2532,8 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
         .one(map(literal("%="), |_| BinaryOp::ModAssign))
         .one(map(literal("<="), |_| BinaryOp::LessThanOrEqual))
         .one(map(literal(">="), |_| BinaryOp::GreaterThanOrEqual))
+        .one(map(literal("<<"), |_| BinaryOp::ShiftLeft))
+        .one(map(literal(">>"), |_| BinaryOp::ShiftRight))
         .one(map(literal("+"), |_| BinaryOp::Add))
         .one(map(literal("-"), |_| BinaryOp::Sub))
         .one(map(literal("*"), |_| BinaryOp::Mul))
@@ -3058,15 +3096,16 @@ fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("use");
-        ws   = whitespace;
-        _    = optional(literal("::"));
-        path = zero_or_more(use_path_component);
-        tail = use_tail;
-        _    = literal(";");
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("use");
+        ws         = whitespace;
+        _          = optional(literal("::"));
+        path       = zero_or_more(use_path_component);
+        tail       = use_tail;
+        _          = literal(";");
     }, move |_, pt| {
-        Use { extent: ex(spt, pt), path, tail, whitespace: ws }
+        Use { extent: ex(spt, pt), visibility, path, tail, whitespace: ws }
     })
 }
 
@@ -3346,6 +3385,12 @@ mod test {
     }
 
     #[test]
+    fn parse_use_public() {
+        let p = qp(p_use, "pub use foo::Bar;");
+        assert_eq!(unwrap_progress(p).extent, (0, 17))
+    }
+
+    #[test]
     fn parse_use_glob() {
         let p = qp(p_use, "use foo::*;");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
@@ -3616,6 +3661,12 @@ mod test {
     }
 
     #[test]
+    fn fn_with_unsafe_qualifier() {
+        let p = qp(function_header, "unsafe fn foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
     fn block_promotes_implicit_statement_to_expression() {
         let p = qp(block, "{ if a {} }");
         let p = unwrap_progress(p);
@@ -3632,6 +3683,12 @@ mod test {
     #[test]
     fn statement_use() {
         let p = qp(statement, "use foo::Bar;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
+    }
+
+    #[test]
+    fn statement_any_item() {
+        let p = qp(statement, "struct Foo {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
@@ -3792,6 +3849,12 @@ mod test {
     }
 
     #[test]
+    fn expr_unsafe_block() {
+        let p = qp(expression, "unsafe {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
     fn expr_if_() {
         let p = qp(expression, "if a {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
@@ -3854,6 +3917,12 @@ mod test {
     #[test]
     fn expr_binary_op_boolean_logic() {
         let p = qp(expression, "a && b || c");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn expr_binary_op_shifting() {
+        let p = qp(expression, "a >> b << c");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
