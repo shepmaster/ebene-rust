@@ -740,28 +740,46 @@ impl Number {
     }
 }
 
+#[derive(Debug)]
+pub enum NumberSuffix {
+    U8,
+    U16,
+    U32,
+    U64,
+    Usize,
+    I8,
+    I16,
+    I32,
+    I64,
+    Isize,
+}
+
 #[derive(Debug, Visit)]
 pub struct NumberBinary {
     extent: Extent,
     value: Extent,
+    suffix: Option<NumberSuffix>,
 }
 
 #[derive(Debug, Visit)]
 pub struct NumberDecimal {
     extent: Extent,
     value: Extent,
+    suffix: Option<NumberSuffix>,
 }
 
 #[derive(Debug, Visit)]
 pub struct NumberHexadecimal {
     extent: Extent,
     value: Extent,
+    suffix: Option<NumberSuffix>,
 }
 
 #[derive(Debug, Visit)]
 pub struct NumberOctal {
     extent: Extent,
     value: Extent,
+    suffix: Option<NumberSuffix>,
 }
 
 #[derive(Debug, Visit)]
@@ -1312,6 +1330,13 @@ impl Visit for PatternRangeComponent {
 
 // Knowing if an unknown pointer is mutable has no benefit.
 impl Visit for TypePointerKind {
+    fn visit<V>(&self, _v: &mut V)
+        where V: Visitor
+    {}
+}
+
+// Knowing if an unknown number literal is usize? Seems unlikely
+impl Visit for NumberSuffix {
     fn visit<V>(&self, _v: &mut V)
         where V: Visitor
     {}
@@ -2590,18 +2615,22 @@ fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number
 
 fn number_literal_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberBinary> {
     sequence!(pm, pt, {
-        spt   = point;
-        _     = literal("0b");
-        _     = zero_or_more(literal("_"));
-        value = number_literal_base(16);
-    }, |_, pt| NumberBinary { extent: ex(spt, pt), value: value })
+        spt    = point;
+        _      = literal("0b");
+        _      = zero_or_more(literal("_"));
+        value  = number_literal_base(16);
+        _      = zero_or_more(literal("_"));
+        suffix = optional(number_literal_suffix);
+    }, |_, pt| NumberBinary { extent: ex(spt, pt), value, suffix })
 }
 
 fn number_literal_decimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberDecimal> {
     sequence!(pm, pt, {
         spt   = point;
         value = number_literal_base(10);
-    }, |_, pt| NumberDecimal { extent: ex(spt, pt), value: value })
+        _      = zero_or_more(literal("_"));
+        suffix = optional(number_literal_suffix);
+    }, |_, pt| NumberDecimal { extent: ex(spt, pt), value, suffix })
 }
 
 fn number_literal_hexadecimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberHexadecimal> {
@@ -2610,7 +2639,9 @@ fn number_literal_hexadecimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         _     = literal("0x");
         _     = zero_or_more(literal("_"));
         value = number_literal_base(16);
-    }, |_, pt| NumberHexadecimal { extent: ex(spt, pt), value: value })
+        _      = zero_or_more(literal("_"));
+        suffix = optional(number_literal_suffix);
+    }, |_, pt| NumberHexadecimal { extent: ex(spt, pt), value, suffix })
 }
 
 fn number_literal_octal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberOctal> {
@@ -2619,7 +2650,9 @@ fn number_literal_octal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
         _     = literal("0o");
         _     = zero_or_more(literal("_"));
         value = number_literal_base(16);
-    }, |_, pt| NumberOctal { extent: ex(spt, pt), value: value })
+        _      = zero_or_more(literal("_"));
+        suffix = optional(number_literal_suffix);
+    }, |_, pt| NumberOctal { extent: ex(spt, pt), value, suffix })
 }
 
 fn number_literal_base<'s>(base: u32) ->
@@ -2635,6 +2668,21 @@ fn number_literal_base<'s>(base: u32) ->
         split_point_at_non_zero_offset(pt, idx, Error::ExpectedNumber)
             .map(|(_, ex)| ex)
     }
+}
+
+fn number_literal_suffix<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberSuffix> {
+    pm.alternate(pt)
+        .one(map(literal("u8"), |_| NumberSuffix::U8))
+        .one(map(literal("u16"), |_| NumberSuffix::U16))
+        .one(map(literal("u32"), |_| NumberSuffix::U32))
+        .one(map(literal("u64"), |_| NumberSuffix::U64))
+        .one(map(literal("usize"), |_| NumberSuffix::Usize))
+        .one(map(literal("i8"), |_| NumberSuffix::I8))
+        .one(map(literal("i16"), |_| NumberSuffix::I16))
+        .one(map(literal("i32"), |_| NumberSuffix::I32))
+        .one(map(literal("i64"), |_| NumberSuffix::I64))
+        .one(map(literal("isize"), |_| NumberSuffix::Isize))
+        .finish()
 }
 
 fn pure_number<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -4550,6 +4598,30 @@ mod test {
     fn number_with_prefix_can_have_underscore_after_prefix() {
         let p = qp(number_literal, "0x_123");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn number_binary_can_have_suffix() {
+        let p = qp(number_literal, "0b111u8");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn number_decimal_can_have_suffix() {
+        let p = qp(number_literal, "123i16");
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn number_hexadecimal_can_have_suffix() {
+        let p = qp(number_literal, "0xBEEF__u32");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn number_octal_can_have_suffix() {
+        let p = qp(number_literal, "0o777_isize");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
