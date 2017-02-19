@@ -136,6 +136,7 @@ pub enum Item {
     ExternCrate(Crate),
     Function(Function),
     Impl(Impl),
+    MacroCall(MacroCall),
     MacroRules(MacroRules),
     Module(Module),
     Static(Static),
@@ -156,6 +157,7 @@ impl Item {
             Item::ExternCrate(Crate { extent, .. })     |
             Item::Function(Function { extent, .. })     |
             Item::Impl(Impl { extent, .. })             |
+            Item::MacroCall(MacroCall { extent, .. })   |
             Item::MacroRules(MacroRules { extent, .. }) |
             Item::Module(Module { extent, .. })         |
             Item::Static(Static { extent, .. })         |
@@ -1642,6 +1644,7 @@ fn item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Item> {
         .one(map(p_const, Item::Const))
         .one(map(extern_crate, Item::ExternCrate))
         .one(map(function, Item::Function))
+        .one(map(item_macro_call, Item::MacroCall))
         .one(map(macro_rules, Item::MacroRules))
         .one(map(module, Item::Module))
         .one(map(p_enum, Item::Enum))
@@ -2082,6 +2085,7 @@ fn expr_macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Macro
         spt  = point;
         name = ident;
         _    = literal("!");
+        _x   = optional_whitespace(Vec::new());
         args = expr_macro_call_args;
     }, |_, pt| MacroCall { extent: ex(spt, pt), name, args })
 }
@@ -2090,6 +2094,7 @@ fn expr_macro_call_args<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     pm.alternate(pt)
         .one(expr_macro_call_paren)
         .one(expr_macro_call_square)
+        .one(expr_macro_call_curly)
         .finish()
 }
 
@@ -2106,6 +2111,59 @@ fn expr_macro_call_square<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
         _    = literal("[");
         args = parse_nested_until('[', ']');
         _    = literal("]");
+    }, |_, _| args)
+}
+
+fn expr_macro_call_curly<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        _    = literal("{");
+        args = parse_nested_until('{', '}');
+        _    = literal("}");
+    }, |_, _| args)
+}
+
+// TODO: There's a good amount of duplication here; revisit and DRY up
+fn item_macro_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MacroCall> {
+    sequence!(pm, pt, {
+        spt  = point;
+        name = ident;
+        _    = literal("!");
+        _x   = optional_whitespace(Vec::new());
+        args = item_macro_call_args;
+    }, |_, pt| MacroCall { extent: ex(spt, pt), name, args })
+}
+
+fn item_macro_call_args<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    pm.alternate(pt)
+        .one(item_macro_call_paren)
+        .one(item_macro_call_square)
+        .one(item_macro_call_curly)
+        .finish()
+}
+
+fn item_macro_call_paren<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        _    = literal("(");
+        args = parse_nested_until('(', ')');
+        _    = literal(")");
+        _    = literal(";");
+    }, |_, _| args)
+}
+
+fn item_macro_call_square<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        _    = literal("[");
+        args = parse_nested_until('[', ']');
+        _    = literal("]");
+        _    = literal(";");
+    }, |_, _| args)
+}
+
+fn item_macro_call_curly<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        _    = literal("{");
+        args = parse_nested_until('{', '}');
+        _    = literal("}");
     }, |_, _| args)
 }
 
@@ -3705,6 +3763,24 @@ mod test {
     }
 
     #[test]
+    fn item_macro_call_with_parens() {
+        let p = qp(item, "foo!();");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn item_macro_call_with_square_brackets() {
+        let p = qp(item, "foo![];");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn item_macro_call_with_curly_braces() {
+        let p = qp(item, "foo! { }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
     fn item_mod() {
         let p = qp(module, "mod foo { }");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
@@ -4286,6 +4362,12 @@ mod test {
     fn expr_macro_call_with_square_brackets() {
         let p = qp(expression, "vec![]");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn expr_macro_call_with_curly_brackets() {
+        let p = qp(expression, "foo! { }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
