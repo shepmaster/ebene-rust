@@ -215,7 +215,7 @@ dependencies = [
 [[package]]
 name = "peresil"
 version = "0.3.0"
-source = "git+https://github.com/shepmaster/peresil#1c828243b62149cc091e8b5ce037711eb8449ab6"
+source = "git+https://github.com/shepmaster/peresil#6049cb14d68534eaa9f10b7bf2208978d56b6c84"
 
 [[package]]
 name = "phf"
