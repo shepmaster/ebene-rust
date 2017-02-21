@@ -19,8 +19,18 @@ use peresil::combinators::*;
 // create an error type
 // definte type aliases
 type Point<'s> = peresil::StringPoint<'s>;
-type Master<'s> = peresil::ParseMaster<Point<'s>, Error>;
+type Master<'s> = peresil::ParseMaster<Point<'s>, Error, State>;
 type Progress<'s, T> = peresil::Progress<Point<'s>, T, Error>;
+
+#[derive(Debug, Default)]
+struct State {
+    // Constructs like `if expr {}` will greedily match `StructName
+    // {}` as a structure literal expression and then fail because the
+    // body of the `if` isn't found. In these contexts, we disable
+    // struct literals. You can re-enable them by entering something
+    // like parenthesis or a block.
+    ignore_struct_literals: bool,
+}
 
 // define an error type - emphasis on errors. Need to implement Recoverable (more to discuss.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -84,7 +94,7 @@ impl<'a> fmt::Display for ErrorDetailText<'a> {
 
 pub fn parse_rust_file(file: &str) -> Result<File, ErrorDetail> {
     let mut pt = Point::new(file);
-    let mut pm = Master::new();
+    let mut pm = Master::with_state(State::default());
     let mut items = Vec::new();
 
     loop {
@@ -2064,7 +2074,7 @@ fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
         _         = literal("{");
         ws        = optional_whitespace(Vec::new());
         mut stmts = zero_or_more(statement);
-        mut expr  = optional(expression);
+        mut expr  = allow_struct_literals(optional(expression));
         ws        = optional_whitespace(ws);
         _         = literal("}");
     }, |_, pt| {
@@ -2099,7 +2109,7 @@ fn statement_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, State
 
 fn explicit_statement<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Statement> {
     sequence!(pm, pt, {
-        expr = expression;
+        expr = allow_struct_literals(expression);
         _  = literal(";");
     }, |_, _| Statement::Explicit(expr))
 }
@@ -2381,42 +2391,54 @@ fn expr_if_else_end<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Blo
     }, |_, _| (else_body, ws))
 }
 
-// `expr {}` greedily matches `StructName {}` as a structure literal
-// and then fails because the body isn't found. Since this could be
-// valid if `StructName` were a local variable, we force backtracking
-// if we didn't find the body. This means we duplicate some grammar
-// from `expression`.
-fn expr_followed_by_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
-    pm.alternate(pt)
-        .one(expr_followed_by_block_expr)
-        .one(expr_followed_by_block_simple)
-        .finish()
+// To check if a given subexpression should re-allow struct literals,
+// test something like this with the official compiler:
+//
+// ```rust
+// fn main() {
+//     struct Foo {a: u8}
+//     if $parent_expression Foo {a: 42} {}
+// }
+// ```
+//
+// In general, anything that is inside some kind of enclosing
+// container should re-enable them because it is no longer ambiguous.
+fn allow_struct_literals<'s, F, T>(parser: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    set_ignore_struct_literals(parser, false)
 }
 
-fn expr_followed_by_block_expr<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
+fn disallow_struct_literals<'s, F, T>(parser: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    set_ignore_struct_literals(parser, true)
+}
+
+fn set_ignore_struct_literals<'s, F, T>(parser: F, ignore: bool) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        let old = pm.state.ignore_struct_literals;
+        pm.state.ignore_struct_literals = ignore;
+
+        let res = parser(pm, pt);
+
+        pm.state.ignore_struct_literals = old;
+
+        res
+    }
+}
+
+fn expr_followed_by_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
     sequence!(pm, pt, {
-        condition = expression;
+        condition = disallow_struct_literals(expression);
         _x        = optional(whitespace);
         body      = block;
     }, |_, _| (condition, body))
-}
-
-fn expr_followed_by_block_simple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Block)> {
-    sequence!(pm, pt, {
-        spt       = point;
-        condition = pathed_ident;
-        mpt       = point;
-        ws        = optional_whitespace(Vec::new());
-        body      = block;
-    }, |_, _| {
-        let condition = Expression::Value(Value {
-            extent: ex(spt, mpt),
-            name: condition,
-            literal: None,
-            whitespace: ws,
-        });
-        (condition, body)
-    })
 }
 
 fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop> {
@@ -2526,7 +2548,7 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
         ws      = optional_whitespace(ws);
         _       = literal("=>");
         ws      = optional_whitespace(ws);
-        body    = expression;
+        body    = allow_struct_literals(expression);
         ws      = optional_whitespace(ws);
         _       = optional(literal(","));
         ws      = optional_whitespace(ws);
@@ -2537,7 +2559,7 @@ fn match_arm_guard<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
     sequence!(pm, pt, {
         _     = literal("if");
         _x    = whitespace;
-        guard = expression;
+        guard = allow_struct_literals(expression);
     }, |_, _| guard)
 }
 
@@ -2545,7 +2567,7 @@ fn expr_tuple_or_parenthetical<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
     sequence!(pm, pt, {
         spt    = point;
         _      = literal("(");
-        values = zero_or_more_tailed(",", expression);
+        values = allow_struct_literals(zero_or_more_tailed(",", expression));
         _      = literal(")");
     }, move |_, pt| {
         let extent = ex(spt, pt);
@@ -2576,7 +2598,7 @@ fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("[");
-        members = zero_or_more_tailed_values(",", expression);
+        members = allow_struct_literals(zero_or_more_tailed_values(",", expression));
         _       = literal("]");
     }, |_, pt| Array { extent: ex(spt, pt), members })
 }
@@ -2886,12 +2908,19 @@ fn expr_box<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionBo
 }
 
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
-    sequence!(pm, pt, {
-        spt           = point;
-        name          = pathed_ident;
-        ws            = optional_whitespace(Vec::new());
-        (literal, ws) = concat_whitespace(ws, optional(expr_value_struct_literal));
-    }, |_, pt| Value { extent: ex(spt, pt), name, literal, whitespace: ws } )
+    if pm.state.ignore_struct_literals {
+        sequence!(pm, pt, {
+            spt           = point;
+            name          = pathed_ident;
+        }, |_, pt| Value { extent: ex(spt, pt), name, literal: None, whitespace: Vec::new() } )
+    } else {
+        sequence!(pm, pt, {
+            spt           = point;
+            name          = pathed_ident;
+            ws            = optional_whitespace(Vec::new());
+            (literal, ws) = concat_whitespace(ws, optional(expr_value_struct_literal));
+        }, |_, pt| Value { extent: ex(spt, pt), name, literal, whitespace: ws } )
+    }
 }
 
 fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<StructLiteralField>, Vec<Whitespace>)> {
@@ -2926,7 +2955,7 @@ fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>)
     sequence!(pm, pt, {
         _     = literal(":");
         ws    = optional_whitespace(Vec::new());
-        value = expression;
+        value = allow_struct_literals(expression);
     }, |_, _| (value, ws))
 }
 
@@ -2935,7 +2964,7 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Fu
         spt  = point;
         name = pathed_ident;
         _    = literal("(");
-        args = zero_or_more_tailed_values(",", expression);
+        args = allow_struct_literals(zero_or_more_tailed_values(",", expression));
         _    = literal(")");
     }, |_, pt| FunctionCall { extent: ex(spt, pt), name, args })
 }
@@ -3011,7 +3040,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
         name      = ident;
         turbofish = optional(turbofish);
         _         = literal("(");
-        args      = zero_or_more_tailed_values(",", expression);
+        args      = allow_struct_literals(zero_or_more_tailed_values(",", expression));
         _         = literal(")");
     }, |_, _| ExpressionTail::MethodCall { name, turbofish, args, whitespace: ws })
 }
@@ -3019,7 +3048,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _         = literal("(");
-        args      = zero_or_more_tailed_values(",", expression);
+        args      = allow_struct_literals(zero_or_more_tailed_values(",", expression));
         _         = literal(")");
     }, |_, _| ExpressionTail::Call { args })
 }
@@ -3049,7 +3078,7 @@ fn expr_tail_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
     sequence!(pm, pt, {
         _     = literal("[");
         ws    = optional_whitespace(Vec::new());
-        range = expression;
+        range = allow_struct_literals(expression);
         ws    = optional_whitespace(ws);
         _     = literal("]");
     }, |_, _| ExpressionTail::Slice { range: Box::new(range), whitespace: ws })
@@ -3888,7 +3917,7 @@ mod test {
         where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
     {
         // TODO: Master::once()?
-        let mut pm = Master::new();
+        let mut pm = Master::with_state(State::default());
         let pt = Point::new(s);
         let r = f(&mut pm, pt);
         pm.finish(r)
@@ -4750,6 +4779,32 @@ mod test {
     fn expr_box() {
         let p = qp(expression, "box foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn expr_followed_by_block_disallows_struct_literal() {
+        let p = qp(expr_followed_by_block, "a {}");
+        let (e, b) = unwrap_progress(p);
+        assert_eq!(e.extent(), (0, 1));
+        assert_eq!(b.extent, (2, 4));
+    }
+
+    #[test]
+    fn expr_followed_by_block_with_compound_condition() {
+        let p = qp(expr_followed_by_block, "a && b {}");
+        let (e, b) = unwrap_progress(p);
+        assert_eq!(e.extent(), (0, 6));
+        assert_eq!(b.extent, (7, 9));
+    }
+
+    #[test]
+    fn expr_followed_by_block_with_parenthesized_struct_literal() {
+        let p = qp(expr_followed_by_block, "(a {}) {}");
+        let (e, b) = unwrap_progress(p);
+        assert_eq!(e.extent(), (0, 6));
+        let p = e.into_parenthetical().unwrap();
+        assert!(p.expression.is_value());
+        assert_eq!(b.extent, (7, 9));
     }
 
     #[test]
