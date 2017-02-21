@@ -4449,7 +4449,7 @@ mod test {
     }
 
     #[test]
-    fn expr_value_struct_literal_shortahnd() {
+    fn expr_value_struct_literal_shorthand() {
         let p = qp(expression, "Point { a }");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
