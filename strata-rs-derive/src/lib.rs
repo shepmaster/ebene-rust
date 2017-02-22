@@ -116,3 +116,105 @@ fn ignore_field_inner(item: &syn::NestedMetaItem) -> bool {
         _ => false
     }
 }
+
+#[proc_macro_derive(Decompose)]
+pub fn decompose_derive(input: TokenStream) -> TokenStream {
+    // Construct a string representation of the type definition
+    let s = input.to_string();
+
+    // Parse the string representation
+    let ast = syn::parse_macro_input(&s).expect("Unable to parse input");
+
+    // Build the impl
+    let gen = impl_decompose(&ast);
+
+    // Return the generated impl
+    gen.parse().expect("Unable to generate")
+}
+
+fn impl_decompose(ast: &syn::MacroInput) -> quote::Tokens {
+    use syn::{Ident, Body, VariantData, Ty};
+
+    let name = &ast.ident;
+
+    let e = match ast.body {
+        Body::Enum(ref e) => e,
+        _ => panic!("Can only decompose enums"),
+    };
+
+    let enum_name = &ast.ident;
+
+    struct Info<'a> {
+        variant_name: &'a Ident,
+        variant_snake_name: String,
+        variant_type: &'a Ty,
+    }
+
+    let enum_info: Vec<_> = e.iter().map(|variant| {
+        let fields = match variant.data {
+            VariantData::Tuple(ref fields) => fields,
+            _ => panic!("Can only decompose tuple variants"),
+        };
+
+        let field = match fields.len() {
+            1 => &fields[0],
+            _ => panic!("can only decompose exactly one field"),
+        };
+
+        Info {
+            variant_name: &variant.ident,
+            variant_snake_name: camelcase_to_snake_case(&variant.ident.to_string()),
+            variant_type: &field.ty,
+        }
+    }).collect();
+
+    let into_fns = enum_info.iter().map(|info| {
+        let Info { variant_name, ref variant_snake_name, variant_type } = *info;
+        let method_name: Ident = format!("into{}", variant_snake_name).into();
+
+        quote! {
+            pub fn #method_name(self) -> Option<#variant_type> {
+                match self {
+                    #enum_name::#variant_name(x) => Some(x),
+                    _ => None,
+                }
+            }
+        }
+    });
+
+    let as_fns = enum_info.iter().map(|info| {
+        let Info { variant_name, ref variant_snake_name, variant_type } = *info;
+        let method_name: Ident = format!("as{}", variant_snake_name).into();
+
+        quote! {
+            pub fn #method_name(&self) -> Option<&#variant_type> {
+                match *self {
+                    #enum_name::#variant_name(ref x) => Some(x),
+                    _ => None,
+                }
+            }
+        }
+    });
+
+    let is_fns = enum_info.iter().map(|info| {
+        let Info { variant_name, ref variant_snake_name, .. } = *info;
+        let method_name: Ident = format!("is{}", variant_snake_name).into();
+
+        quote! {
+            pub fn #method_name(&self) -> bool {
+                match *self {
+                    #enum_name::#variant_name(..) => true,
+                    _ => false,
+                }
+            }
+        }
+    });
+
+    quote! {
+        impl #name {
+            #(#into_fns)*
+            #(#as_fns)*
+            #(#is_fns)*
+        }
+    }
+}
