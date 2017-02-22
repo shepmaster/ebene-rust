@@ -4,7 +4,7 @@
 #![feature(custom_derive)]
 
 #[macro_use]
-extern crate visit_derive;
+extern crate strata_rs_derive;
 
 #[macro_use]
 extern crate peresil;
