@@ -563,6 +563,12 @@ pub struct UnsafeBlock {
     whitespace: Vec<Whitespace>,
 }
 
+#[derive(Debug, Visit)]
+pub struct Parenthetical {
+    extent: Extent,
+    expression: Box<Expression>,
+}
+
 #[derive(Debug, Visit, Decompose)]
 pub enum Statement {
     Explicit(Expression),
@@ -604,6 +610,7 @@ pub enum Expression {
     Match(Match),
     MethodCall(MethodCall),
     Number(Number),
+    Parenthetical(Parenthetical),
     Range(Range),
     Reference(Reference),
     Return(Return),
@@ -624,36 +631,37 @@ impl Expression {
             Expression::Block(ref x) => x.extent,
             Expression::Number(ref x) => x.extent(),
 
-            Expression::Array(Array { extent, .. })               |
-            Expression::Box(ExpressionBox { extent, .. })         |
-            Expression::AsType(AsType { extent, .. })             |
-            Expression::Binary(Binary { extent, .. })             |
-            Expression::Call(Call { extent, .. })                 |
-            Expression::Character(Character { extent, .. })       |
-            Expression::Closure(Closure { extent, .. })           |
-            Expression::Dereference(Dereference { extent, .. })   |
-            Expression::FieldAccess(FieldAccess { extent, .. })   |
-            Expression::ForLoop(ForLoop { extent, .. })           |
-            Expression::FunctionCall(FunctionCall { extent, .. }) |
-            Expression::If(If { extent, .. })                     |
-            Expression::IfLet(IfLet { extent, .. })               |
-            Expression::Let(Let { extent, .. })                   |
-            Expression::Loop(Loop { extent, .. })                 |
-            Expression::MacroCall(MacroCall { extent, .. })       |
-            Expression::Match(Match { extent, .. })               |
-            Expression::MethodCall(MethodCall { extent, .. })     |
-            Expression::Range(Range { extent, .. })               |
-            Expression::Reference(Reference { extent, .. })       |
-            Expression::Return(Return { extent, .. })             |
-            Expression::Slice(Slice { extent, .. })               |
-            Expression::String(String { extent, .. })             |
-            Expression::TryOperator(TryOperator { extent, .. })   |
-            Expression::Tuple(Tuple { extent, .. })               |
-            Expression::Unary(Unary { extent, .. })               |
-            Expression::UnsafeBlock(UnsafeBlock { extent, .. })   |
-            Expression::Value(Value { extent, .. })               |
-            Expression::While(While { extent, .. })               |
-            Expression::WhileLet(WhileLet { extent, .. })         => extent,
+            Expression::Array(Array { extent, .. })                 |
+            Expression::Box(ExpressionBox { extent, .. })           |
+            Expression::AsType(AsType { extent, .. })               |
+            Expression::Binary(Binary { extent, .. })               |
+            Expression::Call(Call { extent, .. })                   |
+            Expression::Character(Character { extent, .. })         |
+            Expression::Closure(Closure { extent, .. })             |
+            Expression::Dereference(Dereference { extent, .. })     |
+            Expression::FieldAccess(FieldAccess { extent, .. })     |
+            Expression::ForLoop(ForLoop { extent, .. })             |
+            Expression::FunctionCall(FunctionCall { extent, .. })   |
+            Expression::If(If { extent, .. })                       |
+            Expression::IfLet(IfLet { extent, .. })                 |
+            Expression::Let(Let { extent, .. })                     |
+            Expression::Loop(Loop { extent, .. })                   |
+            Expression::MacroCall(MacroCall { extent, .. })         |
+            Expression::Match(Match { extent, .. })                 |
+            Expression::MethodCall(MethodCall { extent, .. })       |
+            Expression::Parenthetical(Parenthetical { extent, .. }) |
+            Expression::Range(Range { extent, .. })                 |
+            Expression::Reference(Reference { extent, .. })         |
+            Expression::Return(Return { extent, .. })               |
+            Expression::Slice(Slice { extent, .. })                 |
+            Expression::String(String { extent, .. })               |
+            Expression::TryOperator(TryOperator { extent, .. })     |
+            Expression::Tuple(Tuple { extent, .. })                 |
+            Expression::Unary(Unary { extent, .. })                 |
+            Expression::UnsafeBlock(UnsafeBlock { extent, .. })     |
+            Expression::Value(Value { extent, .. })                 |
+            Expression::While(While { extent, .. })                 |
+            Expression::WhileLet(WhileLet { extent, .. })           => extent,
         }
     }
 }
@@ -1370,6 +1378,7 @@ pub trait Visitor {
     fn visit_number_decimal(&mut self, &NumberDecimal) {}
     fn visit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn visit_number_octal(&mut self, &NumberOctal) {}
+    fn visit_parenthetical(&mut self, &Parenthetical) {}
     fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
@@ -1482,6 +1491,7 @@ pub trait Visitor {
     fn exit_number_decimal(&mut self, &NumberDecimal) {}
     fn exit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn exit_number_octal(&mut self, &NumberOctal) {}
+    fn exit_parenthetical(&mut self, &Parenthetical) {}
     fn exit_pathed_ident(&mut self, &PathedIdent) {}
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
@@ -2041,7 +2051,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_macro_call, Expression::MacroCall))
             .one(map(expr_let, Expression::Let))
             .one(map(expr_function_call, Expression::FunctionCall))
-            .one(map(expr_tuple, Expression::Tuple))
+            .one(expr_tuple_or_parenthetical)
             .one(map(expr_range, Expression::Range))
             .one(map(expr_array, Expression::Array))
             .one(map(character_literal, Expression::Character))
@@ -2449,20 +2459,25 @@ fn match_arm_guard<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
     }, |_, _| guard)
 }
 
-fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
+fn expr_tuple_or_parenthetical<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     sequence!(pm, pt, {
-        spt     = point;
-        _       = literal("(");
-        members = tuple_members;
-        _       = literal(")");
-    }, |_, pt| Tuple { extent: ex(spt, pt), members })
-}
-
-fn tuple_members<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Expression>> {
-    tailed(",", expression)(pm, pt).and_then(pt, |t| {
-        match (t.values.len(), t.separator_count) {
-            (1, 0) => Err(Error::ExpectedTuple),
-            _ => Ok(t.values),
+        spt    = point;
+        _      = literal("(");
+        values = tailed(",", expression);
+        _      = literal(")");
+    }, move |_, pt| {
+        let extent = ex(spt, pt);
+        let values = values;
+        let Tailed { mut values, separator_count } = values;
+        match (values.len(), separator_count) {
+            (1, 0) => Expression::Parenthetical(Parenthetical {
+                extent,
+                expression: Box::new(values.pop().expect("Must have one parenthesized value")),
+            }),
+            _ => Expression::Tuple(Tuple {
+                extent,
+                members: values,
+            }),
         }
     })
 }
@@ -4343,6 +4358,22 @@ mod test {
         let t = unwrap_progress(p);
         assert_eq!(t.extent(), (0, 4));
         assert!(t.is_tuple())
+    }
+
+    #[test]
+    fn expr_parens() {
+        let p = qp(expression, "(a && b)");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 8));
+        assert!(t.is_parenthetical())
+    }
+
+    #[test]
+    fn expr_parens_with_one_value_is_not_tuple() {
+        let p = qp(expression, "(1)");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 3));
+        assert!(t.is_parenthetical())
     }
 
     #[test]
