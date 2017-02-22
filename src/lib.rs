@@ -1673,6 +1673,14 @@ fn tailed<'s, F, T>(sep: &'static str, f: F) -> impl FnOnce(&mut Master<'s>, Poi
     }
 }
 
+fn tailed_values<'s, F, T>(sep: &'static str, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        tailed(sep, f)(pm, pt).map(|t| t.values)
+    }
+}
+
 fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
     zero_or_more_append(ws, whitespace_core)
 }
@@ -1888,8 +1896,8 @@ fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     sequence!(pm, pt, {
         spt       = point;
         _         = literal("<");
-        lifetimes = zero_or_more(tail(",", lifetime));
-        types     = zero_or_more(tail(",", generic_declaration));
+        lifetimes = tailed_values(",", lifetime);
+        types     = tailed_values(",", generic_declaration);
         _         = literal(">");
     }, |_, pt| GenericDeclarations { extent: ex(spt, pt), lifetimes, types })
 }
@@ -1972,7 +1980,7 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
     sequence!(pm, pt, {
         spt = point;
-        types = one_or_more(tail("+", typ));
+        types = tailed_values("+", typ);
     }, |_, _| TraitBounds { extent: ex(spt, pt), types })
 }
 
@@ -2494,7 +2502,7 @@ fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("[");
-        members = zero_or_more(tail(",", expression));
+        members = tailed_values(",", expression);
         _       = literal("]");
     }, |_, pt| Array { extent: ex(spt, pt), members })
 }
@@ -2599,7 +2607,7 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
         mov  = optional(literal("move"));
         ws   = optional_whitespace(Vec::new());
         _    = literal("|");
-        args = zero_or_more(tail(",", expr_closure_arg));
+        args = tailed_values(",", expr_closure_arg);
         _    = literal("|");
         body = expression;
     }, |_, pt| Closure {
@@ -2816,7 +2824,7 @@ fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
     sequence!(pm, pt, {
         _      = literal("{");
         ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more(tail(",", expr_value_struct_literal_field));
+        fields = tailed_values(",", expr_value_struct_literal_field);
         ws     = optional_whitespace(ws);
         _      = literal("}");
     }, |_, _| (fields, ws))
@@ -2853,7 +2861,7 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Fu
         spt  = point;
         name = pathed_ident;
         _    = literal("(");
-        args = zero_or_more(tail(",", expression));
+        args = tailed_values(",", expression);
         _    = literal(")");
     }, |_, pt| FunctionCall { extent: ex(spt, pt), name, args })
 }
@@ -2929,7 +2937,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
         name      = ident;
         turbofish = optional(turbofish);
         _         = literal("(");
-        args      = zero_or_more(tail(",", expression));
+        args      = tailed_values(",", expression);
         _         = literal(")");
     }, |_, _| ExpressionTail::MethodCall { name, turbofish, args, whitespace: ws })
 }
@@ -2937,7 +2945,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _         = literal("(");
-        args      = zero_or_more(tail(",", expression));
+        args      = tailed_values(",", expression);
         _         = literal(")");
     }, |_, _| ExpressionTail::Call { args })
 }
@@ -3000,7 +3008,7 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> 
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("::<");
-        types = zero_or_more(tail(",", typ));
+        types = tailed_values(",", typ);
         _     = literal(">");
     }, |_, pt| Turbofish { extent: ex(spt, pt), types: types })
 }
@@ -3047,7 +3055,7 @@ fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern
 fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
     sequence!(pm, pt, {
         _                = literal("(");
-        mut sub_patterns = zero_or_more(tail(",", pattern));
+        mut sub_patterns = tailed_values(",", pattern);
         wildcard         = optional(ext(literal("..")));
         _                = literal(")");
     }, |_, _| {
@@ -3065,7 +3073,7 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
         ws       = optional_whitespace(Vec::new());
         _        = literal("{");
         ws       = optional_whitespace(ws);
-        fields   = zero_or_more(tail(",", pattern_struct_field));
+        fields   = tailed_values(",", pattern_struct_field);
         ws       = optional_whitespace(ws);
         wildcard = optional(literal(".."));
         ws       = optional_whitespace(ws);
@@ -3197,7 +3205,7 @@ fn struct_defn_body_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
         spt    = point;
         _      = literal("{");
         ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more(tail(",", struct_defn_field));
+        fields = tailed_values(",", struct_defn_field);
         ws     = optional_whitespace(ws);
         _      = literal("}");
     }, |_, pt| StructDefinitionBodyBrace { extent: ex(spt, pt), fields, whitespace: ws })
@@ -3208,7 +3216,7 @@ fn struct_defn_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
         spt    = point;
         _      = literal("(");
         ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more(tail(",", typ));
+        fields = tailed_values(",", typ);
         ws     = optional_whitespace(ws);
         _      = literal(")");
         ws     = optional_whitespace(ws);
@@ -3255,7 +3263,7 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         ws         = optional_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
-        variants   = zero_or_more(tail(",", enum_variant));
+        variants   = tailed_values(",", enum_variant);
         ws         = optional_whitespace(ws);
         _          = literal("}");
     }, |_, pt| Enum {
@@ -3565,7 +3573,7 @@ fn use_tail_multi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTai
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("{");
-        names = zero_or_more(tail(",", ident));
+        names = tailed_values(",", ident);
         _     = literal("}");
     }, |_, pt| UseTailMulti { extent: ex(spt, pt), names })
 }
@@ -3673,7 +3681,7 @@ fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> 
 fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
     sequence!(pm, pt, {
         _     = literal("(");
-        types = zero_or_more(tail(",", typ));
+        types = tailed_values(",", typ);
         _     = literal(")");
     }, |_, _| types)
 }
@@ -3732,7 +3740,7 @@ fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeG
     sequence!(pm, pt, {
         spt               = point;
         _                 = literal("(");
-        types             = zero_or_more(tail(",", typ));
+        types             = tailed_values(",", typ);
         _                 = literal(")");
         ws                = optional_whitespace(Vec::new());
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -3749,8 +3757,8 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
         spt       = point;
         _         = literal("<");
         ws        = optional_whitespace(Vec::new());
-        lifetimes = zero_or_more(tail(",", lifetime));
-        types     = zero_or_more(tail(",", typ));
+        lifetimes = tailed_values(",", lifetime);
+        types     = tailed_values(",", typ);
         _         = literal(">");
     }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types, whitespace: ws })
 }
