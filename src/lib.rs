@@ -1614,6 +1614,54 @@ fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>
     }
 }
 
+#[derive(Debug, Default)]
+struct Tailed<T> {
+    values: Vec<T>,
+    separator_count: usize,
+}
+
+// Look for an expression that is followed by a separator. Each time
+// the separator is found, another expression is attempted. Each
+// expression is returned, along with the count of separators.
+fn tailed<'s, F, T>(sep: &'static str, f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, mut pt| {
+        let mut tailed = Tailed { values: Vec::new(), separator_count: 0 };
+        let mut _x = Vec::new();
+
+        loop {
+            let pt2 = match f(pm, pt) {
+                Progress { status: peresil::Status::Success(v), point } => {
+                    tailed.values.push(v);
+                    point
+                }
+                Progress { status: peresil::Status::Failure(_), .. } => {
+                    // TODO: unrecoverable errors
+                    return Progress::success(pt, tailed);
+                }
+            };
+
+            let (pt2, _x2) = try_parse!(optional_whitespace(_x)(pm, pt2));
+
+            let pt2 = match literal(sep)(pm, pt2) {
+                Progress { status: peresil::Status::Success(_), point } => {
+                    tailed.separator_count += 1;
+                    point
+                }
+                Progress { status: peresil::Status::Failure(_), .. } => {
+                    // TODO: unrecoverable errors
+                    return Progress::success(pt2, tailed);
+                }
+            };
+
+            let (pt2, _x2) = try_parse!(optional_whitespace(_x2)(pm, pt2));
+            pt = pt2;
+            _x = _x2;
+        }
+    }
+}
+
 fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
     zero_or_more_append(ws, whitespace_core)
 }
@@ -4894,6 +4942,54 @@ mod test {
     fn generic_declarations_allow_bounds() {
         let p = qp(generic_declarations, "<A: Foo>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn tailed_with_zero() {
+        let p = qp(tailed(",", literal("X")), "");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 0);
+        assert_eq!(p.separator_count, 0);
+    }
+
+    #[test]
+    fn tailed_with_one() {
+        let p = qp(tailed(",", literal("X")), "X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 0);
+    }
+
+    #[test]
+    fn tailed_with_one_trailing() {
+        let p = qp(tailed(",", literal("X")), "X,");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 1);
+    }
+
+    #[test]
+    fn tailed_with_two() {
+        let p = qp(tailed(",", literal("X")), "X, X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 1);
+    }
+
+    #[test]
+    fn tailed_with_two_trailing() {
+        let p = qp(tailed(",", literal("X")), "X, X,");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 2);
+    }
+
+    #[test]
+    fn tailed_with_all_space() {
+        let p = qp(tailed(",", literal("X")), "X , X , ");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 2);
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
