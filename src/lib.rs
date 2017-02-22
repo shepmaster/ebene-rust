@@ -128,7 +128,7 @@ pub struct File {
     items: Vec<Item>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Item {
     Attribute(Attribute),
     Const(Const),
@@ -184,7 +184,7 @@ pub struct Lifetime {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Whitespace {
     Comment(Comment),
     Whitespace(Extent),
@@ -205,7 +205,7 @@ pub struct Use {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum UseTail {
     Ident(UseTailIdent),
     Glob(UseTailGlob),
@@ -283,7 +283,7 @@ pub struct Generic {
     bounds: Option<TraitBounds>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Type {
     Array(TypeArray),
     Core(TypeCore),
@@ -367,7 +367,7 @@ pub struct TypeTuple {
     types: Vec<Type>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum TypeGenerics {
     Function(TypeGenericsFunction),
     Angle(TypeGenericsAngle),
@@ -444,7 +444,7 @@ pub struct Struct {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum StructDefinitionBody {
     Brace(StructDefinitionBodyBrace),
     Tuple(StructDefinitionBodyTuple),
@@ -493,13 +493,13 @@ pub struct EnumVariant {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum EnumVariantBody {
     Tuple(Vec<Type>),
     Struct(StructDefinitionBody),
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Argument {
     SelfArgument(SelfArgument),
     Named(NamedArgument),
@@ -520,7 +520,7 @@ pub struct NamedArgument {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum TraitImplArgument {
     SelfArgument(SelfArgument),
     Named(TraitImplArgumentNamed),
@@ -562,7 +562,7 @@ pub struct UnsafeBlock {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Statement {
     Explicit(Expression),
     Implicit(Expression),
@@ -579,32 +579,9 @@ impl Statement {
             Item(ref i) => i.extent(),
         }
     }
-
-    #[allow(dead_code)]
-    fn explicit(self) -> Option<Expression> {
-        match self {
-            Statement::Explicit(e) => Some(e),
-            _ => None,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn implicit(self) -> Option<Expression> {
-        match self {
-            Statement::Implicit(e) => Some(e),
-            _ => None,
-        }
-    }
-
-    fn is_implicit(&self) -> bool {
-        match *self {
-            Statement::Implicit(..) => true,
-            _ => false
-        }
-    }
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Expression {
     Array(Array),
     Box(ExpressionBox),
@@ -715,13 +692,13 @@ pub struct FieldAccess {
     field: FieldName,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Decompose)]
 pub enum FieldName {
     Ident(Ident),
     Number(Extent),
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Number {
     Binary(NumberBinary),
     Decimal(NumberDecimal),
@@ -1050,7 +1027,7 @@ enum ExpressionTail {
     TryOperator,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Pattern {
     Character(PatternCharacter),
     Ident(PatternIdent), // TODO: split into ident and enumtuple
@@ -1145,7 +1122,7 @@ pub struct PatternRange {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Decompose)]
 pub enum PatternRangeComponent {
     Character(Character),
     Number(Number),
@@ -1177,7 +1154,7 @@ pub struct Trait {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum TraitMember {
     Function(TraitImplFunction),
     Attribute(Attribute),
@@ -1202,7 +1179,7 @@ pub struct Impl {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum ImplMember {
     Function(ImplFunction),
     Attribute(Attribute),
@@ -1951,7 +1928,7 @@ fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
         _         = literal("}");
     }, |_, pt| {
         if expr.is_none() && stmts.last().map_or(false, Statement::is_implicit) {
-            expr = stmts.pop().and_then(Statement::implicit);
+            expr = stmts.pop().and_then(Statement::into_implicit);
         }
 
         Block {
@@ -4103,7 +4080,7 @@ mod test {
     #[test]
     fn statement_match_no_semicolon() {
         let p = qp(statement, "match a { _ => () }");
-        assert_eq!(unwrap_progress(p).implicit().unwrap().extent(), (0, 19))
+        assert_eq!(unwrap_progress(p).into_implicit().unwrap().extent(), (0, 19))
     }
 
     #[test]
