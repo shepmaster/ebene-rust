@@ -28,6 +28,7 @@ pub enum Error {
     Literal(&'static str),
     ExpectedIdentifier,
     ExpectedNumber,
+    ExpectedTuple,
     UnterminatedRawString,
 }
 
@@ -2452,9 +2453,18 @@ fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("(");
-        members = zero_or_more(tail(",", expression));
+        members = tuple_members;
         _       = literal(")");
     }, |_, pt| Tuple { extent: ex(spt, pt), members })
+}
+
+fn tuple_members<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Expression>> {
+    tailed(",", expression)(pm, pt).and_then(pt, |t| {
+        match (t.values.len(), t.separator_count) {
+            (1, 0) => Err(Error::ExpectedTuple),
+            _ => Ok(t.values),
+        }
+    })
 }
 
 fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
@@ -4314,7 +4324,25 @@ mod test {
     #[test]
     fn expr_tuple() {
         let p = qp(expression, "(1, 2)");
-        assert_eq!(unwrap_progress(p).extent(), (0, 6))
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 6));
+        assert!(t.is_tuple())
+    }
+
+    #[test]
+    fn expr_tuple_of_none() {
+        let p = qp(expression, "()");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 2));
+        assert!(t.is_tuple())
+    }
+
+    #[test]
+    fn expr_tuple_of_one() {
+        let p = qp(expression, "(1,)");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 4));
+        assert!(t.is_tuple())
     }
 
     #[test]
