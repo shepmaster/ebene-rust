@@ -1612,6 +1612,59 @@ fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, P
     }
 }
 
+enum TailedState<P, T, E> {
+    Nothing(P, E),
+    ValueOnly(P, T),
+    ValueAndSeparator(P, T),
+}
+
+fn parse_tailed<'s, F, T>(sep: &'static str, f: F, pm: &mut Master<'s>, pt: Point<'s>) ->
+    TailedState<Point<'s>, T, Error>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    let (pt, value) = match f(pm, pt) {
+        Progress { status: peresil::Status::Success(v), point } => {
+            (point, v)
+        }
+        Progress { status: peresil::Status::Failure(f), .. } => {
+            // TODO: unrecoverable errors
+            return TailedState::Nothing(pt, f);
+        }
+    };
+
+    let (pt, _x) = match whitespace(pm, pt) {
+        Progress { status: peresil::Status::Success(v), point } => {
+            (point, v)
+        }
+        Progress { status: peresil::Status::Failure(_), .. } => {
+            // TODO: unrecoverable errors
+            (pt, Vec::new())
+        }
+    };
+
+    let pt = match literal(sep)(pm, pt) {
+        Progress { status: peresil::Status::Success(_), point } => {
+            point
+        }
+        Progress { status: peresil::Status::Failure(_), .. } => {
+            // TODO: unrecoverable errors
+            return TailedState::ValueOnly(pt, value);
+        }
+    };
+
+    let (pt, _x) = match whitespace(pm, pt) {
+        Progress { status: peresil::Status::Success(v), point } => {
+            (point, v)
+        }
+        Progress { status: peresil::Status::Failure(_), .. } => {
+            // TODO: unrecoverable errors
+            (pt, Vec::new())
+        }
+    };
+
+    TailedState::ValueAndSeparator(pt, value)
+}
+
 #[derive(Debug, Default)]
 struct Tailed<T> {
     values: Vec<T>,
@@ -1621,43 +1674,27 @@ struct Tailed<T> {
 // Look for an expression that is followed by a separator. Each time
 // the separator is found, another expression is attempted. Each
 // expression is returned, along with the count of separators.
-fn zero_or_more_tailed_append<'s, A, F, T>(append_to: A, sep: &'static str, f: F) ->
+fn zero_or_more_tailed_append<'s, F, T>(append_to: Tailed<T>, sep: &'static str, f: F) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
-    where A: IntoAppend<T>,
-          F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, mut pt| {
-        let mut tailed = Tailed { values: append_to.into(), separator_count: 0 };
-        let mut _x = Vec::new();
-
+        let mut tailed = append_to;
         loop {
-            let pt2 = match f(pm, pt) {
-                Progress { status: peresil::Status::Success(v), point } => {
-                    tailed.values.push(v);
-                    point
-                }
-                Progress { status: peresil::Status::Failure(_), .. } => {
-                    // TODO: unrecoverable errors
+            match parse_tailed(sep, &f, pm, pt) {
+                TailedState::Nothing(pt, _) => {
                     return Progress::success(pt, tailed);
                 }
-            };
-
-            let (pt2, _x2) = try_parse!(optional_whitespace(_x)(pm, pt2));
-
-            let pt2 = match literal(sep)(pm, pt2) {
-                Progress { status: peresil::Status::Success(_), point } => {
+                TailedState::ValueOnly(pt, v) => {
+                    tailed.values.push(v);
+                    return Progress::success(pt, tailed);
+                }
+                TailedState::ValueAndSeparator(pt2, v) => {
+                    pt = pt2;
+                    tailed.values.push(v);
                     tailed.separator_count += 1;
-                    point
                 }
-                Progress { status: peresil::Status::Failure(_), .. } => {
-                    // TODO: unrecoverable errors
-                    return Progress::success(pt2, tailed);
-                }
-            };
-
-            let (pt2, _x2) = try_parse!(optional_whitespace(_x2)(pm, pt2));
-            pt = pt2;
-            _x = _x2;
+            }
         }
     }
 }
@@ -1666,16 +1703,15 @@ fn zero_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
-    zero_or_more_tailed_append(Vec::new(), sep, f)
+    let tailed = Tailed { values: Vec::new(), separator_count: 0 };
+    zero_or_more_tailed_append(tailed, sep, f)
 }
 
 fn zero_or_more_tailed_values<'s, F, T>(sep: &'static str, f: F) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
-    move |pm, pt| {
-        zero_or_more_tailed(sep, f)(pm, pt).map(|t| t.values)
-    }
+    map(zero_or_more_tailed(sep, f), |t| t.values)
 }
 
 fn zero_or_more_tailed_values_append<'s, A, F, T>(append_to: A, sep: &'static str, f: F) ->
@@ -1683,9 +1719,9 @@ fn zero_or_more_tailed_values_append<'s, A, F, T>(append_to: A, sep: &'static st
     where A: IntoAppend<T>,
           F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
-    move |pm, pt| {
-        zero_or_more_tailed_append(append_to, sep, f)(pm, pt).map(|t| t.values)
-    }
+    let append_to = append_to.into();
+    let tailed = Tailed { values: append_to, separator_count: 0 }; // TODO: separator_count?
+    map(zero_or_more_tailed_append(tailed, sep, f), |t| t.values)
 }
 
 fn one_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
@@ -1693,43 +1729,21 @@ fn one_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| {
-        let (mut pt, value) = try_parse!(f(pm, pt));
+        let mut tailed = Tailed { values: Vec::new(), separator_count: 0 };
 
-        let mut tailed = Tailed { values: vec![value], separator_count: 0 };
-        let mut _x = Vec::new();
-
-        loop {
-            let pt2 = pt;
-            let _x2 = _x;
-
-            let (pt2, _x2) = try_parse!(optional_whitespace(_x2)(pm, pt2));
-
-            let pt2 = match literal(sep)(pm, pt2) {
-                Progress { status: peresil::Status::Success(_), point } => {
-                    tailed.separator_count += 1;
-                    point
-                }
-                Progress { status: peresil::Status::Failure(_), .. } => {
-                    // TODO: unrecoverable errors
-                    return Progress::success(pt2, tailed);
-                }
-            };
-
-            let (pt2, _x2) = try_parse!(optional_whitespace(_x2)(pm, pt2));
-
-            let pt2 = match f(pm, pt2) {
-                Progress { status: peresil::Status::Success(v), point } => {
-                    tailed.values.push(v);
-                    point
-                }
-                Progress { status: peresil::Status::Failure(_), .. } => {
-                    // TODO: unrecoverable errors
-                    return Progress::success(pt, tailed);
-                }
-            };
-
-            pt = pt2;
-            _x = _x2;
+        match parse_tailed(sep, &f, pm, pt) {
+            TailedState::Nothing(pt, f) => {
+                return Progress::failure(pt, f);
+            }
+            TailedState::ValueOnly(pt, v) => {
+                tailed.values.push(v);
+                return Progress::success(pt, tailed);
+            }
+            TailedState::ValueAndSeparator(pt, v) => {
+                tailed.values.push(v);
+                tailed.separator_count += 1;
+                zero_or_more_tailed_append(tailed, sep, f)(pm, pt)
+            }
         }
     }
 }
@@ -1738,9 +1752,7 @@ fn one_or_more_tailed_values<'s, F, T>(sep: &'static str, f: F) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
-    move |pm, pt| {
-        one_or_more_tailed(sep, f)(pm, pt).map(|t| t.values)
-    }
+    map(one_or_more_tailed(sep, f), |t| t.values)
 }
 
 fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
