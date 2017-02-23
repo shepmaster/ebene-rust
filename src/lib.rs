@@ -3008,16 +3008,16 @@ fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
         sequence!(pm, pt, {
             spt           = point;
             name          = pathed_ident;
-            ws            = optional_whitespace(Vec::new());
-            (literal, ws) = concat_whitespace(ws, optional(expr_value_struct_literal));
+            (literal, ws) = concat_whitespace(Vec::new(), optional(expr_value_struct_literal));
         }, |_, pt| Value { extent: ex(spt, pt), name, literal, whitespace: ws } )
     }
 }
 
 fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<StructLiteralField>, Vec<Whitespace>)> {
     sequence!(pm, pt, {
-        _      = literal("{");
         ws     = optional_whitespace(Vec::new());
+        _      = literal("{");
+        ws     = optional_whitespace(ws);
         fields = zero_or_more_tailed_values(",", expr_value_struct_literal_field);
         ws     = optional_whitespace(ws);
         _      = literal("}");
@@ -4889,6 +4889,12 @@ mod test {
     fn expr_as_type() {
         let p = qp(expression, "42 as u8");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_as_type_of_value() {
+        let p = qp(expression, "bits as u64");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
