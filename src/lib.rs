@@ -563,7 +563,6 @@ pub struct Where {
     pub extent: Extent,
     name: Type,
     bounds: TraitBounds,
-    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1267,6 +1266,7 @@ pub struct TraitImplFunction {
 pub struct TraitMemberType {
     extent: Extent,
     name: Ident,
+    bounds: Option<TraitBounds>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -2124,14 +2124,6 @@ fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, G
     }, |_, pt| Generic { extent: ex(spt, pt), name, bounds })
 }
 
-fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
-    sequence!(pm, pt, {
-        _      = literal(":");
-        _x     = optional_whitespace(Vec::new());
-        bounds = trait_bounds;
-    }, |_, _| bounds)
-}
-
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
     sequence!(pm, pt, {
         _        = literal("(");
@@ -2185,10 +2177,16 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
     sequence!(pm, pt, {
         spt    = point;
         name   = typ;
+        bounds = generic_declaration_bounds;
+    }, |_, pt| Where { extent: ex(spt, pt), name, bounds  })
+}
+
+fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
+    sequence!(pm, pt, {
         _      = literal(":");
-        ws     = optional_whitespace(Vec::new());
+        _x     = optional_whitespace(Vec::new());
         bounds = trait_bounds;
-    }, |_, pt| Where { extent: ex(spt, pt), name, bounds, whitespace: ws })
+    }, |_, _| bounds)
 }
 
 fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
@@ -3660,13 +3658,14 @@ fn trait_impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, T
 
 fn trait_impl_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMemberType> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("type");
-        ws   = whitespace;
-        name = ident;
-        ws   = optional_whitespace(ws);
-        _    = literal(";");
-    }, |_, pt| TraitMemberType { extent: ex(spt, pt), name, whitespace: ws })
+        spt    = point;
+        _      = literal("type");
+        ws     = whitespace;
+        name   = ident;
+        bounds = optional(generic_declaration_bounds);
+        ws     = optional_whitespace(ws);
+        _      = literal(";");
+    }, |_, pt| TraitMemberType { extent: ex(spt, pt), name, bounds, whitespace: ws })
 }
 
 fn visibility<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Visibility> {
@@ -4364,6 +4363,12 @@ mod test {
     fn item_trait_with_associated_type() {
         let p = qp(item, "trait Foo { type Bar; }");
         assert_eq!(unwrap_progress(p).extent(), (0, 23))
+    }
+
+    #[test]
+    fn item_trait_with_associated_type_with_bounds() {
+        let p = qp(item, "trait Foo { type Bar: Baz; }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 28))
     }
 
     #[test]
