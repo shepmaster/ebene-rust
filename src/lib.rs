@@ -569,7 +569,26 @@ pub struct Where {
 #[derive(Debug, Visit)]
 pub struct TraitBounds {
     pub extent: Extent,
-    types: Vec<Type>,
+    types: Vec<TraitBound>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TraitBound {
+    Normal(TraitBoundNormal),
+    Relaxed(TraitBoundRelaxed),
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitBoundNormal {
+    pub extent: Extent,
+    typ: Type,
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitBoundRelaxed {
+    pub extent: Extent,
+    typ: Type,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1501,6 +1520,9 @@ pub trait Visitor {
     fn visit_struct_field(&mut self, &StructField) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
+    fn visit_trait_bound(&mut self, &TraitBound) {}
+    fn visit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
+    fn visit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
     fn visit_trait_bounds(&mut self, &TraitBounds) {}
     fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
@@ -1623,6 +1645,9 @@ pub trait Visitor {
     fn exit_struct_field(&mut self, &StructField) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
+    fn exit_trait_bound(&mut self, &TraitBound) {}
+    fn exit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
+    fn exit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
     fn exit_trait_bounds(&mut self, &TraitBounds) {}
     fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
@@ -2159,8 +2184,31 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
     sequence!(pm, pt, {
         spt = point;
-        types = zero_or_more_tailed_values("+", typ);
+        types = zero_or_more_tailed_values("+", trait_bound);
     }, |_, _| TraitBounds { extent: ex(spt, pt), types })
+}
+
+fn trait_bound<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBound> {
+    pm.alternate(pt)
+        .one(map(trait_bound_normal, TraitBound::Normal))
+        .one(map(trait_bound_relaxed, TraitBound::Relaxed))
+        .finish()
+}
+
+fn trait_bound_normal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundNormal> {
+    sequence!(pm, pt, {
+        spt = point;
+        typ = typ;
+    }, |_, _| TraitBoundNormal { extent: ex(spt, pt), typ })
+}
+
+fn trait_bound_relaxed<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundRelaxed> {
+    sequence!(pm, pt, {
+        spt = point;
+        _   = literal("?");
+        ws  = optional_whitespace(Vec::new());
+        typ = typ;
+    }, |_, _| TraitBoundRelaxed { extent: ex(spt, pt), typ, whitespace: ws })
 }
 
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
@@ -5415,6 +5463,12 @@ mod test {
         let p = qp(where_clause, "where P: A, Q: B");
         let (p, _) = unwrap_progress(p);
         assert_eq!(p[1].extent, (12, 16))
+    }
+
+    #[test]
+    fn where_clause_with_relaxed_bounds() {
+        let p = qp(function_where, "P: ?A + ?B");
+        assert_eq!(unwrap_progress(p).extent, (0, 10))
     }
 
     #[test]
