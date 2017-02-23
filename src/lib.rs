@@ -1269,6 +1269,7 @@ pub struct Crate {
 #[derive(Debug, Visit)]
 pub struct ExternBlock {
     extent: Extent,
+    abi: Option<String>,
     members: Vec<ExternBlockMember>,
     whitespace: Vec<Whitespace>,
 }
@@ -3786,11 +3787,19 @@ fn extern_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBl
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("extern");
+        abi     = optional(extern_block_abi);
         ws      = optional_whitespace(Vec::new());
         _       = literal("{");
         members = zero_or_more(extern_block_member);
         _       = literal("}");
-    }, |_, pt| ExternBlock { extent: ex(spt, pt), members, whitespace: ws })
+    }, |_, pt| ExternBlock { extent: ex(spt, pt), abi, members, whitespace: ws })
+}
+
+fn extern_block_abi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
+    sequence!(pm, pt, {
+        _x  = whitespace;
+        abi = string_literal;
+    }, |_, _| abi)
 }
 
 fn extern_block_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlockMember> {
@@ -4303,6 +4312,12 @@ mod test {
     fn item_extern_block() {
         let p = qp(item, r#"extern {}"#);
         assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn item_extern_block_with_abi() {
+        let p = qp(item, r#"extern "C" {}"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
