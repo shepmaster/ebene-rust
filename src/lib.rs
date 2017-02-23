@@ -302,6 +302,7 @@ pub struct Generic {
 pub enum Type {
     Array(TypeArray),
     Core(TypeCore),
+    Function(TypeFunction),
     Pointer(TypePointer),
     Reference(TypeReference),
     Slice(TypeSlice),
@@ -314,6 +315,7 @@ impl Type {
         match *self {
             Type::Array(TypeArray { extent, .. })         |
             Type::Core(TypeCore { extent, .. })           |
+            Type::Function(TypeFunction { extent, .. })   |
             Type::Pointer(TypePointer { extent, .. })     |
             Type::Reference(TypeReference { extent, .. }) |
             Type::Slice(TypeSlice { extent, .. })         |
@@ -401,6 +403,14 @@ pub struct TypeGenericsAngle {
     extent: Extent,
     lifetimes: Vec<Lifetime>,
     types: Vec<Type>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeFunction {
+    extent: Extent,
+    arguments: Vec<TraitImplArgument>, // TODO: rename this indicating it doesn't require names
+    return_type: Option<Box<Type>>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1504,6 +1514,7 @@ pub trait Visitor {
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_array(&mut self, &TypeArray) {}
     fn visit_type_core(&mut self, &TypeCore) {}
+    fn visit_type_function(&mut self, &TypeFunction) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
@@ -1625,6 +1636,7 @@ pub trait Visitor {
     fn exit_type_alias(&mut self, &TypeAlias) {}
     fn exit_type_array(&mut self, &TypeArray) {}
     fn exit_type_core(&mut self, &TypeCore) {}
+    fn exit_type_function(&mut self, &TypeFunction) {}
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
@@ -3927,6 +3939,7 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     pm.alternate(pt)
         .one(map(typ_array, Type::Array))
         .one(map(typ_core, Type::Core))
+        .one(map(typ_function, Type::Function))
         .one(map(typ_pointer, Type::Pointer))
         .one(map(typ_reference, Type::Reference))
         .one(map(typ_slice, Type::Slice))
@@ -4063,6 +4076,23 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
         types     = zero_or_more_tailed_values(",", typ);
         _         = literal(">");
     }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types, whitespace: ws })
+}
+
+
+fn typ_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeFunction> {
+    sequence!(pm, pt, {
+        spt               = point;
+        _                 = literal("fn");
+        ws                = optional_whitespace(Vec::new());
+        arguments         = trait_impl_function_arglist;
+        ws                = optional_whitespace(ws);
+        (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
+    }, |_, pt| TypeFunction {
+        extent: ex(spt, pt),
+        arguments,
+        return_type: return_type.map(Box::new),
+        whitespace: ws,
+    })
 }
 
 fn lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
@@ -5294,6 +5324,18 @@ mod test {
     fn type_array() {
         let p = qp(typ, "[u8; 42]");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn type_fn() {
+        let p = qp(typ, "fn(u8) -> u8");
+        assert_eq!(unwrap_progress(p).extent(), (0, 12))
+    }
+
+    #[test]
+    fn type_fn_with_names() {
+        let p = qp(typ, "fn(a: u8) -> u8");
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
