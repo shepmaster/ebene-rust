@@ -639,9 +639,10 @@ impl Expression {
     pub fn extent(&self) -> Extent {
         match *self {
             Expression::Block(ref x) => x.extent,
+
+            Expression::Array(ref x) => x.extent(),
             Expression::Number(ref x) => x.extent(),
 
-            Expression::Array(Array { extent, .. })                 |
             Expression::Box(ExpressionBox { extent, .. })           |
             Expression::AsType(AsType { extent, .. })               |
             Expression::Binary(Binary { extent, .. })               |
@@ -948,10 +949,33 @@ pub struct Range {
     rhs: Option<Box<Expression>>,
 }
 
+#[derive(Debug, Visit, Decompose)]
+pub enum Array {
+    Explicit(ArrayExplicit),
+    Repeated(ArrayRepeated),
+}
+
+impl Array {
+    fn extent(&self) -> Extent {
+        match *self {
+            Array::Explicit(ArrayExplicit { extent, .. }) |
+            Array::Repeated(ArrayRepeated { extent, .. }) => extent,
+        }
+    }
+}
+
 #[derive(Debug, Visit)]
-pub struct Array {
+pub struct ArrayExplicit {
     extent: Extent,
-    members: Vec<Expression>,
+    values: Vec<Expression>,
+}
+
+#[derive(Debug, Visit)]
+pub struct ArrayRepeated {
+    extent: Extent,
+    value: Box<Expression>,
+    count: Number,
+    whitespace: Vec<Whitespace>,
 }
 
 // TODO: Rename this visitor function?
@@ -1341,6 +1365,8 @@ impl Visit for NumberSuffix {
 pub trait Visitor {
     fn visit_argument(&mut self, &Argument) {}
     fn visit_array(&mut self, &Array) {}
+    fn visit_array_explicit(&mut self, &ArrayExplicit) {}
+    fn visit_array_repeated(&mut self, &ArrayRepeated) {}
     fn visit_as_type(&mut self, &AsType) {}
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
@@ -1454,6 +1480,8 @@ pub trait Visitor {
 
     fn exit_argument(&mut self, &Argument) {}
     fn exit_array(&mut self, &Array) {}
+    fn exit_array_explicit(&mut self, &ArrayExplicit) {}
+    fn exit_array_repeated(&mut self, &ArrayRepeated) {}
     fn exit_as_type(&mut self, &AsType) {}
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
@@ -2595,12 +2623,39 @@ fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
 }
 
 fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
+    pm.alternate(pt)
+        .one(map(expr_array_explicit, Array::Explicit))
+        .one(map(expr_array_repeated, Array::Repeated))
+        .finish()
+}
+
+fn expr_array_explicit<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ArrayExplicit> {
     sequence!(pm, pt, {
-        spt     = point;
-        _       = literal("[");
-        members = allow_struct_literals(zero_or_more_tailed_values(",", expression));
-        _       = literal("]");
-    }, |_, pt| Array { extent: ex(spt, pt), members })
+        spt    = point;
+        _      = literal("[");
+        values = allow_struct_literals(zero_or_more_tailed_values(",", expression));
+        _      = literal("]");
+    }, |_, pt| ArrayExplicit { extent: ex(spt, pt), values })
+}
+
+fn expr_array_repeated<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ArrayRepeated> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("[");
+        ws    = optional_whitespace(Vec::new());
+        value = allow_struct_literals(expression);
+        ws    = optional_whitespace(ws);
+        _     = literal(";");
+        ws    = optional_whitespace(ws);
+        count = number_literal;
+        ws    = optional_whitespace(ws);
+        _     = literal("]");
+    }, |_, pt| ArrayRepeated {
+        extent: ex(spt, pt),
+        value: Box::new(value),
+        count,
+        whitespace: ws,
+    })
 }
 
 fn character_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Character> {
@@ -4692,9 +4747,15 @@ mod test {
     }
 
     #[test]
-    fn expr_array() {
+    fn expr_array_explicit() {
         let p = qp(expression, "[1, 1]");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn expr_array_repeated() {
+        let p = qp(expression, "[1; 42]");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
