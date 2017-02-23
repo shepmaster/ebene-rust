@@ -1022,6 +1022,7 @@ pub struct Closure {
     #[visit(ignore)]
     is_move: bool,
     args: Vec<ClosureArg>,
+    return_type: Option<Type>,
     body: Box<Expression>,
     whitespace: Vec<Whitespace>,
 }
@@ -2756,17 +2757,18 @@ fn raw_raw<'s>(hashes: usize) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress
 
 fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure> {
     sequence!(pm, pt, {
-        spt  = point;
-        mov  = optional(literal("move"));
-        ws   = optional_whitespace(Vec::new());
-        _    = literal("|");
-        args = zero_or_more_tailed_values(",", expr_closure_arg);
-        _    = literal("|");
-        body = expression;
+        spt                 = point;
+        mov                 = optional(literal("move"));
+        ws                  = optional_whitespace(Vec::new());
+        _                   = literal("|");
+        args                = zero_or_more_tailed_values(",", expr_closure_arg);
+        _                   = literal("|");
+        (return_type, body) = expr_closure_return;
     }, |_, pt| Closure {
         extent: ex(spt, pt),
         is_move: mov.is_some(),
         args,
+        return_type,
         body: Box::new(body),
         whitespace: ws,
     })
@@ -2786,6 +2788,35 @@ fn expr_closure_arg_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
         ws  = optional_whitespace(ws);
         typ = typ;
     }, |_, _| (typ, ws))
+}
+
+fn expr_closure_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Option<Type>, Expression)> {
+    pm.alternate(pt)
+        .one(expr_closure_return_explicit)
+        .one(expr_closure_return_inferred)
+        .finish()
+}
+
+fn expr_closure_return_explicit<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Option<Type>, Expression)> {
+    sequence!(pm, pt, {
+        _x   = optional_whitespace(Vec::new());
+        _    = literal("->");
+        _x   = optional_whitespace(_x);
+        typ  = typ;
+        _x   = optional_whitespace(_x);
+        body = expr_closure_return_body;
+    }, |_, _| (Some(typ), body))
+}
+
+fn expr_closure_return_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+    pm.alternate(pt)
+        .one(expr_tuple_or_parenthetical)
+        .one(map(expr_block, Expression::Block))
+        .finish()
+}
+
+fn expr_closure_return_inferred<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Option<Type>, Expression)> {
+    map(expression, |body| (None, body))(pm, pt)
 }
 
 fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
@@ -4747,6 +4778,12 @@ mod test {
     fn expr_closure_explicit_type() {
         let p = qp(expression, "|a: u8| a");
         assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn expr_closure_return_type() {
+        let p = qp(expression, "|a| -> u8 { a }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
