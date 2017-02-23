@@ -5134,6 +5134,14 @@ mod test {
     }
 
     #[test]
+    fn zero_or_more_tailed_doesnt_allow_space_separator() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "X X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 0);
+    }
+
+    #[test]
     fn one_or_more_tailed_with_zero() {
         let p = qp(one_or_more_tailed(",", literal("X")), "");
         let e = unwrap_progress_err(p);
@@ -5178,6 +5186,14 @@ mod test {
         let p = unwrap_progress(p);
         assert_eq!(p.values.len(), 2);
         assert_eq!(p.separator_count, 2);
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_two_doesnt_allow_space_separator() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "X X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 0);
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
