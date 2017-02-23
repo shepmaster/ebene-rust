@@ -1269,7 +1269,20 @@ pub struct Crate {
 #[derive(Debug, Visit)]
 pub struct ExternBlock {
     extent: Extent,
+    members: Vec<ExternBlockMember>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum ExternBlockMember {
+    Function(ExternBlockMemberFunction),
+    Whitespace(Vec<Whitespace>),
+}
+
+#[derive(Debug, Visit)]
+pub struct ExternBlockMemberFunction {
+    extent: Extent,
+    header: TraitImplFunctionHeader, // TODO: rename this indicating it doesn't require names
 }
 
 #[derive(Debug, Visit)]
@@ -1415,6 +1428,8 @@ pub trait Visitor {
     fn visit_expression(&mut self, &Expression) {}
     fn visit_expression_box(&mut self, &ExpressionBox) {}
     fn visit_extern_block(&mut self, &ExternBlock) {}
+    fn visit_extern_block_member(&mut self, &ExternBlockMember) {}
+    fn visit_extern_block_member_function(&mut self, &ExternBlockMemberFunction) {}
     fn visit_field_access(&mut self, &FieldAccess) {}
     fn visit_file(&mut self, &File) {}
     fn visit_for_loop(&mut self, &ForLoop) {}
@@ -1534,6 +1549,8 @@ pub trait Visitor {
     fn exit_expression(&mut self, &Expression) {}
     fn exit_expression_box(&mut self, &ExpressionBox) {}
     fn exit_extern_block(&mut self, &ExternBlock) {}
+    fn exit_extern_block_member(&mut self, &ExternBlockMember) {}
+    fn exit_extern_block_member_function(&mut self, &ExternBlockMemberFunction) {}
     fn exit_field_access(&mut self, &FieldAccess) {}
     fn exit_file(&mut self, &File) {}
     fn exit_for_loop(&mut self, &ForLoop) {}
@@ -3767,12 +3784,28 @@ fn extern_crate_rename<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, I
 
 fn extern_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlock> {
     sequence!(pm, pt, {
+        spt     = point;
+        _       = literal("extern");
+        ws      = optional_whitespace(Vec::new());
+        _       = literal("{");
+        members = zero_or_more(extern_block_member);
+        _       = literal("}");
+    }, |_, pt| ExternBlock { extent: ex(spt, pt), members, whitespace: ws })
+}
+
+fn extern_block_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlockMember> {
+    pm.alternate(pt)
+        .one(map(extern_block_member_function, ExternBlockMember::Function))
+        .one(map(whitespace, ExternBlockMember::Whitespace))
+        .finish()
+}
+
+fn extern_block_member_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlockMemberFunction> {
+    sequence!(pm, pt, {
         spt    = point;
-        _      = literal("extern");
-        ws     = optional_whitespace(Vec::new());
-        _      = literal("{");
-        _      = literal("}");
-    }, |_, pt| ExternBlock { extent: ex(spt, pt), whitespace: ws })
+        header = trait_impl_function_header;
+        _      = literal(";");
+    }, |_, pt| ExternBlockMemberFunction { extent: ex(spt, pt), header })
 }
 
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
@@ -4270,6 +4303,12 @@ mod test {
     fn item_extern_block() {
         let p = qp(item, r#"extern {}"#);
         assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn item_extern_block_with_fn() {
+        let p = qp(item, r#"extern { fn foo(bar: u8) -> bool; }"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 35))
     }
 
     #[test]
