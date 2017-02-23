@@ -1612,19 +1612,6 @@ fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, P
     }
 }
 
-fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-{
-    move |pm, pt| {
-        sequence!(pm, pt, {
-            v  = f;
-            _x = optional(whitespace);
-            _x = optional(literal(sep));
-            _x = optional(whitespace);
-        }, |_, _| v)
-    }
-}
-
 #[derive(Debug, Default)]
 struct Tailed<T> {
     values: Vec<T>,
@@ -1634,12 +1621,13 @@ struct Tailed<T> {
 // Look for an expression that is followed by a separator. Each time
 // the separator is found, another expression is attempted. Each
 // expression is returned, along with the count of separators.
-fn zero_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
+fn zero_or_more_tailed_append<'s, A, F, T>(append_to: A, sep: &'static str, f: F) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where A: IntoAppend<T>,
+          F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, mut pt| {
-        let mut tailed = Tailed { values: Vec::new(), separator_count: 0 };
+        let mut tailed = Tailed { values: append_to.into(), separator_count: 0 };
         let mut _x = Vec::new();
 
         loop {
@@ -1674,12 +1662,29 @@ fn zero_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
     }
 }
 
+fn zero_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    zero_or_more_tailed_append(Vec::new(), sep, f)
+}
+
 fn zero_or_more_tailed_values<'s, F, T>(sep: &'static str, f: F) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| {
         zero_or_more_tailed(sep, f)(pm, pt).map(|t| t.values)
+    }
+}
+
+fn zero_or_more_tailed_values_append<'s, A, F, T>(append_to: A, sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where A: IntoAppend<T>,
+          F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        zero_or_more_tailed_append(append_to, sep, f)(pm, pt).map(|t| t.values)
     }
 }
 
@@ -1979,7 +1984,7 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
     sequence!(pm, pt, {
         _        = literal("(");
         self_arg = optional(map(self_argument, Argument::SelfArgument));
-        args     = zero_or_more_append(self_arg, tail(",", function_argument));
+        args     = zero_or_more_tailed_values_append(self_arg, ",", function_argument);
         _        = literal(")");
     }, move |_, _| args)
 }
@@ -3428,7 +3433,7 @@ fn trait_impl_function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
     sequence!(pm, pt, {
         _        = literal("(");
         self_arg = optional(map(self_argument, TraitImplArgument::SelfArgument));
-        args     = zero_or_more_append(self_arg, tail(",", trait_impl_function_argument));
+        args     = zero_or_more_tailed_values_append(self_arg, ",", trait_impl_function_argument);
         _        = literal(")");
     }, move |_, _| args)
 }
