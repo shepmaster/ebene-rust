@@ -992,7 +992,7 @@ pub struct ArrayExplicit {
 pub struct ArrayRepeated {
     extent: Extent,
     value: Box<Expression>,
-    count: Number,
+    count: Box<Expression>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -2716,13 +2716,13 @@ fn expr_array_repeated<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, A
         ws    = optional_whitespace(ws);
         _     = literal(";");
         ws    = optional_whitespace(ws);
-        count = number_literal;
+        count = expression;
         ws    = optional_whitespace(ws);
         _     = literal("]");
     }, |_, pt| ArrayRepeated {
         extent: ex(spt, pt),
         value: Box::new(value),
-        count,
+        count: Box::new(count),
         whitespace: ws,
     })
 }
@@ -4964,8 +4964,8 @@ mod test {
 
     #[test]
     fn expr_array_repeated() {
-        let p = qp(expression, "[1; 42]");
-        assert_eq!(unwrap_progress(p).extent(), (0, 7))
+        let p = qp(expression, "[1; 2*3]");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
