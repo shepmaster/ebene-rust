@@ -604,6 +604,7 @@ impl Statement {
 pub enum Expression {
     Array(Array),
     Box(ExpressionBox),
+    ByteString(ByteString),
     AsType(AsType),
     Binary(Binary),
     Block(Box<Block>),
@@ -648,6 +649,7 @@ impl Expression {
             Expression::Box(ExpressionBox { extent, .. })           |
             Expression::AsType(AsType { extent, .. })               |
             Expression::Binary(Binary { extent, .. })               |
+            Expression::ByteString(ByteString { extent, .. })       |
             Expression::Call(Call { extent, .. })                   |
             Expression::Character(Character { extent, .. })         |
             Expression::Closure(Closure { extent, .. })             |
@@ -1006,6 +1008,12 @@ pub struct Character {
 pub struct String {
     extent: Extent,
     value: Extent,
+}
+
+#[derive(Debug, Visit)]
+pub struct ByteString {
+    extent: Extent,
+    value: String,
 }
 
 #[derive(Debug, Visit)]
@@ -1375,6 +1383,7 @@ pub trait Visitor {
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
+    fn visit_byte_string(&mut self, &ByteString) {}
     fn visit_call(&mut self, &Call) {}
     fn visit_character(&mut self, &Character) {}
     fn visit_closure(&mut self, &Closure) {}
@@ -1491,6 +1500,7 @@ pub trait Visitor {
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
+    fn exit_byte_string(&mut self, &ByteString) {}
     fn exit_call(&mut self, &Call) {}
     fn exit_character(&mut self, &Character) {}
     fn exit_closure(&mut self, &Closure) {}
@@ -2189,6 +2199,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_dereference, Expression::Dereference))
             .one(map(expr_unary, Expression::Unary))
             .one(map(expr_box, Expression::Box))
+            .one(map(expr_byte_string, Expression::ByteString))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -2756,6 +2767,14 @@ fn raw_raw<'s>(hashes: usize) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress
             }
         }
     }
+}
+
+fn expr_byte_string<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ByteString> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("b");
+        value = string_literal;
+    }, |_, pt| ByteString { extent: ex(spt, pt), value })
 }
 
 fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure> {
@@ -4907,6 +4926,24 @@ mod test {
     fn expr_box() {
         let p = qp(expression, "box foo");
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn expr_byte_string() {
+        let p = qp(expression, r#"b"hello""#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_byte_string_escape() {
+        let p = qp(expression, r#"b"he\"llo""#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
+    }
+
+    #[test]
+    fn expr_byte_string_raw() {
+        let p = qp(expression, r###"br#"hello"#"###);
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
