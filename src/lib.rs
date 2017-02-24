@@ -812,6 +812,7 @@ pub enum NumberSuffix {
 pub struct NumberBinary {
     extent: Extent,
     value: Extent,
+    exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
 
@@ -819,6 +820,7 @@ pub struct NumberBinary {
 pub struct NumberDecimal {
     extent: Extent,
     value: Extent,
+    exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
 
@@ -826,6 +828,7 @@ pub struct NumberDecimal {
 pub struct NumberHexadecimal {
     extent: Extent,
     value: Extent,
+    exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
 
@@ -833,6 +836,7 @@ pub struct NumberHexadecimal {
 pub struct NumberOctal {
     extent: Extent,
     value: Extent,
+    exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
 
@@ -3061,42 +3065,44 @@ fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number
 
 fn number_literal_decimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberDecimal> {
     sequence!(pm, pt, {
-        spt    = point;
-        value  = number_literal_base(10);
-        suffix = optional(number_literal_suffix);
-    }, |_, pt| NumberDecimal { extent: ex(spt, pt), value, suffix })
+        spt      = point;
+        value    = number_literal_base(10);
+        exponent = optional(number_literal_exponent);
+        suffix   = optional(number_literal_suffix);
+    }, |_, pt| NumberDecimal { extent: ex(spt, pt), value, exponent, suffix })
 }
 
 fn number_literal_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberBinary> {
-    number_literal_prefixed("0b", 2, |extent, value, suffix| {
-        NumberBinary { extent, value, suffix }
+    number_literal_prefixed("0b", 2, |extent, value, exponent, suffix| {
+        NumberBinary { extent, value, exponent, suffix }
     })(pm, pt)
 }
 
 fn number_literal_hexadecimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberHexadecimal> {
-    number_literal_prefixed("0x", 16, |extent, value, suffix| {
-        NumberHexadecimal { extent, value, suffix }
+    number_literal_prefixed("0x", 16, |extent, value, exponent, suffix| {
+        NumberHexadecimal { extent, value, exponent, suffix }
     })(pm, pt)
 }
 
 fn number_literal_octal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberOctal> {
-    number_literal_prefixed("0o", 8, |extent, value, suffix| {
-        NumberOctal { extent, value, suffix }
+    number_literal_prefixed("0o", 8, |extent, value, exponent, suffix| {
+        NumberOctal { extent, value, exponent, suffix }
     })(pm, pt)
 }
 
 fn number_literal_prefixed<'s, C, T>(prefix: &'static str, base: u32, constructor: C) ->
     impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-    where C: Fn(Extent, Extent, Option<NumberSuffix>) -> T
+    where C: Fn(Extent, Extent, Option<Extent>, Option<NumberSuffix>) -> T
 {
     move |pm, pt| {
         sequence!(pm, pt, {
-            spt    = point;
-            _      = literal(prefix);
-            _      = zero_or_more(literal("_"));
-            value  = number_literal_base(base);
-            suffix = optional(number_literal_suffix);
-        }, |_, pt| constructor(ex(spt, pt), value, suffix))
+            spt      = point;
+            _        = literal(prefix);
+            _        = zero_or_more(literal("_"));
+            value    = number_literal_base(base);
+            exponent = optional(number_literal_exponent);
+            suffix   = optional(number_literal_suffix);
+        }, |_, pt| constructor(ex(spt, pt), value, exponent, suffix))
     }
 }
 
@@ -3113,6 +3119,13 @@ fn number_literal_base<'s>(base: u32) ->
         split_point_at_non_zero_offset(pt, idx, Error::ExpectedNumber)
             .map(|(_, ex)| ex)
     }
+}
+
+fn number_literal_exponent<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        _     = literal("e");
+        value = number_literal_base(10);
+    }, |_, _| value)
 }
 
 fn number_literal_suffix<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberSuffix> {
@@ -5359,6 +5372,18 @@ mod test {
         let (err_loc, errs) = unwrap_progress_err(p);
         assert_eq!(err_loc, 0);
         assert!(errs.contains(&Error::ExpectedNumber));
+    }
+
+    #[test]
+    fn number_with_exponent() {
+        let p = qp(number_literal, "1e2");
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
+    }
+
+    #[test]
+    fn number_with_prefx_and_exponent() {
+        let p = qp(number_literal, "0x1e2");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
