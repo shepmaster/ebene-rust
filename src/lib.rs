@@ -2216,7 +2216,7 @@ fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBou
     sequence!(pm, pt, {
         spt = point;
         types = zero_or_more_tailed_values("+", trait_bound);
-    }, |_, _| TraitBounds { extent: ex(spt, pt), types })
+    }, |_, pt| TraitBounds { extent: ex(spt, pt), types })
 }
 
 fn trait_bound<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBound> {
@@ -2231,14 +2231,14 @@ fn trait_bound_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     sequence!(pm, pt, {
         spt      = point;
         lifetime = lifetime;
-    }, |_, _| TraitBoundLifetime { extent: ex(spt, pt), lifetime })
+    }, |_, pt| TraitBoundLifetime { extent: ex(spt, pt), lifetime })
 }
 
 fn trait_bound_normal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundNormal> {
     sequence!(pm, pt, {
         spt = point;
         typ = typ;
-    }, |_, _| TraitBoundNormal { extent: ex(spt, pt), typ })
+    }, |_, pt| TraitBoundNormal { extent: ex(spt, pt), typ })
 }
 
 fn trait_bound_relaxed<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundRelaxed> {
@@ -2247,7 +2247,7 @@ fn trait_bound_relaxed<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, T
         _   = literal("?");
         ws  = optional_whitespace(Vec::new());
         typ = typ;
-    }, |_, _| TraitBoundRelaxed { extent: ex(spt, pt), typ, whitespace: ws })
+    }, |_, pt| TraitBoundRelaxed { extent: ex(spt, pt), typ, whitespace: ws })
 }
 
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
@@ -5556,12 +5556,6 @@ mod test {
     }
 
     #[test]
-    fn where_clause_with_lifetime() {
-        let p = qp(function_where, "P: 'a");
-        assert_eq!(unwrap_progress(p).extent, (0, 5))
-    }
-
-    #[test]
     fn where_clause_with_multiple_bounds() {
         let p = qp(function_where, "P: A + B");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
@@ -5572,12 +5566,6 @@ mod test {
         let p = qp(where_clause, "where P: A, Q: B");
         let (p, _) = unwrap_progress(p);
         assert_eq!(p[1].extent, (12, 16))
-    }
-
-    #[test]
-    fn where_clause_with_relaxed_bounds() {
-        let p = qp(function_where, "P: ?A + ?B");
-        assert_eq!(unwrap_progress(p).extent, (0, 10))
     }
 
     #[test]
@@ -5626,6 +5614,18 @@ mod test {
     fn generic_declarations_allow_bounds() {
         let p = qp(generic_declarations, "<A: Foo>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn trait_bounds_with_lifetime() {
+        let p = qp(trait_bounds, "'a + 'b");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn trait_bounds_with_relaxed() {
+        let p = qp(trait_bounds, "?A + ?B");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
     }
 
     #[test]
