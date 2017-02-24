@@ -1249,14 +1249,14 @@ pub struct Trait {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum TraitMember {
-    Function(TraitImplFunction),
     Attribute(Attribute),
-    Whitespace(Vec<Whitespace>),
+    Function(TraitMemberFunction),
     Type(TraitMemberType),
+    Whitespace(Vec<Whitespace>),
 }
 
 #[derive(Debug, Visit)]
-pub struct TraitImplFunction {
+pub struct TraitMemberFunction {
     extent: Extent,
     header: TraitImplFunctionHeader,
     body: Option<Block>,
@@ -1534,9 +1534,9 @@ pub trait Visitor {
     fn visit_trait_bounds(&mut self, &TraitBounds) {}
     fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
-    fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn visit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn visit_trait_member(&mut self, &TraitMember) {}
+    fn visit_trait_member_function(&mut self, &TraitMemberFunction) {}
     fn visit_trait_member_type(&mut self, &TraitMemberType) {}
     fn visit_try_operator(&mut self, &TryOperator) {}
     fn visit_tuple(&mut self, &Tuple) {}
@@ -1660,9 +1660,9 @@ pub trait Visitor {
     fn exit_trait_bounds(&mut self, &TraitBounds) {}
     fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
-    fn exit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn exit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn exit_trait_member(&mut self, &TraitMember) {}
+    fn exit_trait_member_function(&mut self, &TraitMemberFunction) {}
     fn exit_trait_member_type(&mut self, &TraitMemberType) {}
     fn exit_try_operator(&mut self, &TryOperator) {}
     fn exit_tuple(&mut self, &Tuple) {}
@@ -3641,22 +3641,22 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
 
 fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMember> {
     pm.alternate(pt)
-        .one(map(trait_impl_function, TraitMember::Function))
-        .one(map(trait_impl_type, TraitMember::Type))
+        .one(map(trait_member_function, TraitMember::Function))
+        .one(map(trait_member_type, TraitMember::Type))
         .one(map(attribute, TraitMember::Attribute))
         .one(map(whitespace, TraitMember::Whitespace))
         .finish()
 }
 
-fn trait_impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplFunction> {
+fn trait_member_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMemberFunction> {
     sequence!(pm, pt, {
         spt    = point;
         header = trait_impl_function_header;
         body   = trait_impl_function_body;
-    }, |_, pt| TraitImplFunction { extent: ex(spt, pt), header, body })
+    }, |_, pt| TraitMemberFunction { extent: ex(spt, pt), header, body })
 }
 
-fn trait_impl_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMemberType> {
+fn trait_member_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMemberType> {
     sequence!(pm, pt, {
         spt    = point;
         _      = literal("type");
