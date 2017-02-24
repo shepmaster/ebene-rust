@@ -3059,46 +3059,45 @@ fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number
         .finish()
 }
 
-fn number_literal_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberBinary> {
-    sequence!(pm, pt, {
-        spt    = point;
-        _      = literal("0b");
-        _      = zero_or_more(literal("_"));
-        value  = number_literal_base(16);
-        _      = zero_or_more(literal("_"));
-        suffix = optional(number_literal_suffix);
-    }, |_, pt| NumberBinary { extent: ex(spt, pt), value, suffix })
-}
-
 fn number_literal_decimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberDecimal> {
     sequence!(pm, pt, {
-        spt   = point;
-        value = number_literal_base(10);
-        _      = zero_or_more(literal("_"));
+        spt    = point;
+        value  = number_literal_base(10);
         suffix = optional(number_literal_suffix);
     }, |_, pt| NumberDecimal { extent: ex(spt, pt), value, suffix })
 }
 
+fn number_literal_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberBinary> {
+    number_literal_prefixed("0b", 2, |extent, value, suffix| {
+        NumberBinary { extent, value, suffix }
+    })(pm, pt)
+}
+
 fn number_literal_hexadecimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberHexadecimal> {
-    sequence!(pm, pt, {
-        spt   = point;
-        _     = literal("0x");
-        _     = zero_or_more(literal("_"));
-        value = number_literal_base(16);
-        _      = zero_or_more(literal("_"));
-        suffix = optional(number_literal_suffix);
-    }, |_, pt| NumberHexadecimal { extent: ex(spt, pt), value, suffix })
+    number_literal_prefixed("0x", 16, |extent, value, suffix| {
+        NumberHexadecimal { extent, value, suffix }
+    })(pm, pt)
 }
 
 fn number_literal_octal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberOctal> {
-    sequence!(pm, pt, {
-        spt   = point;
-        _     = literal("0o");
-        _     = zero_or_more(literal("_"));
-        value = number_literal_base(16);
-        _      = zero_or_more(literal("_"));
-        suffix = optional(number_literal_suffix);
-    }, |_, pt| NumberOctal { extent: ex(spt, pt), value, suffix })
+    number_literal_prefixed("0o", 8, |extent, value, suffix| {
+        NumberOctal { extent, value, suffix }
+    })(pm, pt)
+}
+
+fn number_literal_prefixed<'s, C, T>(prefix: &'static str, base: u32, constructor: C) ->
+    impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where C: Fn(Extent, Extent, Option<NumberSuffix>) -> T
+{
+    move |pm, pt| {
+        sequence!(pm, pt, {
+            spt    = point;
+            _      = literal(prefix);
+            _      = zero_or_more(literal("_"));
+            value  = number_literal_base(base);
+            suffix = optional(number_literal_suffix);
+        }, |_, pt| constructor(ex(spt, pt), value, suffix))
+    }
 }
 
 fn number_literal_base<'s>(base: u32) ->
