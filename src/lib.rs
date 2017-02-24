@@ -1243,6 +1243,7 @@ pub struct Trait {
     visibility: Option<Visibility>,
     name: Ident,
     generics: Option<GenericDeclarations>,
+    bounds: Option<TraitBounds>,
     members: Vec<TraitMember>,
     whitespace: Vec<Whitespace>,
 }
@@ -3633,8 +3634,11 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
         _          = literal("trait");
         ws         = whitespace;
         name       = ident;
+        ws         = optional_whitespace(ws);
         generics   = optional(generic_declarations);
-        ws         = append_whitespace(ws);
+        ws         = optional_whitespace(ws);
+        bounds     = optional(generic_declaration_bounds);
+        ws         = optional_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
         members    = zero_or_more(trait_impl_member);
@@ -3645,6 +3649,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
         visibility,
         name,
         generics,
+        bounds,
         members,
         whitespace: ws,
     })
@@ -4395,6 +4400,12 @@ mod test {
     fn item_trait_with_associated_type_with_bounds() {
         let p = qp(item, "trait Foo { type Bar: Baz; }");
         assert_eq!(unwrap_progress(p).extent(), (0, 28))
+    }
+
+    #[test]
+    fn item_trait_with_supertraits() {
+        let p = qp(item, "trait Foo: Bar + Baz {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 23))
     }
 
     #[test]
