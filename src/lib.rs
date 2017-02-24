@@ -1283,8 +1283,9 @@ pub struct Impl {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum ImplMember {
-    Function(ImplFunction),
     Attribute(Attribute),
+    Function(ImplFunction),
+    Type(ImplType),
     Whitespace(Vec<Whitespace>),
 }
 
@@ -1293,6 +1294,14 @@ pub struct ImplFunction {
     extent: Extent,
     header: FunctionHeader,
     body: Block,
+}
+
+#[derive(Debug, Visit)]
+pub struct ImplType {
+    extent: Extent,
+    name: Ident,
+    typ: Type,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1482,6 +1491,7 @@ pub trait Visitor {
     fn visit_impl(&mut self, &Impl) {}
     fn visit_impl_function(&mut self, &ImplFunction) {}
     fn visit_impl_member(&mut self, &ImplMember) {}
+    fn visit_impl_type(&mut self, &ImplType) {}
     fn visit_item(&mut self, &Item) {}
     fn visit_let(&mut self, &Let) {}
     fn visit_lifetime(&mut self, &Lifetime) {}
@@ -1608,6 +1618,7 @@ pub trait Visitor {
     fn exit_impl(&mut self, &Impl) {}
     fn exit_impl_function(&mut self, &ImplFunction) {}
     fn exit_impl_member(&mut self, &ImplMember) {}
+    fn exit_impl_type(&mut self, &ImplType) {}
     fn exit_item(&mut self, &Item) {}
     fn exit_let(&mut self, &Let) {}
     fn exit_lifetime(&mut self, &Lifetime) {}
@@ -3771,8 +3782,9 @@ fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type
 
 fn impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplMember> {
     pm.alternate(pt)
-        .one(map(impl_function, ImplMember::Function))
         .one(map(attribute, ImplMember::Attribute))
+        .one(map(impl_function, ImplMember::Function))
+        .one(map(impl_type, ImplMember::Type))
         .one(map(whitespace, ImplMember::Whitespace))
         .finish()
 }
@@ -3783,6 +3795,21 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
         header = function_header;
         body   = block;
     }, |_, pt| ImplFunction { extent: ex(spt, pt), header, body })
+}
+
+fn impl_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplType> {
+    sequence!(pm, pt, {
+        spt  = point;
+        _    = literal("type");
+        ws   = whitespace;
+        name = ident;
+        ws   = optional_whitespace(ws);
+        _    = literal("=");
+        ws   = optional_whitespace(ws);
+        typ  = typ;
+        ws   = optional_whitespace(ws);
+        _    = literal(";");
+    }, |_, pt| ImplType { extent: ex(spt, pt), name, typ, whitespace: ws })
 }
 
 // TODO: optional could take E that is `into`, or just a different one
@@ -4470,6 +4497,12 @@ mod test {
     fn impl_with_attributes() {
         let p = qp(p_impl, "impl Foo { #[a] #[b] fn bar() {} }");
         assert_eq!(unwrap_progress(p).extent, (0, 34))
+    }
+
+    #[test]
+    fn impl_with_associated_type() {
+        let p = qp(p_impl, "impl Foo { type A = B; }");
+        assert_eq!(unwrap_progress(p).extent, (0, 24))
     }
 
     #[test]
