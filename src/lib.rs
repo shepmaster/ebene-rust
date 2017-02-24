@@ -946,7 +946,9 @@ pub enum BinaryOp {
     MulAssign,
     NotEqual,
     ShiftLeft,
+    ShiftLeftAssign,
     ShiftRight,
+    ShiftRightAssign,
     Sub,
     SubAssign,
 }
@@ -3239,8 +3241,10 @@ fn expr_tail_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expr
 }
 
 fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
-    // Two characters before one to avoid matching += as +
+    // Longer operators before shorter to avoid matching += as +
     pm.alternate(pt)
+        .one(map(literal("<<="), |_| BinaryOp::ShiftLeftAssign))
+        .one(map(literal(">>="), |_| BinaryOp::ShiftRightAssign))
         .one(map(literal("!="), |_| BinaryOp::NotEqual))
         .one(map(literal("=="), |_| BinaryOp::Equal))
         .one(map(literal("&&"), |_| BinaryOp::BooleanAnd))
@@ -4958,6 +4962,12 @@ mod test {
     fn expr_binary_op_shifting() {
         let p = qp(expression, "a >> b << c");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn expr_binary_op_shift_assign() {
+        let p = qp(expression, "a >>= b <<= c");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
