@@ -796,6 +796,8 @@ impl Number {
 
 #[derive(Debug)]
 pub enum NumberSuffix {
+    F32,
+    F64,
     U8,
     U16,
     U32,
@@ -811,7 +813,8 @@ pub enum NumberSuffix {
 #[derive(Debug, Visit)]
 pub struct NumberBinary {
     extent: Extent,
-    value: Extent,
+    decimal: Extent,
+    fraction: Option<Extent>,
     exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
@@ -819,7 +822,8 @@ pub struct NumberBinary {
 #[derive(Debug, Visit)]
 pub struct NumberDecimal {
     extent: Extent,
-    value: Extent,
+    decimal: Extent,
+    fraction: Option<Extent>,
     exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
@@ -827,7 +831,8 @@ pub struct NumberDecimal {
 #[derive(Debug, Visit)]
 pub struct NumberHexadecimal {
     extent: Extent,
-    value: Extent,
+    decimal: Extent,
+    fraction: Option<Extent>,
     exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
@@ -835,7 +840,8 @@ pub struct NumberHexadecimal {
 #[derive(Debug, Visit)]
 pub struct NumberOctal {
     extent: Extent,
-    value: Extent,
+    decimal: Extent,
+    fraction: Option<Extent>,
     exponent: Option<Extent>,
     suffix: Option<NumberSuffix>,
 }
@@ -3065,44 +3071,66 @@ fn number_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Number
 
 fn number_literal_decimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberDecimal> {
     sequence!(pm, pt, {
-        spt      = point;
-        value    = number_literal_base(10);
-        exponent = optional(number_literal_exponent);
-        suffix   = optional(number_literal_suffix);
-    }, |_, pt| NumberDecimal { extent: ex(spt, pt), value, exponent, suffix })
+        spt                 = point;
+        (decimal, fraction) = number_literal_decimal_fraction(10);
+        exponent            = optional(number_literal_exponent);
+        suffix              = optional(number_literal_suffix);
+    }, |_, pt| NumberDecimal { extent: ex(spt, pt), decimal, fraction, exponent, suffix })
 }
 
 fn number_literal_binary<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberBinary> {
-    number_literal_prefixed("0b", 2, |extent, value, exponent, suffix| {
-        NumberBinary { extent, value, exponent, suffix }
+    number_literal_prefixed("0b", 2, |extent, decimal, fraction, exponent, suffix| {
+        NumberBinary { extent, decimal, fraction, exponent, suffix }
     })(pm, pt)
 }
 
 fn number_literal_hexadecimal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberHexadecimal> {
-    number_literal_prefixed("0x", 16, |extent, value, exponent, suffix| {
-        NumberHexadecimal { extent, value, exponent, suffix }
+    number_literal_prefixed("0x", 16, |extent, decimal, fraction, exponent, suffix| {
+        NumberHexadecimal { extent, decimal, fraction, exponent, suffix }
     })(pm, pt)
 }
 
 fn number_literal_octal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberOctal> {
-    number_literal_prefixed("0o", 8, |extent, value, exponent, suffix| {
-        NumberOctal { extent, value, exponent, suffix }
+    number_literal_prefixed("0o", 8, |extent, decimal, fraction, exponent, suffix| {
+        NumberOctal { extent, decimal, fraction, exponent, suffix }
     })(pm, pt)
 }
 
 fn number_literal_prefixed<'s, C, T>(prefix: &'static str, base: u32, constructor: C) ->
     impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-    where C: Fn(Extent, Extent, Option<Extent>, Option<NumberSuffix>) -> T
+    where C: Fn(Extent, Extent, Option<Extent>, Option<Extent>, Option<NumberSuffix>) -> T
 {
     move |pm, pt| {
         sequence!(pm, pt, {
-            spt      = point;
-            _        = literal(prefix);
-            _        = zero_or_more(literal("_"));
-            value    = number_literal_base(base);
-            exponent = optional(number_literal_exponent);
-            suffix   = optional(number_literal_suffix);
-        }, |_, pt| constructor(ex(spt, pt), value, exponent, suffix))
+            spt                 = point;
+            _                   = literal(prefix);
+            _                   = zero_or_more(literal("_"));
+            (decimal, fraction) = number_literal_decimal_fraction(base);
+            exponent            = optional(number_literal_exponent);
+            suffix              = optional(number_literal_suffix);
+        }, |_, pt| constructor(ex(spt, pt), decimal, fraction, exponent, suffix))
+    }
+}
+
+fn number_literal_decimal_fraction<'s>(base: u32) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, (Extent, Option<Extent>)>
+{
+    move |pm, pt| {
+        sequence!(pm, pt, {
+            decimal  = number_literal_base(base);
+            fraction = optional(number_literal_fraction(base));
+        }, |_, _| (decimal, fraction))
+    }
+}
+
+fn number_literal_fraction<'s>(base: u32) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
+{
+    move |pm, pt| {
+        sequence!(pm, pt, {
+            _        = literal(".");
+            fraction = number_literal_base(base);
+        }, |_, _| fraction)
     }
 }
 
@@ -3130,6 +3158,8 @@ fn number_literal_exponent<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'
 
 fn number_literal_suffix<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, NumberSuffix> {
     pm.alternate(pt)
+        .one(map(literal("f32"), |_| NumberSuffix::F32))
+        .one(map(literal("f64"), |_| NumberSuffix::F64))
         .one(map(literal("u8"), |_| NumberSuffix::U8))
         .one(map(literal("u16"), |_| NumberSuffix::U16))
         .one(map(literal("u32"), |_| NumberSuffix::U32))
@@ -5381,9 +5411,33 @@ mod test {
     }
 
     #[test]
-    fn number_with_prefx_and_exponent() {
+    fn number_with_prefix_and_exponent() {
         let p = qp(number_literal, "0x1e2");
         assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
+    fn number_with_fractional() {
+        let p = qp(number_literal, "1.2");
+        assert_eq!(unwrap_progress(p).extent(), (0, 3))
+    }
+
+    #[test]
+    fn number_with_fractional_with_suffix() {
+        let p = qp(number_literal, "1.2f32");
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn number_with_prefix_and_fractional() {
+        let p = qp(number_literal, "0x1.2");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
+    fn number_with_prefix_exponent_and_fractional() {
+        let p = qp(number_literal, "0o7.3e9");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
