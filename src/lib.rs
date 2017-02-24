@@ -4147,13 +4147,12 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
     }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types, whitespace: ws })
 }
 
-
 fn typ_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeFunction> {
     sequence!(pm, pt, {
         spt               = point;
         _                 = literal("fn");
         ws                = optional_whitespace(Vec::new());
-        arguments         = trait_impl_function_arglist;
+        arguments         = trait_impl_function_arglist; // TODO: shouldn't allow `self`
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
     }, |_, pt| TypeFunction {
