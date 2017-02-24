@@ -1160,7 +1160,6 @@ pub enum Pattern {
     String(PatternString),
     Struct(PatternStruct),
     Tuple(PatternTuple),
-    Wildcard(PatternWildcard),
 }
 
 impl Pattern {
@@ -1174,8 +1173,7 @@ impl Pattern {
             Pattern::Reference(PatternReference { extent, .. }) |
             Pattern::String(PatternString { extent, .. })       |
             Pattern::Struct(PatternStruct { extent, .. })       |
-            Pattern::Tuple(PatternTuple { extent, .. })         |
-            Pattern::Wildcard(PatternWildcard { extent, .. })   => extent
+            Pattern::Tuple(PatternTuple { extent, .. })         => extent,
         }
     }
 }
@@ -1186,7 +1184,7 @@ pub struct PatternIdent {
     is_ref: Option<Extent>,
     is_mut: Option<Extent>,
     ident: PathedIdent,
-    tuple: Vec<Pattern>,
+    tuple: Option<PatternTuple>,
 }
 
 #[derive(Debug, Visit)]
@@ -1221,7 +1219,13 @@ pub struct PatternStructFieldShort {
 #[derive(Debug, Visit)]
 pub struct PatternTuple {
     extent: Extent,
-    members: Vec<Pattern>,
+    members: Vec<PatternTupleMember>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum PatternTupleMember {
+    Pattern(Pattern),
+    Wildcard(Extent),
 }
 
 #[derive(Debug, Visit)]
@@ -1555,6 +1559,7 @@ pub trait Visitor {
     fn visit_pattern_struct_field_long(&mut self, &PatternStructFieldLong) {}
     fn visit_pattern_struct_field_short(&mut self, &PatternStructFieldShort) {}
     fn visit_pattern_tuple(&mut self, &PatternTuple) {}
+    fn visit_pattern_tuple_member(&mut self, &PatternTupleMember) {}
     fn visit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn visit_range(&mut self, &Range) {}
     fn visit_reference(&mut self, &Reference) {}
@@ -1686,6 +1691,7 @@ pub trait Visitor {
     fn exit_pattern_struct_field_long(&mut self, &PatternStructFieldLong) {}
     fn exit_pattern_struct_field_short(&mut self, &PatternStructFieldShort) {}
     fn exit_pattern_tuple(&mut self, &PatternTuple) {}
+    fn exit_pattern_tuple_member(&mut self, &PatternTupleMember) {}
     fn exit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn exit_range(&mut self, &Range) {}
     fn exit_reference(&mut self, &Reference) {}
@@ -3442,14 +3448,8 @@ fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern
         is_ref = optional(pattern_ident_is_ref);
         is_mut = optional(pattern_ident_is_mut);
         ident  = pathed_ident;
-        tuple  = optional(pattern_tuple_inner);
-    }, |_, pt| PatternIdent {
-        extent: ex(spt, pt),
-        is_ref,
-        is_mut,
-        ident,
-        tuple: tuple.unwrap_or_else(Vec::new),
-    })
+        tuple  = optional(pattern_tuple);
+    }, |_, pt| PatternIdent { extent: ex(spt, pt), is_ref, is_mut, ident, tuple })
 }
 
 fn pattern_ident_is_mut<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -3468,23 +3468,20 @@ fn pattern_ident_is_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
 
 fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternTuple> {
     sequence!(pm, pt, {
-        spt = point;
-        members = pattern_tuple_inner;
+        spt     = point;
+        _       = literal("(");
+        members = zero_or_more_tailed_values(",", pattern_tuple_member);
+        _       = literal(")");
     }, |_, pt| PatternTuple { extent: ex(spt, pt), members })
 }
 
-fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
-    sequence!(pm, pt, {
-        _                = literal("(");
-        mut sub_patterns = zero_or_more_tailed_values(",", pattern);
-        wildcard         = optional(ext(literal("..")));
-        _                = literal(")");
-    }, |_, _| {
-        if let Some(extent) = wildcard {
-            sub_patterns.push(Pattern::Wildcard(PatternWildcard { extent }));
-        }
-        sub_patterns
-    })
+fn pattern_tuple_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, PatternTupleMember>
+{
+    pm.alternate(pt)
+        .one(map(pattern, PatternTupleMember::Pattern))
+        .one(map(ext(literal("..")), PatternTupleMember::Wildcard))
+        .finish()
 }
 
 fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternStruct> {
@@ -5407,6 +5404,12 @@ mod test {
     fn pattern_with_tuple_wildcard() {
         let p = qp(pattern, "(..)");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn pattern_with_tuple_wildcard_anywhere() {
+        let p = qp(pattern, "(a, .., b)");
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
     }
 
     #[test]
