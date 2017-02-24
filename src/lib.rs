@@ -573,8 +573,15 @@ pub struct TraitBounds {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum TraitBound {
+    Lifetime(TraitBoundLifetime),
     Normal(TraitBoundNormal),
     Relaxed(TraitBoundRelaxed),
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitBoundLifetime {
+    pub extent: Extent,
+    lifetime: Lifetime,
 }
 
 #[derive(Debug, Visit)]
@@ -1542,6 +1549,7 @@ pub trait Visitor {
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
     fn visit_trait_bound(&mut self, &TraitBound) {}
+    fn visit_trait_bound_lifetime(&mut self, &TraitBoundLifetime) {}
     fn visit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
     fn visit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
     fn visit_trait_bounds(&mut self, &TraitBounds) {}
@@ -1669,6 +1677,7 @@ pub trait Visitor {
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
     fn exit_trait_bound(&mut self, &TraitBound) {}
+    fn exit_trait_bound_lifetime(&mut self, &TraitBoundLifetime) {}
     fn exit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
     fn exit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
     fn exit_trait_bounds(&mut self, &TraitBounds) {}
@@ -2212,9 +2221,17 @@ fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBou
 
 fn trait_bound<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBound> {
     pm.alternate(pt)
+        .one(map(trait_bound_lifetime, TraitBound::Lifetime))
         .one(map(trait_bound_normal, TraitBound::Normal))
         .one(map(trait_bound_relaxed, TraitBound::Relaxed))
         .finish()
+}
+
+fn trait_bound_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundLifetime> {
+    sequence!(pm, pt, {
+        spt      = point;
+        lifetime = lifetime;
+    }, |_, _| TraitBoundLifetime { extent: ex(spt, pt), lifetime })
 }
 
 fn trait_bound_normal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundNormal> {
@@ -5536,6 +5553,12 @@ mod test {
     fn where_clause_with_path() {
         let p = qp(function_where, "P: foo::bar::baz::Quux<'a>");
         assert_eq!(unwrap_progress(p).extent, (0, 26))
+    }
+
+    #[test]
+    fn where_clause_with_lifetime() {
+        let p = qp(function_where, "P: 'a");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
     }
 
     #[test]
