@@ -674,14 +674,12 @@ pub enum Expression {
     Dereference(Dereference),
     FieldAccess(FieldAccess),
     ForLoop(ForLoop),
-    FunctionCall(FunctionCall),
     If(If),
     IfLet(IfLet),
     Let(Let),
     Loop(Loop),
     MacroCall(MacroCall),
     Match(Match),
-    MethodCall(MethodCall),
     Number(Number),
     Parenthetical(Parenthetical),
     Range(Range),
@@ -717,14 +715,12 @@ impl Expression {
             Expression::Dereference(Dereference { extent, .. })     |
             Expression::FieldAccess(FieldAccess { extent, .. })     |
             Expression::ForLoop(ForLoop { extent, .. })             |
-            Expression::FunctionCall(FunctionCall { extent, .. })   |
             Expression::If(If { extent, .. })                       |
             Expression::IfLet(IfLet { extent, .. })                 |
             Expression::Let(Let { extent, .. })                     |
             Expression::Loop(Loop { extent, .. })                   |
             Expression::MacroCall(MacroCall { extent, .. })         |
             Expression::Match(Match { extent, .. })                 |
-            Expression::MethodCall(MethodCall { extent, .. })       |
             Expression::Parenthetical(Parenthetical { extent, .. }) |
             Expression::Range(Range { extent, .. })                 |
             Expression::Reference(Reference { extent, .. })         |
@@ -779,7 +775,7 @@ pub struct FieldAccess {
 
 #[derive(Debug, Decompose)]
 pub enum FieldName {
-    Ident(Ident),
+    Path(PathComponent),
     Number(Extent),
 }
 
@@ -876,29 +872,11 @@ pub struct StructLiteralField {
     whitespace: Vec<Whitespace>,
 }
 
-// TODO: Can we roll up function and method call into this?
 #[derive(Debug, Visit)]
 pub struct Call {
     extent: Extent,
     target: Box<Expression>,
     args: Vec<Expression>,
-}
-
-#[derive(Debug, Visit)]
-pub struct FunctionCall {
-    extent: Extent,
-    name: PathedIdent,
-    args: Vec<Expression>,
-}
-
-#[derive(Debug, Visit)]
-pub struct MethodCall {
-    extent: Extent,
-    receiver: Box<Expression>,
-    name: Ident,
-    turbofish: Option<Turbofish>,
-    args: Vec<Expression>,
-    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1157,12 +1135,6 @@ enum ExpressionTail {
     Binary { op: BinaryOp, rhs: Box<Expression>, whitespace: Vec<Whitespace> },
     FieldAccess { field: FieldName },
     Call { args: Vec<Expression> },
-    MethodCall {
-        name: Ident,
-        turbofish: Option<Turbofish>,
-        args: Vec<Expression>,
-        whitespace: Vec<Whitespace>,
-    },
     Range { rhs: Option<Box<Expression>> },
     Slice { range: Box<Expression>, whitespace: Vec<Whitespace> },
     TryOperator,
@@ -1537,7 +1509,6 @@ pub trait Visitor {
     fn visit_file(&mut self, &File) {}
     fn visit_for_loop(&mut self, &ForLoop) {}
     fn visit_function(&mut self, &Function) {}
-    fn visit_function_call(&mut self, &FunctionCall) {}
     fn visit_function_header(&mut self, &FunctionHeader) {}
     fn visit_generic(&mut self, &Generic) {}
     fn visit_generic_declarations(&mut self, &GenericDeclarations) {}
@@ -1556,7 +1527,6 @@ pub trait Visitor {
     fn visit_macro_rules(&mut self, &MacroRules) {}
     fn visit_match(&mut self, &Match) {}
     fn visit_match_arm(&mut self, &MatchArm) {}
-    fn visit_method_call(&mut self, &MethodCall) {}
     fn visit_module(&mut self, &Module) {}
     fn visit_named_argument(&mut self, &NamedArgument) {}
     fn visit_number(&mut self, &Number) {}
@@ -1670,7 +1640,6 @@ pub trait Visitor {
     fn exit_file(&mut self, &File) {}
     fn exit_for_loop(&mut self, &ForLoop) {}
     fn exit_function(&mut self, &Function) {}
-    fn exit_function_call(&mut self, &FunctionCall) {}
     fn exit_function_header(&mut self, &FunctionHeader) {}
     fn exit_generic(&mut self, &Generic) {}
     fn exit_generic_declarations(&mut self, &GenericDeclarations) {}
@@ -1689,7 +1658,6 @@ pub trait Visitor {
     fn exit_macro_rules(&mut self, &MacroRules) {}
     fn exit_match(&mut self, &Match) {}
     fn exit_match_arm(&mut self, &MatchArm) {}
-    fn exit_method_call(&mut self, &MethodCall) {}
     fn exit_module(&mut self, &Module) {}
     fn exit_named_argument(&mut self, &NamedArgument) {}
     fn exit_number(&mut self, &Number) {}
@@ -2381,7 +2349,6 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(expression_ending_in_brace)
             .one(map(expr_macro_call, Expression::MacroCall))
             .one(map(expr_let, Expression::Let))
-            .one(map(expr_function_call, Expression::FunctionCall))
             .one(expr_tuple_or_parenthetical)
             .one(map(expr_range, Expression::Range))
             .one(map(expr_array, Expression::Array))
@@ -2434,16 +2401,6 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
                     extent: ex(spt, pt),
                     target: Box::new(expression),
                     args: args
-                })
-            }
-            Some(ExpressionTail::MethodCall { name, turbofish, args, whitespace }) => {
-                expression = Expression::MethodCall(MethodCall {
-                    extent: ex(spt, pt),
-                    receiver: Box::new(expression),
-                    name,
-                    turbofish,
-                    args,
-                    whitespace,
                 })
             }
             Some(ExpressionTail::Range { rhs }) => {
@@ -3324,22 +3281,11 @@ fn expr_value_struct_literal_splat<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
     }, |_, _| (value, ws))
 }
 
-fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionCall> {
-    sequence!(pm, pt, {
-        spt  = point;
-        name = pathed_ident;
-        _    = literal("(");
-        args = allow_struct_literals(zero_or_more_tailed_values(",", expression));
-        _    = literal(")");
-    }, |_, pt| FunctionCall { extent: ex(spt, pt), name, args })
-}
-
 fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     pm.alternate(pt)
         .one(expr_tail_as_type)
         .one(expr_tail_binary)
         .one(expr_tail_call)
-        .one(expr_tail_method_call)
         .one(expr_tail_field_access)
         .one(expr_tail_range)
         .one(expr_tail_slice)
@@ -3400,36 +3346,29 @@ fn binary_op<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, BinaryOp> {
         .finish()
 }
 
-fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
-    sequence!(pm, pt, {
-        ws        = optional_whitespace(Vec::new());
-        _         = literal(".");
-        name      = ident;
-        turbofish = optional(turbofish);
-        _         = literal("(");
-        args      = allow_struct_literals(zero_or_more_tailed_values(",", expression));
-        _         = literal(")");
-    }, |_, _| ExpressionTail::MethodCall { name, turbofish, args, whitespace: ws })
-}
-
 fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
-        _         = literal("(");
-        args      = allow_struct_literals(zero_or_more_tailed_values(",", expression));
-        _         = literal(")");
+        _x   = optional_whitespace(Vec::new());
+        _    = literal("(");
+        _x   = optional_whitespace(_x);
+        args = allow_struct_literals(zero_or_more_tailed_values(",", expression));
+        _x   = optional_whitespace(_x);
+        _    = literal(")");
     }, |_, _| ExpressionTail::Call { args })
 }
 
 fn expr_tail_field_access<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
-        _  = literal(".");
+        _x    = optional_whitespace(Vec::new());
+        _     = literal(".");
+        _x    = optional_whitespace(_x);
         field = field_name;
     }, |_, _| ExpressionTail::FieldAccess { field })
 }
 
 fn field_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FieldName> {
     pm.alternate(pt)
-        .one(map(ident, FieldName::Ident))
+        .one(map(path_component, FieldName::Path))
         .one(map(pure_number, FieldName::Number))
         .finish()
 }
@@ -4912,63 +4851,66 @@ mod test {
     }
 
     #[test]
-    fn expr_function_call() {
-        let p = qp(expression, "foo()");
-        assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    fn expr_call_function() {
+        let p = unwrap_progress(qp(expression, "foo()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 5))
     }
 
     #[test]
-    fn pathed_ident_with_leading_separator() {
-        let p = qp(pathed_ident, "::foo");
-        assert_eq!(unwrap_progress(p).extent, (0, 5))
+    fn expr_call_method() {
+        let p = unwrap_progress(qp(expression, "foo.bar()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 9))
     }
 
     #[test]
-    fn pathed_ident_with_turbofish() {
-        let p = qp(pathed_ident, "foo::<Vec<u8>>");
-        assert_eq!(unwrap_progress(p).extent, (0, 14))
+    fn expr_call_method_multiple() {
+        let p = unwrap_progress(qp(expression, "foo.bar().baz()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 15))
     }
 
     #[test]
-    fn expr_function_call_with_args() {
-        let p = qp(expression, "foo(true)");
-        assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    fn expr_call_method_multiple_spaced() {
+        let p = unwrap_progress(qp(expression, "foo.bar()\n    .baz()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 20))
     }
 
     #[test]
-    fn expr_method_call() {
-        let p = qp(expression, "foo.bar()");
-        assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    fn expr_call_method_with_turbofish() {
+        let p = unwrap_progress(qp(expression, "foo.bar::<u8>()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 15))
     }
 
     #[test]
-    fn expr_method_call_multiple() {
-        let p = qp(expression, "foo.bar().baz()");
-        assert_eq!(unwrap_progress(p).extent(), (0, 15))
+    fn expr_call_method_with_turbofish_nested() {
+        let p = unwrap_progress(qp(expression, "e.into_iter().collect::<BTreeSet<_>>()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 38))
     }
 
     #[test]
-    fn expr_method_call_multiple_spaced() {
-        let p = qp(expression, "foo.bar()\n    .baz()");
-        assert_eq!(unwrap_progress(p).extent(), (0, 20))
-    }
-
-    #[test]
-    fn expr_method_call_with_turbofish() {
-        let p = qp(expression, "foo.bar::<u8>()");
-        assert_eq!(unwrap_progress(p).extent(), (0, 15))
-    }
-
-    #[test]
-    fn expr_method_call_with_turbofish_nested() {
-        let p = qp(expression, "e.into_iter().collect::<BTreeSet<_>>()");
-        assert_eq!(unwrap_progress(p).extent(), (0, 38))
+    fn expr_call_method_with_turbofish_on_type_and_method() {
+        let p = unwrap_progress(qp(expression, "Foo::<u8>::bar()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 16))
     }
 
     #[test]
     fn expr_call_of_expr() {
-        let p = qp(expression, "{foo}()");
-        assert_eq!(unwrap_progress(p).extent(), (0, 7))
+        let p = unwrap_progress(qp(expression, "{foo}()"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 7))
+    }
+
+    #[test]
+    fn expr_call_all_space() {
+        let p = unwrap_progress(qp(expression, "foo ( true , false )"));
+        assert!(p.is_call());
+        assert_eq!(p.extent(), (0, 20))
     }
 
     #[test]
@@ -5407,6 +5349,18 @@ mod test {
         let p = e.into_parenthetical().unwrap();
         assert!(p.expression.is_value());
         assert_eq!(b.extent, (7, 9));
+    }
+
+    #[test]
+    fn pathed_ident_with_leading_separator() {
+        let p = qp(pathed_ident, "::foo");
+        assert_eq!(unwrap_progress(p).extent, (0, 5))
+    }
+
+    #[test]
+    fn pathed_ident_with_turbofish() {
+        let p = qp(pathed_ident, "foo::<Vec<u8>>");
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
     }
 
     #[test]
