@@ -2157,9 +2157,12 @@ fn split_point_at_non_zero_offset<'s>(pt: Point<'s>, idx: usize, e: Error) -> Pr
 fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarations> {
     sequence!(pm, pt, {
         spt       = point;
+        _x        = optional_whitespace(Vec::new());
         _         = literal("<");
+        _x        = optional_whitespace(_x);
         lifetimes = zero_or_more_tailed_values(",", lifetime);
         types     = zero_or_more_tailed_values(",", generic_declaration);
+        _x        = optional_whitespace(_x);
         _         = literal(">");
     }, |_, pt| GenericDeclarations { extent: ex(spt, pt), lifetimes, types })
 }
@@ -2175,8 +2178,10 @@ fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, G
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
     sequence!(pm, pt, {
         _        = literal("(");
+        _x       = optional_whitespace(Vec::new());
         self_arg = optional(map(self_argument, Argument::SelfArgument));
         args     = zero_or_more_tailed_values_append(self_arg, ",", function_argument);
+        _x       = optional_whitespace(_x);
         _        = literal(")");
     }, move |_, _| args)
 }
@@ -2199,8 +2204,9 @@ fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArg
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
     sequence!(pm, pt, {
         name = pattern;
-        _    = literal(":");
         ws   = optional_whitespace(Vec::new());
+        _    = literal(":");
+        ws   = optional_whitespace(ws);
         typ  = typ;
     }, |_, _| Argument::Named(NamedArgument { name, typ, whitespace: ws }))
 }
@@ -2231,8 +2237,9 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 
 fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
     sequence!(pm, pt, {
-        _      = literal(":");
         _x     = optional_whitespace(Vec::new());
+        _      = literal(":");
+        _x     = optional_whitespace(_x);
         bounds = trait_bounds;
     }, |_, _| bounds)
 }
@@ -2539,8 +2546,9 @@ fn expr_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Let> {
 
 fn expr_let_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type, Vec<Whitespace>)> {
     sequence!(pm, pt, {
-        _   = literal(":");
         ws  = optional_whitespace(Vec::new());
+        _   = literal(":");
+        ws  = optional_whitespace(ws);
         typ = typ;
     }, |_, _| (typ, ws))
 }
@@ -2765,7 +2773,9 @@ fn expr_tuple_or_parenthetical<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
     sequence!(pm, pt, {
         spt    = point;
         _      = literal("(");
+        _x     = optional_whitespace(Vec::new());
         values = allow_struct_literals(zero_or_more_tailed(",", expression));
+        _x     = optional_whitespace(_x);
         _      = literal(")");
     }, move |_, pt| {
         let extent = ex(spt, pt);
@@ -2803,7 +2813,9 @@ fn expr_array_explicit<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, A
     sequence!(pm, pt, {
         spt    = point;
         _      = literal("[");
+        _x     = optional_whitespace(Vec::new());
         values = allow_struct_literals(zero_or_more_tailed_values(",", expression));
+        _x     = optional_whitespace(_x);
         _      = literal("]");
     }, |_, pt| ArrayExplicit { extent: ex(spt, pt), values })
 }
@@ -2944,7 +2956,9 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
         mov                 = optional(literal("move"));
         ws                  = optional_whitespace(Vec::new());
         _                   = literal("|");
+        ws                  = optional_whitespace(ws);
         args                = zero_or_more_tailed_values(",", expr_closure_arg);
+        ws                  = optional_whitespace(ws);
         _                   = literal("|");
         (return_type, body) = expr_closure_return;
     }, |_, pt| Closure {
@@ -3264,8 +3278,9 @@ fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>)
     Progress<'s, (Expression, Vec<Whitespace>)>
 {
     sequence!(pm, pt, {
-        _     = literal(":");
         ws    = optional_whitespace(Vec::new());
+        _     = literal(":");
+        ws    = optional_whitespace(ws);
         value = allow_struct_literals(expression);
     }, |_, _| (value, ws))
 }
@@ -3399,7 +3414,9 @@ fn expr_tail_try_operator<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
     sequence!(pm, pt, {
         spt        = point;
+        _x         = optional_whitespace(Vec::new());
         _          = optional(literal("::"));
+        _x         = optional_whitespace(_x);
         components = one_or_more_tailed_values("::", path_component);
     }, |_, pt| PathedIdent { extent: ex(spt, pt), components })
 }
@@ -3415,8 +3432,13 @@ fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathCo
 fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> {
     sequence!(pm, pt, {
         spt   = point;
-        _     = literal("::<");
+        _x    = optional_whitespace(Vec::new());
+        _     = literal("::");
+        _x    = optional_whitespace(_x);
+        _     = literal("<");
+        _x    = optional_whitespace(_x);
         types = zero_or_more_tailed_values(",", typ);
+        _x    = optional_whitespace(_x);
         _     = literal(">");
     }, |_, pt| Turbofish { extent: ex(spt, pt), types: types })
 }
@@ -3464,7 +3486,9 @@ fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("(");
+        _x      = optional_whitespace(Vec::new());
         members = zero_or_more_tailed_values(",", pattern_tuple_member);
+        _x      = optional_whitespace(_x);
         _       = literal(")");
     }, |_, pt| PatternTuple { extent: ex(spt, pt), members })
 }
@@ -3722,6 +3746,7 @@ fn p_trait_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent
     }, |_, _| ex)
 }
 
+// TOOD: this is a terrrrrrible name. It is not an impl!
 fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMember> {
     pm.alternate(pt)
         .one(map(trait_member_function, TraitMember::Function))
@@ -3735,6 +3760,7 @@ fn trait_member_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
     sequence!(pm, pt, {
         spt    = point;
         header = trait_impl_function_header;
+        _x     = optional_whitespace(Vec::new());
         body   = trait_impl_function_body;
     }, |_, pt| TraitMemberFunction { extent: ex(spt, pt), header, body })
 }
@@ -3765,9 +3791,10 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         spt               = point;
         visibility        = optional(visibility);
         _                 = literal("fn");
-        ws                = optional_whitespace(Vec::new());
+        ws                = whitespace;
         name              = ident;
         generics          = optional(generic_declarations);
+        ws                = optional_whitespace(ws);
         arguments         = trait_impl_function_arglist;
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -3789,8 +3816,10 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
 fn trait_impl_function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<TraitImplArgument>> {
     sequence!(pm, pt, {
         _        = literal("(");
+        _x       = optional_whitespace(Vec::new());
         self_arg = optional(map(self_argument, TraitImplArgument::SelfArgument));
         args     = zero_or_more_tailed_values_append(self_arg, ",", trait_impl_function_argument);
+        _x       = optional_whitespace(_x);
         _        = literal(")");
     }, move |_, _| args)
 }
@@ -3805,8 +3834,9 @@ fn trait_impl_function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progr
 fn trait_impl_function_argument_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Pattern, Vec<Whitespace>)> {
     sequence!(pm, pt, {
         name = pattern;
-        _    = literal(":");
         ws   = optional_whitespace(Vec::new());
+        _    = literal(":");
+        ws   = optional_whitespace(ws);
     }, |_, _| (name, ws))
 }
 
@@ -3866,6 +3896,7 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
     sequence!(pm, pt, {
         spt    = point;
         header = function_header;
+        _x     = optional_whitespace(Vec::new());
         body   = block;
     }, |_, pt| ImplFunction { extent: ex(spt, pt), header, body })
 }
@@ -4005,8 +4036,11 @@ fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
         _          = literal("use");
         ws         = whitespace;
         _          = optional(literal("::"));
+        ws         = optional_whitespace(ws);
         path       = zero_or_more(use_path_component);
+        ws         = optional_whitespace(ws);
         tail       = use_tail;
+        ws         = optional_whitespace(ws);
         _          = literal(";");
     }, move |_, pt| {
         Use { extent: ex(spt, pt), visibility, path, tail, whitespace: ws }
@@ -4016,6 +4050,7 @@ fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
 fn use_path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
     sequence!(pm, pt, {
         name = ident;
+        _x   = optional_whitespace(Vec::new());
         _    = literal("::");
     }, |_, _| name)
 }
@@ -4056,7 +4091,9 @@ fn use_tail_multi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTai
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("{");
+        _x    = optional_whitespace(Vec::new());
         names = zero_or_more_tailed_values(",", use_tail_ident);
+        _x    = optional_whitespace(_x);
         _     = literal("}");
     }, |_, pt| UseTailMulti { extent: ex(spt, pt), names })
 }
@@ -4165,7 +4202,9 @@ fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> 
 fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
     sequence!(pm, pt, {
         _     = literal("(");
+        _x    = optional_whitespace(Vec::new());
         types = zero_or_more_tailed_values(",", typ);
+        _x    = optional_whitespace(_x);
         _     = literal(")");
     }, |_, _| types)
 }
@@ -4224,7 +4263,9 @@ fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeG
     sequence!(pm, pt, {
         spt               = point;
         _                 = literal("(");
+        _x                = optional_whitespace(Vec::new());
         types             = zero_or_more_tailed_values(",", typ);
+        _x                = optional_whitespace(_x);
         _                 = literal(")");
         ws                = optional_whitespace(Vec::new());
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -4239,9 +4280,11 @@ fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeG
 fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGenericsAngle> {
     sequence!(pm, pt, {
         spt     = point;
-        _       = literal("<");
         ws      = optional_whitespace(Vec::new());
+        _       = literal("<");
+        ws      = optional_whitespace(ws);
         members = zero_or_more_tailed_values(",", typ_generics_angle_member);
+        ws      = optional_whitespace(ws);
         _       = literal(">");
     }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), members, whitespace: ws })
 }
@@ -4393,6 +4436,12 @@ mod test {
     }
 
     #[test]
+    fn parse_use_all_space() {
+        let p = qp(p_use, "use foo :: { bar as a , baz as b } ;");
+        assert_eq!(unwrap_progress(p).extent, (0, 36))
+    }
+
+    #[test]
     fn item_mod_multiple() {
         let p = qp(item, "mod foo { use super::*; }");
         assert_eq!(unwrap_progress(p).extent(), (0, 25))
@@ -4504,6 +4553,12 @@ mod test {
     fn item_trait_with_supertraits() {
         let p = qp(item, "trait Foo: Bar + Baz {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 23))
+    }
+
+    #[test]
+    fn item_trait_all_space() {
+        let p = qp(item, "trait Foo : Bar { type A : B ; fn a ( a : u8) -> u8 { a } }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 59))
     }
 
     #[test]
@@ -4672,6 +4727,12 @@ mod test {
     fn fn_with_argument() {
         let p = qp(function_header, "fn foo(a: u8)");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_arguments_all_space() {
+        let p = qp(function_header, "fn foo ( a : u8 )");
+        assert_eq!(unwrap_progress(p).extent, (0, 17))
     }
 
     #[test]
@@ -4956,6 +5017,14 @@ mod test {
     }
 
     #[test]
+    fn expr_tuple_all_space() {
+        let p = qp(expression, "( 1 , 2 )");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 9));
+        assert!(t.is_tuple())
+    }
+
+    #[test]
     fn expr_parens() {
         let p = qp(expression, "(a && b)");
         let t = unwrap_progress(p);
@@ -4968,6 +5037,14 @@ mod test {
         let p = qp(expression, "(1)");
         let t = unwrap_progress(p);
         assert_eq!(t.extent(), (0, 3));
+        assert!(t.is_parenthetical())
+    }
+
+    #[test]
+    fn expr_parens_all_space() {
+        let p = qp(expression, "( 1 )");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 5));
         assert!(t.is_parenthetical())
     }
 
@@ -5182,6 +5259,12 @@ mod test {
     }
 
     #[test]
+    fn expr_closure_all_space() {
+        let p = qp(expression, "move | a : u8 | -> u8 { a }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 27))
+    }
+
+    #[test]
     fn expr_return() {
         let p = qp(expression, "return 1");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
@@ -5203,6 +5286,18 @@ mod test {
     fn expr_array_repeated() {
         let p = qp(expression, "[1; 2*3]");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_array_explicit_all_space() {
+        let p = qp(expression, "[ 1 , 1 ]");
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn expr_array_repeated_all_space() {
+        let p = qp(expression, "[ 1 ; 2 * 3 ]");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
@@ -5364,6 +5459,12 @@ mod test {
     }
 
     #[test]
+    fn pathed_ident_all_space() {
+        let p = qp(pathed_ident, "foo :: < Vec < u8 > , Option < bool > >");
+        assert_eq!(unwrap_progress(p).extent, (0, 39))
+    }
+
+    #[test]
     fn number_decimal_cannot_start_with_underscore() {
         let p = qp(number_literal, "_123");
         let (err_loc, errs) = unwrap_progress_err(p);
@@ -5474,6 +5575,12 @@ mod test {
     }
 
     #[test]
+    fn pattern_with_tuple_all_space() {
+        let p = qp(pattern, "( a , .. , b )");
+        assert_eq!(unwrap_progress(p).extent(), (0, 14))
+    }
+
+    #[test]
     fn pattern_with_enum_struct() {
         let p = qp(pattern, "Baz { a: a }");
         assert_eq!(unwrap_progress(p).extent(), (0, 12))
@@ -5552,9 +5659,21 @@ mod test {
     }
 
     #[test]
+    fn type_tuple_all_space() {
+        let p = qp(typ, "( u8 , u8 )");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
     fn type_with_generics() {
         let p = qp(typ, "A<T>");
         assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn type_with_generics_all_space() {
+        let p = qp(typ, "A < T >");
+        assert_eq!(unwrap_progress(p).extent(), (0, 7))
     }
 
     #[test]
@@ -5754,6 +5873,12 @@ mod test {
     fn generic_declarations_allow_bounds() {
         let p = qp(generic_declarations, "<A: Foo>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn generic_declarations_all_space() {
+        let p = qp(generic_declarations, "< A : Foo >");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
