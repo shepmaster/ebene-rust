@@ -437,7 +437,13 @@ pub struct Ident {
 #[derive(Debug, Visit)]
 pub struct PathedIdent {
     extent: Extent,
-    idents: Vec<Ident>,
+    components: Vec<PathComponent>,
+}
+
+#[derive(Debug, Visit)]
+pub struct PathComponent {
+    extent: Extent,
+    ident: Ident,
     turbofish: Option<Turbofish>,
 }
 
@@ -449,7 +455,9 @@ pub struct Turbofish {
 
 impl From<Ident> for PathedIdent {
     fn from(other: Ident) -> PathedIdent {
-        PathedIdent { extent: other.extent, idents: vec![other], turbofish: None }
+        PathedIdent { extent: other.extent, components: vec![
+            PathComponent { extent: other.extent, ident: other, turbofish: None },
+        ] }
     }
 }
 
@@ -1557,6 +1565,7 @@ pub trait Visitor {
     fn visit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn visit_number_octal(&mut self, &NumberOctal) {}
     fn visit_parenthetical(&mut self, &Parenthetical) {}
+    fn visit_path_component(&mut self, &PathComponent) {}
     fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
@@ -1689,6 +1698,7 @@ pub trait Visitor {
     fn exit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn exit_number_octal(&mut self, &NumberOctal) {}
     fn exit_parenthetical(&mut self, &Parenthetical) {}
+    fn exit_path_component(&mut self, &PathComponent) {}
     fn exit_pathed_ident(&mut self, &PathedIdent) {}
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
@@ -1829,16 +1839,28 @@ fn parse_tailed<'s, F, T>(sep: &'static str, f: F, pm: &mut Master<'s>, pt: Poin
     TailedState<Point<'s>, T, Error>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
+    let pre_ws = pt;
+    let (pt, _x) = match whitespace(pm, pt) {
+        Progress { status: peresil::Status::Success(v), point } => {
+            (point, v)
+        }
+        Progress { status: peresil::Status::Failure(_), .. } => {
+            // TODO: unrecoverable errors
+            (pt, Vec::new())
+        }
+    };
+
     let (pt, value) = match f(pm, pt) {
         Progress { status: peresil::Status::Success(v), point } => {
             (point, v)
         }
         Progress { status: peresil::Status::Failure(f), .. } => {
             // TODO: unrecoverable errors
-            return TailedState::Nothing(pt, f);
+            return TailedState::Nothing(pre_ws, f);
         }
     };
 
+    let pre_ws = pt;
     let (pt, _x) = match whitespace(pm, pt) {
         Progress { status: peresil::Status::Success(v), point } => {
             (point, v)
@@ -1855,17 +1877,7 @@ fn parse_tailed<'s, F, T>(sep: &'static str, f: F, pm: &mut Master<'s>, pt: Poin
         }
         Progress { status: peresil::Status::Failure(_), .. } => {
             // TODO: unrecoverable errors
-            return TailedState::ValueOnly(pt, value);
-        }
-    };
-
-    let (pt, _x) = match whitespace(pm, pt) {
-        Progress { status: peresil::Status::Success(v), point } => {
-            (point, v)
-        }
-        Progress { status: peresil::Status::Failure(_), .. } => {
-            // TODO: unrecoverable errors
-            (pt, Vec::new())
+            return TailedState::ValueOnly(pre_ws, value);
         }
     };
 
@@ -3244,8 +3256,8 @@ fn expr_box<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionBo
 fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
     if pm.state.ignore_struct_literals {
         sequence!(pm, pt, {
-            spt           = point;
-            name          = pathed_ident;
+            spt  = point;
+            name = pathed_ident;
         }, |_, pt| Value { extent: ex(spt, pt), name, literal: None })
     } else {
         sequence!(pm, pt, {
@@ -3305,8 +3317,9 @@ fn expr_value_struct_literal_splat<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
     Progress<'s, (Expression, Vec<Whitespace>)>
 {
     sequence!(pm, pt, {
-        _     = literal("..");
         ws    = optional_whitespace(Vec::new());
+        _     = literal("..");
+        ws    = optional_whitespace(ws);
         value = allow_struct_literals(expression);
     }, |_, _| (value, ws))
 }
@@ -3446,19 +3459,18 @@ fn expr_tail_try_operator<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
     sequence!(pm, pt, {
-        spt       = point;
-        _         = optional(literal("::"));
-        ident     = ident;
-        idents    = zero_or_more_append(vec![ident], path_component);
-        turbofish = optional(turbofish);
-    }, |_, pt| PathedIdent { extent: ex(spt, pt), idents, turbofish })
+        spt        = point;
+        _          = optional(literal("::"));
+        components = one_or_more_tailed_values("::", path_component);
+    }, |_, pt| PathedIdent { extent: ex(spt, pt), components })
 }
 
-fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+fn path_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathComponent> {
     sequence!(pm, pt, {
-        _     = literal("::");
-        ident = ident;
-    }, |_, _| ident)
+        spt       = point;
+        ident     = ident;
+        turbofish = optional(turbofish);
+    }, |_, pt| PathComponent { extent: ex(spt, pt), ident, turbofish })
 }
 
 fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> {
@@ -3876,6 +3888,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         type_name        = typ;
         ws               = optional_whitespace(ws);
         (wheres, ws)     = concat_whitespace(ws, optional(where_clause));
+        ws               = optional_whitespace(ws);
         _                = literal("{");
         ws               = optional_whitespace(ws);
         body             = zero_or_more(impl_member);
@@ -5866,8 +5879,9 @@ mod test {
     #[test]
     fn one_or_more_tailed_with_zero() {
         let p = qp(one_or_more_tailed(",", literal("X")), "");
-        let e = unwrap_progress_err(p);
-        assert_eq!(e, (0, vec![Error::Literal("X")]));
+        let (err_loc, errs) = unwrap_progress_err(p);
+        assert_eq!(err_loc, 0);
+        assert!(errs.contains(&Error::Literal("X")));
     }
 
     #[test]
