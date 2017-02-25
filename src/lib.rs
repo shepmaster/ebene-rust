@@ -1,6 +1,5 @@
 #![feature(conservative_impl_trait)]
 #![feature(pattern)]
-#![feature(custom_derive)]
 
 #[macro_use]
 extern crate strata_rs_derive;
