@@ -225,7 +225,9 @@ pub enum UseTail {
 
 #[derive(Debug, Visit)]
 pub struct UseTailIdent {
+    extent: Extent,
     name: Ident,
+    rename: Option<Ident>,
 }
 
 #[derive(Debug, Visit)]
@@ -236,7 +238,7 @@ pub struct UseTailGlob {
 #[derive(Debug, Visit)]
 pub struct UseTailMulti {
     extent: Extent,
-    names: Vec<Ident>,
+    names: Vec<UseTailIdent>,
 }
 
 #[derive(Debug, Visit)]
@@ -3717,7 +3719,20 @@ fn use_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTail> {
 }
 
 fn use_tail_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTailIdent> {
-    ident(pm, pt).map(|name| UseTailIdent { name })
+    sequence!(pm, pt, {
+        spt = point;
+        name = ident;
+        rename = optional(use_tail_ident_rename);
+    }, |_, pt| UseTailIdent { extent: ex(spt, pt), name, rename })
+}
+
+fn use_tail_ident_rename<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
+    sequence!(pm, pt, {
+        _x   = whitespace;
+        _    = literal("as");
+        _x   = append_whitespace(_x);
+        name = ident;
+    }, |_, _| name)
 }
 
 fn use_tail_glob<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTailGlob> {
@@ -3731,7 +3746,7 @@ fn use_tail_multi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTai
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("{");
-        names = zero_or_more_tailed_values(",", ident);
+        names = zero_or_more_tailed_values(",", use_tail_ident);
         _     = literal("}");
     }, |_, pt| UseTailMulti { extent: ex(spt, pt), names })
 }
@@ -4012,6 +4027,18 @@ mod test {
     fn parse_use_absolute_path() {
         let p = qp(p_use, "use ::{Bar, Baz};");
         assert_eq!(unwrap_progress(p).extent, (0, 17))
+    }
+
+    #[test]
+    fn parse_use_rename() {
+        let p = qp(p_use, "use foo as bar;");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn parse_use_with_multi_rename() {
+        let p = qp(p_use, "use foo::{bar as a, baz as b};");
+        assert_eq!(unwrap_progress(p).extent, (0, 30))
     }
 
     #[test]
