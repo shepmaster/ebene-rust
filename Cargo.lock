@@ -12,8 +12,8 @@ dependencies = [
  "serde_derive 0.8.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "strata 0.1.0 (git+https://github.com/shepmaster/strata)",
+ "strata-rs-derive 0.1.0",
  "unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "visit-derive 0.1.0",
 ]
 
 [[package]]
@@ -409,6 +409,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-rs-derive"
+version = "0.1.0"
+dependencies = [
+ "quote 0.3.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "syn"
 version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -493,14 +501,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "idna 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "matches 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "visit-derive"
-version = "0.1.0"
-dependencies = [
- "quote 0.3.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "syn 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 [package]
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
-name = "visit-derive"
+name = "strata-rs-derive"
 version = "0.1.0"
 
 [lib]

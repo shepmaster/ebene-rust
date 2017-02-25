@@ -4,7 +4,7 @@
 #![feature(custom_derive)]
 
 #[macro_use]
-extern crate visit_derive;
+extern crate strata_rs_derive;
 
 #[macro_use]
 extern crate peresil;
@@ -28,6 +28,7 @@ pub enum Error {
     Literal(&'static str),
     ExpectedIdentifier,
     ExpectedNumber,
+    ExpectedTuple,
     UnterminatedRawString,
 }
 
@@ -128,7 +129,7 @@ pub struct File {
     items: Vec<Item>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Item {
     Attribute(Attribute),
     Const(Const),
@@ -184,7 +185,7 @@ pub struct Lifetime {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Whitespace {
     Comment(Comment),
     Whitespace(Extent),
@@ -205,7 +206,7 @@ pub struct Use {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum UseTail {
     Ident(UseTailIdent),
     Glob(UseTailGlob),
@@ -283,7 +284,7 @@ pub struct Generic {
     bounds: Option<TraitBounds>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Type {
     Array(TypeArray),
     Core(TypeCore),
@@ -367,7 +368,7 @@ pub struct TypeTuple {
     types: Vec<Type>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum TypeGenerics {
     Function(TypeGenericsFunction),
     Angle(TypeGenericsAngle),
@@ -444,7 +445,7 @@ pub struct Struct {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum StructDefinitionBody {
     Brace(StructDefinitionBodyBrace),
     Tuple(StructDefinitionBodyTuple),
@@ -493,13 +494,13 @@ pub struct EnumVariant {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum EnumVariantBody {
     Tuple(Vec<Type>),
     Struct(StructDefinitionBody),
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Argument {
     SelfArgument(SelfArgument),
     Named(NamedArgument),
@@ -520,7 +521,7 @@ pub struct NamedArgument {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum TraitImplArgument {
     SelfArgument(SelfArgument),
     Named(TraitImplArgumentNamed),
@@ -563,6 +564,12 @@ pub struct UnsafeBlock {
 }
 
 #[derive(Debug, Visit)]
+pub struct Parenthetical {
+    extent: Extent,
+    expression: Box<Expression>,
+}
+
+#[derive(Debug, Visit, Decompose)]
 pub enum Statement {
     Explicit(Expression),
     Implicit(Expression),
@@ -579,32 +586,9 @@ impl Statement {
             Item(ref i) => i.extent(),
         }
     }
-
-    #[allow(dead_code)]
-    fn explicit(self) -> Option<Expression> {
-        match self {
-            Statement::Explicit(e) => Some(e),
-            _ => None,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn implicit(self) -> Option<Expression> {
-        match self {
-            Statement::Implicit(e) => Some(e),
-            _ => None,
-        }
-    }
-
-    fn is_implicit(&self) -> bool {
-        match *self {
-            Statement::Implicit(..) => true,
-            _ => false
-        }
-    }
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Expression {
     Array(Array),
     Box(ExpressionBox),
@@ -626,6 +610,7 @@ pub enum Expression {
     Match(Match),
     MethodCall(MethodCall),
     Number(Number),
+    Parenthetical(Parenthetical),
     Range(Range),
     Reference(Reference),
     Return(Return),
@@ -646,36 +631,37 @@ impl Expression {
             Expression::Block(ref x) => x.extent,
             Expression::Number(ref x) => x.extent(),
 
-            Expression::Array(Array { extent, .. })               |
-            Expression::Box(ExpressionBox { extent, .. })         |
-            Expression::AsType(AsType { extent, .. })             |
-            Expression::Binary(Binary { extent, .. })             |
-            Expression::Call(Call { extent, .. })                 |
-            Expression::Character(Character { extent, .. })       |
-            Expression::Closure(Closure { extent, .. })           |
-            Expression::Dereference(Dereference { extent, .. })   |
-            Expression::FieldAccess(FieldAccess { extent, .. })   |
-            Expression::ForLoop(ForLoop { extent, .. })           |
-            Expression::FunctionCall(FunctionCall { extent, .. }) |
-            Expression::If(If { extent, .. })                     |
-            Expression::IfLet(IfLet { extent, .. })               |
-            Expression::Let(Let { extent, .. })                   |
-            Expression::Loop(Loop { extent, .. })                 |
-            Expression::MacroCall(MacroCall { extent, .. })       |
-            Expression::Match(Match { extent, .. })               |
-            Expression::MethodCall(MethodCall { extent, .. })     |
-            Expression::Range(Range { extent, .. })               |
-            Expression::Reference(Reference { extent, .. })       |
-            Expression::Return(Return { extent, .. })             |
-            Expression::Slice(Slice { extent, .. })               |
-            Expression::String(String { extent, .. })             |
-            Expression::TryOperator(TryOperator { extent, .. })   |
-            Expression::Tuple(Tuple { extent, .. })               |
-            Expression::Unary(Unary { extent, .. })               |
-            Expression::UnsafeBlock(UnsafeBlock { extent, .. })   |
-            Expression::Value(Value { extent, .. })               |
-            Expression::While(While { extent, .. })               |
-            Expression::WhileLet(WhileLet { extent, .. })         => extent,
+            Expression::Array(Array { extent, .. })                 |
+            Expression::Box(ExpressionBox { extent, .. })           |
+            Expression::AsType(AsType { extent, .. })               |
+            Expression::Binary(Binary { extent, .. })               |
+            Expression::Call(Call { extent, .. })                   |
+            Expression::Character(Character { extent, .. })         |
+            Expression::Closure(Closure { extent, .. })             |
+            Expression::Dereference(Dereference { extent, .. })     |
+            Expression::FieldAccess(FieldAccess { extent, .. })     |
+            Expression::ForLoop(ForLoop { extent, .. })             |
+            Expression::FunctionCall(FunctionCall { extent, .. })   |
+            Expression::If(If { extent, .. })                       |
+            Expression::IfLet(IfLet { extent, .. })                 |
+            Expression::Let(Let { extent, .. })                     |
+            Expression::Loop(Loop { extent, .. })                   |
+            Expression::MacroCall(MacroCall { extent, .. })         |
+            Expression::Match(Match { extent, .. })                 |
+            Expression::MethodCall(MethodCall { extent, .. })       |
+            Expression::Parenthetical(Parenthetical { extent, .. }) |
+            Expression::Range(Range { extent, .. })                 |
+            Expression::Reference(Reference { extent, .. })         |
+            Expression::Return(Return { extent, .. })               |
+            Expression::Slice(Slice { extent, .. })                 |
+            Expression::String(String { extent, .. })               |
+            Expression::TryOperator(TryOperator { extent, .. })     |
+            Expression::Tuple(Tuple { extent, .. })                 |
+            Expression::Unary(Unary { extent, .. })                 |
+            Expression::UnsafeBlock(UnsafeBlock { extent, .. })     |
+            Expression::Value(Value { extent, .. })                 |
+            Expression::While(While { extent, .. })                 |
+            Expression::WhileLet(WhileLet { extent, .. })           => extent,
         }
     }
 }
@@ -715,13 +701,13 @@ pub struct FieldAccess {
     field: FieldName,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Decompose)]
 pub enum FieldName {
     Ident(Ident),
     Number(Extent),
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Number {
     Binary(NumberBinary),
     Decimal(NumberDecimal),
@@ -1050,7 +1036,7 @@ enum ExpressionTail {
     TryOperator,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum Pattern {
     Character(PatternCharacter),
     Ident(PatternIdent), // TODO: split into ident and enumtuple
@@ -1145,7 +1131,7 @@ pub struct PatternRange {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Decompose)]
 pub enum PatternRangeComponent {
     Character(Character),
     Number(Number),
@@ -1177,7 +1163,7 @@ pub struct Trait {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum TraitMember {
     Function(TraitImplFunction),
     Attribute(Attribute),
@@ -1202,7 +1188,7 @@ pub struct Impl {
     whitespace: Vec<Whitespace>,
 }
 
-#[derive(Debug, Visit)]
+#[derive(Debug, Visit, Decompose)]
 pub enum ImplMember {
     Function(ImplFunction),
     Attribute(Attribute),
@@ -1392,6 +1378,7 @@ pub trait Visitor {
     fn visit_number_decimal(&mut self, &NumberDecimal) {}
     fn visit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn visit_number_octal(&mut self, &NumberOctal) {}
+    fn visit_parenthetical(&mut self, &Parenthetical) {}
     fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
     fn visit_pattern_character(&mut self, &PatternCharacter) {}
@@ -1504,6 +1491,7 @@ pub trait Visitor {
     fn exit_number_decimal(&mut self, &NumberDecimal) {}
     fn exit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn exit_number_octal(&mut self, &NumberOctal) {}
+    fn exit_parenthetical(&mut self, &Parenthetical) {}
     fn exit_pathed_ident(&mut self, &PathedIdent) {}
     fn exit_pattern(&mut self, &Pattern) {}
     fn exit_pattern_character(&mut self, &PatternCharacter) {}
@@ -1624,17 +1612,147 @@ fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, P
     }
 }
 
-fn tail<'s, F, T>(sep: &'static str, f: F) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+enum TailedState<P, T, E> {
+    Nothing(P, E),
+    ValueOnly(P, T),
+    ValueAndSeparator(P, T),
+}
+
+fn parse_tailed<'s, F, T>(sep: &'static str, f: F, pm: &mut Master<'s>, pt: Point<'s>) ->
+    TailedState<Point<'s>, T, Error>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    let (pt, value) = match f(pm, pt) {
+        Progress { status: peresil::Status::Success(v), point } => {
+            (point, v)
+        }
+        Progress { status: peresil::Status::Failure(f), .. } => {
+            // TODO: unrecoverable errors
+            return TailedState::Nothing(pt, f);
+        }
+    };
+
+    let (pt, _x) = match whitespace(pm, pt) {
+        Progress { status: peresil::Status::Success(v), point } => {
+            (point, v)
+        }
+        Progress { status: peresil::Status::Failure(_), .. } => {
+            // TODO: unrecoverable errors
+            (pt, Vec::new())
+        }
+    };
+
+    let pt = match literal(sep)(pm, pt) {
+        Progress { status: peresil::Status::Success(_), point } => {
+            point
+        }
+        Progress { status: peresil::Status::Failure(_), .. } => {
+            // TODO: unrecoverable errors
+            return TailedState::ValueOnly(pt, value);
+        }
+    };
+
+    let (pt, _x) = match whitespace(pm, pt) {
+        Progress { status: peresil::Status::Success(v), point } => {
+            (point, v)
+        }
+        Progress { status: peresil::Status::Failure(_), .. } => {
+            // TODO: unrecoverable errors
+            (pt, Vec::new())
+        }
+    };
+
+    TailedState::ValueAndSeparator(pt, value)
+}
+
+#[derive(Debug, Default)]
+struct Tailed<T> {
+    values: Vec<T>,
+    separator_count: usize,
+}
+
+// Look for an expression that is followed by a separator. Each time
+// the separator is found, another expression is attempted. Each
+// expression is returned, along with the count of separators.
+fn zero_or_more_tailed_append<'s, F, T>(append_to: Tailed<T>, sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, mut pt| {
+        let mut tailed = append_to;
+        loop {
+            match parse_tailed(sep, &f, pm, pt) {
+                TailedState::Nothing(pt, _) => {
+                    return Progress::success(pt, tailed);
+                }
+                TailedState::ValueOnly(pt, v) => {
+                    tailed.values.push(v);
+                    return Progress::success(pt, tailed);
+                }
+                TailedState::ValueAndSeparator(pt2, v) => {
+                    pt = pt2;
+                    tailed.values.push(v);
+                    tailed.separator_count += 1;
+                }
+            }
+        }
+    }
+}
+
+fn zero_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    let tailed = Tailed { values: Vec::new(), separator_count: 0 };
+    zero_or_more_tailed_append(tailed, sep, f)
+}
+
+fn zero_or_more_tailed_values<'s, F, T>(sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    map(zero_or_more_tailed(sep, f), |t| t.values)
+}
+
+fn zero_or_more_tailed_values_append<'s, A, F, T>(append_to: A, sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where A: IntoAppend<T>,
+          F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    let append_to = append_to.into();
+    let tailed = Tailed { values: append_to, separator_count: 0 }; // TODO: separator_count?
+    map(zero_or_more_tailed_append(tailed, sep, f), |t| t.values)
+}
+
+fn one_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Tailed<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| {
-        sequence!(pm, pt, {
-            v  = f;
-            _x = optional(whitespace);
-            _x = optional(literal(sep));
-            _x = optional(whitespace);
-        }, |_, _| v)
+        let mut tailed = Tailed { values: Vec::new(), separator_count: 0 };
+
+        match parse_tailed(sep, &f, pm, pt) {
+            TailedState::Nothing(pt, f) => {
+                return Progress::failure(pt, f);
+            }
+            TailedState::ValueOnly(pt, v) => {
+                tailed.values.push(v);
+                return Progress::success(pt, tailed);
+            }
+            TailedState::ValueAndSeparator(pt, v) => {
+                tailed.values.push(v);
+                tailed.separator_count += 1;
+                zero_or_more_tailed_append(tailed, sep, f)(pm, pt)
+            }
+        }
     }
+}
+
+fn one_or_more_tailed_values<'s, F, T>(sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    map(one_or_more_tailed(sep, f), |t| t.values)
 }
 
 fn optional_whitespace<'s>(ws: Vec<Whitespace>) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<Whitespace>> {
@@ -1852,8 +1970,8 @@ fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
     sequence!(pm, pt, {
         spt       = point;
         _         = literal("<");
-        lifetimes = zero_or_more(tail(",", lifetime));
-        types     = zero_or_more(tail(",", generic_declaration));
+        lifetimes = zero_or_more_tailed_values(",", lifetime);
+        types     = zero_or_more_tailed_values(",", generic_declaration);
         _         = literal(">");
     }, |_, pt| GenericDeclarations { extent: ex(spt, pt), lifetimes, types })
 }
@@ -1878,7 +1996,7 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
     sequence!(pm, pt, {
         _        = literal("(");
         self_arg = optional(map(self_argument, Argument::SelfArgument));
-        args     = zero_or_more_append(self_arg, tail(",", function_argument));
+        args     = zero_or_more_tailed_values_append(self_arg, ",", function_argument);
         _        = literal(")");
     }, move |_, _| args)
 }
@@ -1919,7 +2037,7 @@ fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<Whe
     sequence!(pm, pt, {
         _  = literal("where");
         ws = whitespace;
-        w  = one_or_more(tail(",", function_where));
+        w  = one_or_more_tailed_values(",", function_where);
     }, |_, _| (w, ws))
 }
 
@@ -1936,7 +2054,7 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
 fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
     sequence!(pm, pt, {
         spt = point;
-        types = one_or_more(tail("+", typ));
+        types = zero_or_more_tailed_values("+", typ);
     }, |_, _| TraitBounds { extent: ex(spt, pt), types })
 }
 
@@ -1951,7 +2069,7 @@ fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
         _         = literal("}");
     }, |_, pt| {
         if expr.is_none() && stmts.last().map_or(false, Statement::is_implicit) {
-            expr = stmts.pop().and_then(Statement::implicit);
+            expr = stmts.pop().and_then(Statement::into_implicit);
         }
 
         Block {
@@ -2015,7 +2133,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_macro_call, Expression::MacroCall))
             .one(map(expr_let, Expression::Let))
             .one(map(expr_function_call, Expression::FunctionCall))
-            .one(map(expr_tuple, Expression::Tuple))
+            .one(expr_tuple_or_parenthetical)
             .one(map(expr_range, Expression::Range))
             .one(map(expr_array, Expression::Array))
             .one(map(character_literal, Expression::Character))
@@ -2402,7 +2520,7 @@ fn match_arm<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, MatchArm> {
     sequence!(pm, pt, {
         spt     = point;
         ws      = optional_whitespace(Vec::new());
-        pattern = one_or_more(tail("|", pattern));
+        pattern = one_or_more_tailed_values("|", pattern);
         ws      = optional_whitespace(ws);
         guard   = optional(match_arm_guard);
         ws      = optional_whitespace(ws);
@@ -2423,13 +2541,27 @@ fn match_arm_guard<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expre
     }, |_, _| guard)
 }
 
-fn expr_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tuple> {
+fn expr_tuple_or_parenthetical<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
     sequence!(pm, pt, {
-        spt     = point;
-        _       = literal("(");
-        members = zero_or_more(tail(",", expression));
-        _       = literal(")");
-    }, |_, pt| Tuple { extent: ex(spt, pt), members })
+        spt    = point;
+        _      = literal("(");
+        values = zero_or_more_tailed(",", expression);
+        _      = literal(")");
+    }, move |_, pt| {
+        let extent = ex(spt, pt);
+        let values = values;
+        let Tailed { mut values, separator_count } = values;
+        match (values.len(), separator_count) {
+            (1, 0) => Expression::Parenthetical(Parenthetical {
+                extent,
+                expression: Box::new(values.pop().expect("Must have one parenthesized value")),
+            }),
+            _ => Expression::Tuple(Tuple {
+                extent,
+                members: values,
+            }),
+        }
+    })
 }
 
 fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
@@ -2444,7 +2576,7 @@ fn expr_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Array> {
     sequence!(pm, pt, {
         spt     = point;
         _       = literal("[");
-        members = zero_or_more(tail(",", expression));
+        members = zero_or_more_tailed_values(",", expression);
         _       = literal("]");
     }, |_, pt| Array { extent: ex(spt, pt), members })
 }
@@ -2549,7 +2681,7 @@ fn expr_closure<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Closure>
         mov  = optional(literal("move"));
         ws   = optional_whitespace(Vec::new());
         _    = literal("|");
-        args = zero_or_more(tail(",", expr_closure_arg));
+        args = zero_or_more_tailed_values(",", expr_closure_arg);
         _    = literal("|");
         body = expression;
     }, |_, pt| Closure {
@@ -2766,7 +2898,7 @@ fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress
     sequence!(pm, pt, {
         _      = literal("{");
         ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more(tail(",", expr_value_struct_literal_field));
+        fields = zero_or_more_tailed_values(",", expr_value_struct_literal_field);
         ws     = optional_whitespace(ws);
         _      = literal("}");
     }, |_, _| (fields, ws))
@@ -2803,7 +2935,7 @@ fn expr_function_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Fu
         spt  = point;
         name = pathed_ident;
         _    = literal("(");
-        args = zero_or_more(tail(",", expression));
+        args = zero_or_more_tailed_values(",", expression);
         _    = literal(")");
     }, |_, pt| FunctionCall { extent: ex(spt, pt), name, args })
 }
@@ -2879,7 +3011,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
         name      = ident;
         turbofish = optional(turbofish);
         _         = literal("(");
-        args      = zero_or_more(tail(",", expression));
+        args      = zero_or_more_tailed_values(",", expression);
         _         = literal(")");
     }, |_, _| ExpressionTail::MethodCall { name, turbofish, args, whitespace: ws })
 }
@@ -2887,7 +3019,7 @@ fn expr_tail_method_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s,
 fn expr_tail_call<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
         _         = literal("(");
-        args      = zero_or_more(tail(",", expression));
+        args      = zero_or_more_tailed_values(",", expression);
         _         = literal(")");
     }, |_, _| ExpressionTail::Call { args })
 }
@@ -2950,7 +3082,7 @@ fn turbofish<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Turbofish> 
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("::<");
-        types = zero_or_more(tail(",", typ));
+        types = zero_or_more_tailed_values(",", typ);
         _     = literal(">");
     }, |_, pt| Turbofish { extent: ex(spt, pt), types: types })
 }
@@ -2997,7 +3129,7 @@ fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern
 fn pattern_tuple_inner<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Pattern>> {
     sequence!(pm, pt, {
         _                = literal("(");
-        mut sub_patterns = zero_or_more(tail(",", pattern));
+        mut sub_patterns = zero_or_more_tailed_values(",", pattern);
         wildcard         = optional(ext(literal("..")));
         _                = literal(")");
     }, |_, _| {
@@ -3015,7 +3147,7 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
         ws       = optional_whitespace(Vec::new());
         _        = literal("{");
         ws       = optional_whitespace(ws);
-        fields   = zero_or_more(tail(",", pattern_struct_field));
+        fields   = zero_or_more_tailed_values(",", pattern_struct_field);
         ws       = optional_whitespace(ws);
         wildcard = optional(literal(".."));
         ws       = optional_whitespace(ws);
@@ -3147,7 +3279,7 @@ fn struct_defn_body_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
         spt    = point;
         _      = literal("{");
         ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more(tail(",", struct_defn_field));
+        fields = zero_or_more_tailed_values(",", struct_defn_field);
         ws     = optional_whitespace(ws);
         _      = literal("}");
     }, |_, pt| StructDefinitionBodyBrace { extent: ex(spt, pt), fields, whitespace: ws })
@@ -3158,7 +3290,7 @@ fn struct_defn_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
         spt    = point;
         _      = literal("(");
         ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more(tail(",", typ));
+        fields = zero_or_more_tailed_values(",", typ);
         ws     = optional_whitespace(ws);
         _      = literal(")");
         ws     = optional_whitespace(ws);
@@ -3205,7 +3337,7 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
         ws         = optional_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
-        variants   = zero_or_more(tail(",", enum_variant));
+        variants   = zero_or_more_tailed_values(",", enum_variant);
         ws         = optional_whitespace(ws);
         _          = literal("}");
     }, |_, pt| Enum {
@@ -3313,7 +3445,7 @@ fn trait_impl_function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
     sequence!(pm, pt, {
         _        = literal("(");
         self_arg = optional(map(self_argument, TraitImplArgument::SelfArgument));
-        args     = zero_or_more_append(self_arg, tail(",", trait_impl_function_argument));
+        args     = zero_or_more_tailed_values_append(self_arg, ",", trait_impl_function_argument);
         _        = literal(")");
     }, move |_, _| args)
 }
@@ -3515,7 +3647,7 @@ fn use_tail_multi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, UseTai
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("{");
-        names = zero_or_more(tail(",", ident));
+        names = zero_or_more_tailed_values(",", ident);
         _     = literal("}");
     }, |_, pt| UseTailMulti { extent: ex(spt, pt), names })
 }
@@ -3623,7 +3755,7 @@ fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> 
 fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
     sequence!(pm, pt, {
         _     = literal("(");
-        types = zero_or_more(tail(",", typ));
+        types = zero_or_more_tailed_values(",", typ);
         _     = literal(")");
     }, |_, _| types)
 }
@@ -3682,7 +3814,7 @@ fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeG
     sequence!(pm, pt, {
         spt               = point;
         _                 = literal("(");
-        types             = zero_or_more(tail(",", typ));
+        types             = zero_or_more_tailed_values(",", typ);
         _                 = literal(")");
         ws                = optional_whitespace(Vec::new());
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
@@ -3699,8 +3831,8 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
         spt       = point;
         _         = literal("<");
         ws        = optional_whitespace(Vec::new());
-        lifetimes = zero_or_more(tail(",", lifetime));
-        types     = zero_or_more(tail(",", typ));
+        lifetimes = zero_or_more_tailed_values(",", lifetime);
+        types     = zero_or_more_tailed_values(",", typ);
         _         = literal(">");
     }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types, whitespace: ws })
 }
@@ -4103,7 +4235,7 @@ mod test {
     #[test]
     fn statement_match_no_semicolon() {
         let p = qp(statement, "match a { _ => () }");
-        assert_eq!(unwrap_progress(p).implicit().unwrap().extent(), (0, 19))
+        assert_eq!(unwrap_progress(p).into_implicit().unwrap().extent(), (0, 19))
     }
 
     #[test]
@@ -4289,7 +4421,41 @@ mod test {
     #[test]
     fn expr_tuple() {
         let p = qp(expression, "(1, 2)");
-        assert_eq!(unwrap_progress(p).extent(), (0, 6))
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 6));
+        assert!(t.is_tuple())
+    }
+
+    #[test]
+    fn expr_tuple_of_none() {
+        let p = qp(expression, "()");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 2));
+        assert!(t.is_tuple())
+    }
+
+    #[test]
+    fn expr_tuple_of_one() {
+        let p = qp(expression, "(1,)");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 4));
+        assert!(t.is_tuple())
+    }
+
+    #[test]
+    fn expr_parens() {
+        let p = qp(expression, "(a && b)");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 8));
+        assert!(t.is_parenthetical())
+    }
+
+    #[test]
+    fn expr_parens_with_one_value_is_not_tuple() {
+        let p = qp(expression, "(1)");
+        let t = unwrap_progress(p);
+        assert_eq!(t.extent(), (0, 3));
+        assert!(t.is_parenthetical())
     }
 
     #[test]
@@ -4449,7 +4615,7 @@ mod test {
     }
 
     #[test]
-    fn expr_value_struct_literal_shortahnd() {
+    fn expr_value_struct_literal_shorthand() {
         let p = qp(expression, "Point { a }");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
@@ -4917,6 +5083,117 @@ mod test {
     fn generic_declarations_allow_bounds() {
         let p = qp(generic_declarations, "<A: Foo>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn zero_or_more_tailed_with_zero() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 0);
+        assert_eq!(p.separator_count, 0);
+    }
+
+    #[test]
+    fn zero_or_more_tailed_with_one() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 0);
+    }
+
+    #[test]
+    fn zero_or_more_tailed_with_one_trailing() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "X,");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 1);
+    }
+
+    #[test]
+    fn zero_or_more_tailed_with_two() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "X, X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 1);
+    }
+
+    #[test]
+    fn zero_or_more_tailed_with_two_trailing() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "X, X,");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 2);
+    }
+
+    #[test]
+    fn zero_or_more_tailed_with_all_space() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "X , X , ");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 2);
+    }
+
+    #[test]
+    fn zero_or_more_tailed_doesnt_allow_space_separator() {
+        let p = qp(zero_or_more_tailed(",", literal("X")), "X X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 0);
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_zero() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "");
+        let e = unwrap_progress_err(p);
+        assert_eq!(e, (0, vec![Error::Literal("X")]));
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_one() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 0);
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_one_trailing() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "X,");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 1);
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_two() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "X, X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 1);
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_two_trailing() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "X, X,");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 2);
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_all_space() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "X , X , ");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 2);
+        assert_eq!(p.separator_count, 2);
+    }
+
+    #[test]
+    fn one_or_more_tailed_with_two_doesnt_allow_space_separator() {
+        let p = qp(one_or_more_tailed(",", literal("X")), "X X");
+        let p = unwrap_progress(p);
+        assert_eq!(p.values.len(), 1);
+        assert_eq!(p.separator_count, 0);
     }
 
     fn unwrap_progress<P, T, E>(p: peresil::Progress<P, T, E>) -> T
