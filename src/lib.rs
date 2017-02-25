@@ -1307,6 +1307,7 @@ pub struct TraitMemberType {
 #[derive(Debug, Visit)]
 pub struct Impl {
     extent: Extent,
+    is_unsafe: Option<Extent>,
     generics: Option<GenericDeclarations>,
     trait_name: Option<Type>,
     type_name: Type,
@@ -3877,9 +3878,10 @@ fn trait_impl_function_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<
 fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
     sequence!(pm, pt, {
         spt              = point;
+        (is_unsafe, ws)  = concat_whitespace(Vec::new(), optional(p_impl_unsafe));
         _                = literal("impl");
         generics         = optional(generic_declarations);
-        ws               = whitespace;
+        ws               = append_whitespace(ws);
         (trait_name, ws) = concat_whitespace(ws, optional(p_impl_of_trait));
         type_name        = typ;
         ws               = optional_whitespace(ws);
@@ -3892,6 +3894,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         _                = literal("}");
     }, |_, pt| Impl {
         extent: ex(spt, pt),
+        is_unsafe,
         generics,
         trait_name,
         type_name,
@@ -3899,6 +3902,13 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         body,
         whitespace: ws,
     })
+}
+
+fn p_impl_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Extent, Vec<Whitespace>)> {
+    sequence!(pm, pt, {
+        us = ext(literal("unsafe"));
+        ws = whitespace;
+    }, |_, _| (us, ws))
 }
 
 fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type, Vec<Whitespace>)> {
@@ -4701,6 +4711,12 @@ mod test {
     fn impl_with_associated_type() {
         let p = qp(p_impl, "impl Foo { type A = B; }");
         assert_eq!(unwrap_progress(p).extent, (0, 24))
+    }
+
+    #[test]
+    fn impl_with_unsafe() {
+        let p = qp(p_impl, "unsafe impl Foo {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 18))
     }
 
     #[test]
