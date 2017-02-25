@@ -279,8 +279,22 @@ pub struct TraitImplFunctionHeader {
 #[derive(Debug, Visit)]
 pub struct GenericDeclarations {
     pub extent: Extent,
-    lifetimes: Vec<Lifetime>,
-    types: Vec<Generic>,
+    lifetimes: Vec<GenericDeclarationLifetime>,
+    types: Vec<GenericDeclarationType>,
+}
+
+#[derive(Debug, Visit)]
+pub struct GenericDeclarationLifetime {
+    extent: Extent,
+    name: Lifetime,
+    bounds: Vec<Lifetime>,
+}
+
+#[derive(Debug, Visit)]
+pub struct GenericDeclarationType {
+    extent: Extent,
+    name: Ident,
+    bounds: Option<TraitBounds>,
 }
 
 #[derive(Debug, Visit)]
@@ -289,13 +303,6 @@ pub struct MacroRules {
     name: Ident,
     body: Extent,
     whitespace: Vec<Whitespace>,
-}
-
-#[derive(Debug, Visit)]
-pub struct Generic {
-    extent: Extent,
-    name: Ident,
-    bounds: Option<TraitBounds>,
 }
 
 #[derive(Debug, Visit, Decompose)]
@@ -1511,7 +1518,8 @@ pub trait Visitor {
     fn visit_for_loop(&mut self, &ForLoop) {}
     fn visit_function(&mut self, &Function) {}
     fn visit_function_header(&mut self, &FunctionHeader) {}
-    fn visit_generic(&mut self, &Generic) {}
+    fn visit_generic_declaration_lifetime(&mut self, &GenericDeclarationLifetime) {}
+    fn visit_generic_declaration_type(&mut self, &GenericDeclarationType) {}
     fn visit_generic_declarations(&mut self, &GenericDeclarations) {}
     fn visit_ident(&mut self, &Ident) {}
     fn visit_if(&mut self, &If) {}
@@ -1642,7 +1650,8 @@ pub trait Visitor {
     fn exit_for_loop(&mut self, &ForLoop) {}
     fn exit_function(&mut self, &Function) {}
     fn exit_function_header(&mut self, &FunctionHeader) {}
-    fn exit_generic(&mut self, &Generic) {}
+    fn exit_generic_declaration_lifetime(&mut self, &GenericDeclarationLifetime) {}
+    fn exit_generic_declaration_type(&mut self, &GenericDeclarationType) {}
     fn exit_generic_declarations(&mut self, &GenericDeclarations) {}
     fn exit_ident(&mut self, &Ident) {}
     fn exit_if(&mut self, &If) {}
@@ -2161,19 +2170,45 @@ fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
         _x        = optional_whitespace(Vec::new());
         _         = literal("<");
         _x        = optional_whitespace(_x);
-        lifetimes = zero_or_more_tailed_values(",", lifetime);
-        types     = zero_or_more_tailed_values(",", generic_declaration);
+        lifetimes = zero_or_more_tailed_values(",", generic_declaration_lifetime);
+        types     = zero_or_more_tailed_values(",", generic_declaration_type);
         _x        = optional_whitespace(_x);
         _         = literal(">");
     }, |_, pt| GenericDeclarations { extent: ex(spt, pt), lifetimes, types })
 }
 
-fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Generic> {
+fn generic_declaration_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarationLifetime> {
+    sequence!(pm, pt, {
+        spt    = point;
+        name   = lifetime;
+        bounds = optional(generic_declaration_lifetime_bounds);
+    }, |_, pt| GenericDeclarationLifetime { extent: ex(spt, pt), name, bounds: bounds.unwrap_or_else(Vec::new) })
+}
+
+fn generic_declaration_lifetime_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Lifetime>> {
+    sequence!(pm, pt, {
+        _x     = optional_whitespace(Vec::new());
+        _      = literal(":");
+        _x     = optional_whitespace(_x);
+        bounds = zero_or_more_tailed_values("+", lifetime);
+    }, |_, _| bounds)
+}
+
+fn generic_declaration_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarationType> {
     sequence!(pm, pt, {
         spt    = point;
         name   = ident;
-        bounds = optional(generic_declaration_bounds);
-    }, |_, pt| Generic { extent: ex(spt, pt), name, bounds })
+        bounds = optional(generic_declaration_type_bounds);
+    }, |_, pt| GenericDeclarationType { extent: ex(spt, pt), name, bounds })
+}
+
+fn generic_declaration_type_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
+    sequence!(pm, pt, {
+        _x     = optional_whitespace(Vec::new());
+        _      = literal(":");
+        _x     = optional_whitespace(_x);
+        bounds = trait_bounds;
+    }, |_, _| bounds)
 }
 
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
@@ -2232,17 +2267,8 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
     sequence!(pm, pt, {
         spt    = point;
         name   = typ;
-        bounds = generic_declaration_bounds;
+        bounds = generic_declaration_type_bounds;
     }, |_, pt| Where { extent: ex(spt, pt), name, bounds  })
-}
-
-fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
-    sequence!(pm, pt, {
-        _x     = optional_whitespace(Vec::new());
-        _      = literal(":");
-        _x     = optional_whitespace(_x);
-        bounds = trait_bounds;
-    }, |_, _| bounds)
 }
 
 fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
@@ -3721,7 +3747,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
         ws         = optional_whitespace(ws);
         generics   = optional(generic_declarations);
         ws         = optional_whitespace(ws);
-        bounds     = optional(generic_declaration_bounds);
+        bounds     = optional(generic_declaration_type_bounds);
         ws         = optional_whitespace(ws);
         _          = literal("{");
         ws         = optional_whitespace(ws);
@@ -3772,7 +3798,7 @@ fn trait_member_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tra
         _      = literal("type");
         ws     = whitespace;
         name   = ident;
-        bounds = optional(generic_declaration_bounds);
+        bounds = optional(generic_declaration_type_bounds);
         ws     = optional_whitespace(ws);
         _      = literal(";");
     }, |_, pt| TraitMemberType { extent: ex(spt, pt), name, bounds, whitespace: ws })
@@ -5878,15 +5904,21 @@ mod test {
     }
 
     #[test]
-    fn generic_declarations_allow_bounds() {
+    fn generic_declarations_allow_type_bounds() {
         let p = qp(generic_declarations, "<A: Foo>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
     }
 
     #[test]
+    fn generic_declarations_allow_lifetime_bounds() {
+        let p = qp(generic_declarations, "<'a: 'b>");
+        assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
     fn generic_declarations_all_space() {
-        let p = qp(generic_declarations, "< A : Foo >");
-        assert_eq!(unwrap_progress(p).extent, (0, 11))
+        let p = qp(generic_declarations, "< 'a : 'b , A : Foo >");
+        assert_eq!(unwrap_progress(p).extent, (0, 21))
     }
 
     #[test]
