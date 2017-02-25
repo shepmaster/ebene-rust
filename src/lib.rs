@@ -145,6 +145,7 @@ pub enum Item {
     Const(Const),
     Enum(Enum),
     ExternCrate(Crate),
+    ExternBlock(ExternBlock),
     Function(Function),
     Impl(Impl),
     MacroCall(MacroCall),
@@ -162,21 +163,22 @@ impl Item {
     #[allow(dead_code)]
     pub fn extent(&self) -> Extent {
         match *self {
-            Item::Attribute(Attribute { extent, .. })   |
-            Item::Const(Const { extent, .. })           |
-            Item::Enum(Enum { extent, .. })             |
-            Item::ExternCrate(Crate { extent, .. })     |
-            Item::Function(Function { extent, .. })     |
-            Item::Impl(Impl { extent, .. })             |
-            Item::MacroCall(MacroCall { extent, .. })   |
-            Item::MacroRules(MacroRules { extent, .. }) |
-            Item::Module(Module { extent, .. })         |
-            Item::Static(Static { extent, .. })         |
-            Item::Struct(Struct { extent, .. })         |
-            Item::Trait(Trait { extent, .. })           |
-            Item::TypeAlias(TypeAlias { extent, .. })   |
-            Item::Use(Use { extent, .. })               => extent,
-            Item::Whitespace(..)                        => unimplemented!(),
+            Item::Attribute(Attribute { extent, .. })     |
+            Item::Const(Const { extent, .. })             |
+            Item::Enum(Enum { extent, .. })               |
+            Item::ExternCrate(Crate { extent, .. })       |
+            Item::ExternBlock(ExternBlock { extent, .. }) |
+            Item::Function(Function { extent, .. })       |
+            Item::Impl(Impl { extent, .. })               |
+            Item::MacroCall(MacroCall { extent, .. })     |
+            Item::MacroRules(MacroRules { extent, .. })   |
+            Item::Module(Module { extent, .. })           |
+            Item::Static(Static { extent, .. })           |
+            Item::Struct(Struct { extent, .. })           |
+            Item::Trait(Trait { extent, .. })             |
+            Item::TypeAlias(TypeAlias { extent, .. })     |
+            Item::Use(Use { extent, .. })                 => extent,
+            Item::Whitespace(..)                          => unimplemented!(),
         }
     }
 }
@@ -1265,6 +1267,26 @@ pub struct Crate {
 }
 
 #[derive(Debug, Visit)]
+pub struct ExternBlock {
+    extent: Extent,
+    abi: Option<String>,
+    members: Vec<ExternBlockMember>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum ExternBlockMember {
+    Function(ExternBlockMemberFunction),
+    Whitespace(Vec<Whitespace>),
+}
+
+#[derive(Debug, Visit)]
+pub struct ExternBlockMemberFunction {
+    extent: Extent,
+    header: TraitImplFunctionHeader, // TODO: rename this indicating it doesn't require names
+}
+
+#[derive(Debug, Visit)]
 pub struct TypeAlias {
     extent: Extent,
     visibility: Option<Visibility>,
@@ -1406,6 +1428,9 @@ pub trait Visitor {
     fn visit_enum_variant_body(&mut self, &EnumVariantBody) {}
     fn visit_expression(&mut self, &Expression) {}
     fn visit_expression_box(&mut self, &ExpressionBox) {}
+    fn visit_extern_block(&mut self, &ExternBlock) {}
+    fn visit_extern_block_member(&mut self, &ExternBlockMember) {}
+    fn visit_extern_block_member_function(&mut self, &ExternBlockMemberFunction) {}
     fn visit_field_access(&mut self, &FieldAccess) {}
     fn visit_file(&mut self, &File) {}
     fn visit_for_loop(&mut self, &ForLoop) {}
@@ -1524,6 +1549,9 @@ pub trait Visitor {
     fn exit_enum_variant_body(&mut self, &EnumVariantBody) {}
     fn exit_expression(&mut self, &Expression) {}
     fn exit_expression_box(&mut self, &ExpressionBox) {}
+    fn exit_extern_block(&mut self, &ExternBlock) {}
+    fn exit_extern_block_member(&mut self, &ExternBlockMember) {}
+    fn exit_extern_block_member_function(&mut self, &ExternBlockMemberFunction) {}
     fn exit_field_access(&mut self, &FieldAccess) {}
     fn exit_file(&mut self, &File) {}
     fn exit_for_loop(&mut self, &ForLoop) {}
@@ -1850,6 +1878,7 @@ fn item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Item> {
         .one(map(attribute, Item::Attribute))
         .one(map(p_const, Item::Const))
         .one(map(extern_crate, Item::ExternCrate))
+        .one(map(extern_block, Item::ExternBlock))
         .one(map(function, Item::Function))
         .one(map(item_macro_call, Item::MacroCall))
         .one(map(macro_rules, Item::MacroRules))
@@ -3754,6 +3783,40 @@ fn extern_crate_rename<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, I
     }, |_, _| name)
 }
 
+fn extern_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlock> {
+    sequence!(pm, pt, {
+        spt     = point;
+        _       = literal("extern");
+        abi     = optional(extern_block_abi);
+        ws      = optional_whitespace(Vec::new());
+        _       = literal("{");
+        members = zero_or_more(extern_block_member);
+        _       = literal("}");
+    }, |_, pt| ExternBlock { extent: ex(spt, pt), abi, members, whitespace: ws })
+}
+
+fn extern_block_abi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, String> {
+    sequence!(pm, pt, {
+        _x  = whitespace;
+        abi = string_literal;
+    }, |_, _| abi)
+}
+
+fn extern_block_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlockMember> {
+    pm.alternate(pt)
+        .one(map(extern_block_member_function, ExternBlockMember::Function))
+        .one(map(whitespace, ExternBlockMember::Whitespace))
+        .finish()
+}
+
+fn extern_block_member_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlockMemberFunction> {
+    sequence!(pm, pt, {
+        spt    = point;
+        header = trait_impl_function_header;
+        _      = literal(";");
+    }, |_, pt| ExternBlockMemberFunction { extent: ex(spt, pt), header })
+}
+
 fn p_use<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Use> {
     sequence!(pm, pt, {
         spt        = point;
@@ -4243,6 +4306,24 @@ mod test {
     fn item_extern_crate_rename() {
         let p = qp(item, "extern crate foo as bar;");
         assert_eq!(unwrap_progress(p).extent(), (0, 24))
+    }
+
+    #[test]
+    fn item_extern_block() {
+        let p = qp(item, r#"extern {}"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn item_extern_block_with_abi() {
+        let p = qp(item, r#"extern "C" {}"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
+    }
+
+    #[test]
+    fn item_extern_block_with_fn() {
+        let p = qp(item, r#"extern { fn foo(bar: u8) -> bool; }"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 35))
     }
 
     #[test]
