@@ -1,5 +1,3 @@
-#![feature(field_init_shorthand)]
-
 extern crate strata_rs;
 extern crate serde;
 extern crate serde_json;

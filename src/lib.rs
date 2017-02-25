@@ -1,4 +1,3 @@
-#![feature(field_init_shorthand)]
 #![feature(conservative_impl_trait)]
 #![feature(pattern)]
 #![feature(custom_derive)]
