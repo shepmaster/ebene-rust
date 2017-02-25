@@ -1079,7 +1079,6 @@ pub enum Pattern {
     Ident(PatternIdent), // TODO: split into ident and enumtuple
     Number(PatternNumber),
     Range(PatternRange),
-    Ref(PatternRef),
     Reference(PatternReference),
     String(PatternString),
     Struct(PatternStruct),
@@ -1095,7 +1094,6 @@ impl Pattern {
             Pattern::Ident(PatternIdent { extent, .. })         |
             Pattern::Number(PatternNumber { extent, .. })       |
             Pattern::Range(PatternRange { extent, .. })         |
-            Pattern::Ref(PatternRef { extent, .. })             |
             Pattern::Reference(PatternReference { extent, .. }) |
             Pattern::String(PatternString { extent, .. })       |
             Pattern::Struct(PatternStruct { extent, .. })       |
@@ -1108,10 +1106,10 @@ impl Pattern {
 #[derive(Debug, Visit)]
 pub struct PatternIdent {
     extent: Extent,
-    mutable: Option<Extent>,
+    is_ref: Option<Extent>,
+    is_mut: Option<Extent>,
     ident: PathedIdent,
     tuple: Vec<Pattern>,
-    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1124,11 +1122,23 @@ pub struct PatternStruct {
     whitespace: Vec<Whitespace>,
 }
 
+#[derive(Debug, Visit, Decompose)]
+pub enum PatternStructField {
+    Long(PatternStructFieldLong),
+    Short(PatternStructFieldShort),
+}
+
 #[derive(Debug, Visit)]
-pub struct PatternStructField {
+pub struct PatternStructFieldLong {
+    extent: Extent,
     name: Ident,
     pattern: Pattern,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct PatternStructFieldShort {
+    ident: PatternIdent
 }
 
 #[derive(Debug, Visit)]
@@ -1172,15 +1182,6 @@ pub struct PatternRange {
 pub enum PatternRangeComponent {
     Character(Character),
     Number(Number),
-}
-
-// TODO: Should we actually have a "qualifier" that applies to all
-// patterns equally? Could include `mut` in there too...
-#[derive(Debug, Visit)]
-pub struct PatternRef {
-    extent: Extent,
-    pattern: Box<Pattern>,
-    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1424,11 +1425,12 @@ pub trait Visitor {
     fn visit_pattern_ident(&mut self, &PatternIdent) {}
     fn visit_pattern_number(&mut self, &PatternNumber) {}
     fn visit_pattern_range(&mut self, &PatternRange) {}
-    fn visit_pattern_ref(&mut self, &PatternRef) {}
     fn visit_pattern_reference(&mut self, &PatternReference) {}
     fn visit_pattern_string(&mut self, &PatternString) {}
     fn visit_pattern_struct(&mut self, &PatternStruct) {}
     fn visit_pattern_struct_field(&mut self, &PatternStructField) {}
+    fn visit_pattern_struct_field_long(&mut self, &PatternStructFieldLong) {}
+    fn visit_pattern_struct_field_short(&mut self, &PatternStructFieldShort) {}
     fn visit_pattern_tuple(&mut self, &PatternTuple) {}
     fn visit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn visit_range(&mut self, &Range) {}
@@ -1539,11 +1541,12 @@ pub trait Visitor {
     fn exit_pattern_ident(&mut self, &PatternIdent) {}
     fn exit_pattern_number(&mut self, &PatternNumber) {}
     fn exit_pattern_range(&mut self, &PatternRange) {}
-    fn exit_pattern_ref(&mut self, &PatternRef) {}
     fn exit_pattern_reference(&mut self, &PatternReference) {}
     fn exit_pattern_string(&mut self, &PatternString) {}
     fn exit_pattern_struct(&mut self, &PatternStruct) {}
     fn exit_pattern_struct_field(&mut self, &PatternStructField) {}
+    fn exit_pattern_struct_field_long(&mut self, &PatternStructFieldLong) {}
+    fn exit_pattern_struct_field_short(&mut self, &PatternStructFieldShort) {}
     fn exit_pattern_tuple(&mut self, &PatternTuple) {}
     fn exit_pattern_wildcard(&mut self, &PatternWildcard) {}
     fn exit_range(&mut self, &Range) {}
@@ -3210,7 +3213,6 @@ fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
         .one(map(pattern_range, Pattern::Range))
         .one(map(pattern_char, Pattern::Character))
         .one(map(pattern_number, Pattern::Number))
-        .one(map(pattern_ref, Pattern::Ref))
         .one(map(pattern_reference, Pattern::Reference))
         .one(map(pattern_string, Pattern::String))
         .one(map(pattern_struct, Pattern::Struct))
@@ -3222,18 +3224,32 @@ fn pattern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Pattern> {
 
 fn pattern_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternIdent> {
     sequence!(pm, pt, {
-        spt     = point;
-        mutable = optional(ext(literal("mut")));
-        ws      = optional_whitespace(Vec::new());
-        ident   = pathed_ident;
-        tuple   = optional(pattern_tuple_inner);
+        spt    = point;
+        is_ref = optional(pattern_ident_is_ref);
+        is_mut = optional(pattern_ident_is_mut);
+        ident  = pathed_ident;
+        tuple  = optional(pattern_tuple_inner);
     }, |_, pt| PatternIdent {
         extent: ex(spt, pt),
-        mutable,
+        is_ref,
+        is_mut,
         ident,
         tuple: tuple.unwrap_or_else(Vec::new),
-        whitespace: ws,
     })
+}
+
+fn pattern_ident_is_mut<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        mutable = ext(literal("mut"));
+        _x      = whitespace;
+    }, |_, _| mutable)
+}
+
+fn pattern_ident_is_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        mutable = ext(literal("ref"));
+        _x      = whitespace;
+    }, |_, _| mutable)
 }
 
 fn pattern_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternTuple> {
@@ -3279,31 +3295,25 @@ fn pattern_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
 }
 
 fn pattern_struct_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternStructField> {
-    sequence!(pm, pt, {
-        spt           = point;
-        name          = ident;
-        ws            = optional_whitespace(Vec::new());
-        (pattern, ws) = concat_whitespace(ws, optional(pattern_struct_field_tail));
-    }, |_, pt| {
-        let pattern = pattern.unwrap_or_else(|| {
-            Pattern::Ident(PatternIdent {
-                extent: ex(spt, pt),
-                mutable: None,
-                ident: name.into(),
-                tuple: Vec::new(),
-                whitespace: Vec::new(),
-            })
-        });
-        PatternStructField { name, pattern, whitespace: ws }
-    })
+    pm.alternate(pt)
+        .one(map(pattern_struct_field_long, PatternStructField::Long))
+        .one(map(map(pattern_ident, |ident| {
+            PatternStructFieldShort { ident }
+        }), PatternStructField::Short))
+        .finish()
 }
 
-fn pattern_struct_field_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Pattern, Vec<Whitespace>)> {
+fn pattern_struct_field_long<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, PatternStructFieldLong>
+{
     sequence!(pm, pt, {
-        _       = literal(":");
+        spt     = point;
+        name    = ident;
         ws      = optional_whitespace(Vec::new());
+        _       = literal(":");
+        ws      = optional_whitespace(ws);
         pattern = pattern;
-    }, |_, _| (pattern, ws))
+    }, |_, pt| PatternStructFieldLong { extent: ex(spt, pt), name, pattern, whitespace: ws })
 }
 
 fn pattern_char<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternCharacter> {
@@ -3316,19 +3326,6 @@ fn pattern_string<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Patter
 
 fn pattern_number<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternNumber> {
     number_literal(pm, pt).map(|value| PatternNumber { extent: value.extent(), value })
-}
-
-fn pattern_ref<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternRef> {
-    sequence!(pm, pt, {
-        spt     = point;
-        _       = literal("ref");
-        ws      = whitespace;
-        pattern = pattern;
-    }, |_, pt| PatternRef {
-        extent: ex(spt, pt),
-        pattern: Box::new(pattern),
-        whitespace: ws
-    })
 }
 
 fn pattern_reference<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PatternReference> {
@@ -4977,6 +4974,12 @@ mod test {
     }
 
     #[test]
+    fn pattern_with_ref() {
+        let p = qp(pattern, "ref a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
     fn pattern_with_tuple() {
         let p = qp(pattern, "(a, b)");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
@@ -5007,6 +5010,12 @@ mod test {
     }
 
     #[test]
+    fn pattern_with_enum_struct_shorthand_with_ref() {
+        let p = qp(pattern, "Baz { ref a }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
+    }
+
+    #[test]
     fn pattern_with_enum_struct_wildcard() {
         let p = qp(pattern, "Baz { .. }");
         assert_eq!(unwrap_progress(p).extent(), (0, 10))
@@ -5034,12 +5043,6 @@ mod test {
     fn pattern_with_reference() {
         let p = qp(pattern, "&a");
         assert_eq!(unwrap_progress(p).extent(), (0, 2))
-    }
-
-    #[test]
-    fn pattern_with_ref() {
-        let p = qp(pattern, "ref a");
-        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
