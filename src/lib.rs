@@ -840,7 +840,14 @@ pub struct NumberOctal {
 pub struct Value {
     extent: Extent,
     name: PathedIdent,
-    literal: Option<Vec<StructLiteralField>>,
+    literal: Option<StructLiteral>,
+}
+
+#[derive(Debug, Visit)]
+pub struct StructLiteral {
+    extent: Extent,
+    fields: Vec<StructLiteralField>,
+    splat: Option<Box<Expression>>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -848,6 +855,7 @@ pub struct Value {
 pub struct StructLiteralField {
     name: Ident,
     value: Expression,
+    whitespace: Vec<Whitespace>,
 }
 
 // TODO: Can we roll up function and method call into this?
@@ -1561,6 +1569,7 @@ pub trait Visitor {
     fn visit_struct_definition_body_brace(&mut self, &StructDefinitionBodyBrace) {}
     fn visit_struct_definition_body_tuple(&mut self, &StructDefinitionBodyTuple) {}
     fn visit_struct_field(&mut self, &StructField) {}
+    fn visit_struct_literal(&mut self, &StructLiteral) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
     fn visit_trait_bound(&mut self, &TraitBound) {}
@@ -1691,6 +1700,7 @@ pub trait Visitor {
     fn exit_struct_definition_body_brace(&mut self, &StructDefinitionBodyBrace) {}
     fn exit_struct_definition_body_tuple(&mut self, &StructDefinitionBodyTuple) {}
     fn exit_struct_field(&mut self, &StructField) {}
+    fn exit_struct_literal(&mut self, &StructLiteral) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
     fn exit_trait_bound(&mut self, &TraitBound) {}
@@ -3187,25 +3197,32 @@ fn expr_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Value> {
         sequence!(pm, pt, {
             spt           = point;
             name          = pathed_ident;
-        }, |_, pt| Value { extent: ex(spt, pt), name, literal: None, whitespace: Vec::new() } )
+        }, |_, pt| Value { extent: ex(spt, pt), name, literal: None })
     } else {
         sequence!(pm, pt, {
-            spt           = point;
-            name          = pathed_ident;
-            (literal, ws) = concat_whitespace(Vec::new(), optional(expr_value_struct_literal));
-        }, |_, pt| Value { extent: ex(spt, pt), name, literal, whitespace: ws } )
+            spt     = point;
+            name    = pathed_ident;
+            literal = optional(expr_value_struct_literal);
+        }, |_, pt| Value { extent: ex(spt, pt), name, literal })
     }
 }
 
-fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<StructLiteralField>, Vec<Whitespace>)> {
+fn expr_value_struct_literal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructLiteral> {
     sequence!(pm, pt, {
-        ws     = optional_whitespace(Vec::new());
-        _      = literal("{");
-        ws     = optional_whitespace(ws);
-        fields = zero_or_more_tailed_values(",", expr_value_struct_literal_field);
-        ws     = optional_whitespace(ws);
-        _      = literal("}");
-    }, |_, _| (fields, ws))
+        spt         = point;
+        ws          = optional_whitespace(Vec::new());
+        _           = literal("{");
+        ws          = optional_whitespace(ws);
+        fields      = zero_or_more_tailed_values(",", expr_value_struct_literal_field);
+        (splat, ws) = concat_whitespace(ws, optional(expr_value_struct_literal_splat));
+        ws          = optional_whitespace(ws);
+        _           = literal("}");
+    }, |_, pt| StructLiteral {
+        extent: ex(spt, pt),
+        fields,
+        splat: splat.map(Box::new),
+        whitespace: ws,
+    })
 }
 
 fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructLiteralField> {
@@ -3220,15 +3237,26 @@ fn expr_value_struct_literal_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Pr
             extent: ex(spt, mpt),
             name: name.into(),
             literal: None,
-            whitespace: ws,
         }));
-        StructLiteralField { name, value }
+        StructLiteralField { name, value, whitespace: ws }
     })
 }
 
-fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Expression, Vec<Whitespace>)> {
+fn expr_value_struct_literal_field_value<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (Expression, Vec<Whitespace>)>
+{
     sequence!(pm, pt, {
         _     = literal(":");
+        ws    = optional_whitespace(Vec::new());
+        value = allow_struct_literals(expression);
+    }, |_, _| (value, ws))
+}
+
+fn expr_value_struct_literal_splat<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (Expression, Vec<Whitespace>)>
+{
+    sequence!(pm, pt, {
+        _     = literal("..");
         ws    = optional_whitespace(Vec::new());
         value = allow_struct_literals(expression);
     }, |_, _| (value, ws))
@@ -5099,6 +5127,12 @@ mod test {
     fn expr_value_struct_literal_shorthand() {
         let p = qp(expression, "Point { a }");
         assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn expr_value_struct_literal_with_splat() {
+        let p = qp(expression, "Point { x: 1, ..point }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 23))
     }
 
     #[test]
