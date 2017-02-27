@@ -1276,6 +1276,7 @@ pub struct PatternReference {
 pub struct Trait {
     extent: Extent,
     visibility: Option<Visibility>,
+    is_unsafe: Option<Extent>,
     name: Ident,
     generics: Option<GenericDeclarations>,
     bounds: Option<TraitBounds>,
@@ -3695,6 +3696,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
     sequence!(pm, pt, {
         spt        = point;
         visibility = optional(visibility);
+        is_unsafe  = optional(p_trait_unsafe);
         _          = literal("trait");
         ws         = whitespace;
         name       = ident;
@@ -3711,12 +3713,20 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
     }, |_, pt| Trait {
         extent: ex(spt, pt),
         visibility,
+        is_unsafe,
         name,
         generics,
         bounds,
         members,
         whitespace: ws,
     })
+}
+
+fn p_trait_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        ex = ext(literal("unsafe"));
+        _x = whitespace;
+    }, |_, _| ex)
 }
 
 fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMember> {
@@ -4446,6 +4456,12 @@ mod test {
     fn item_trait_public() {
         let p = qp(item, "pub trait Foo {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 16))
+    }
+
+    #[test]
+    fn item_trait_unsafe() {
+        let p = qp(item, "unsafe trait Foo {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 19))
     }
 
     #[test]
