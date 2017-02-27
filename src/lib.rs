@@ -401,8 +401,22 @@ pub struct TypeGenericsFunction {
 #[derive(Debug, Visit)]
 pub struct TypeGenericsAngle {
     extent: Extent,
-    lifetimes: Vec<Lifetime>,
-    types: Vec<Type>,
+    members: Vec<TypeGenericsAngleMember>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TypeGenericsAngleMember {
+    Lifetime(Lifetime),
+    Type(Type),
+    AssociatedType(AssociatedType)
+}
+
+#[derive(Debug, Visit)]
+pub struct AssociatedType {
+    extent: Extent,
+    name: Ident,
+    value: Type,
     whitespace: Vec<Whitespace>,
 }
 
@@ -573,8 +587,15 @@ pub struct TraitBounds {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum TraitBound {
+    Lifetime(TraitBoundLifetime),
     Normal(TraitBoundNormal),
     Relaxed(TraitBoundRelaxed),
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitBoundLifetime {
+    pub extent: Extent,
+    lifetime: Lifetime,
 }
 
 #[derive(Debug, Visit)]
@@ -1459,6 +1480,7 @@ pub trait Visitor {
     fn visit_array_explicit(&mut self, &ArrayExplicit) {}
     fn visit_array_repeated(&mut self, &ArrayRepeated) {}
     fn visit_as_type(&mut self, &AsType) {}
+    fn visit_associated_type(&mut self, &AssociatedType) {}
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
@@ -1542,6 +1564,7 @@ pub trait Visitor {
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
     fn visit_trait_bound(&mut self, &TraitBound) {}
+    fn visit_trait_bound_lifetime(&mut self, &TraitBoundLifetime) {}
     fn visit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
     fn visit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
     fn visit_trait_bounds(&mut self, &TraitBounds) {}
@@ -1561,6 +1584,7 @@ pub trait Visitor {
     fn visit_type_function(&mut self, &TypeFunction) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
+    fn visit_type_generics_angle_member(&mut self, &TypeGenericsAngleMember) {}
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn visit_type_pointer(&mut self, &TypePointer) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
@@ -1586,6 +1610,7 @@ pub trait Visitor {
     fn exit_array_explicit(&mut self, &ArrayExplicit) {}
     fn exit_array_repeated(&mut self, &ArrayRepeated) {}
     fn exit_as_type(&mut self, &AsType) {}
+    fn exit_associated_type(&mut self, &AssociatedType) {}
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
@@ -1669,6 +1694,7 @@ pub trait Visitor {
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
     fn exit_trait_bound(&mut self, &TraitBound) {}
+    fn exit_trait_bound_lifetime(&mut self, &TraitBoundLifetime) {}
     fn exit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
     fn exit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
     fn exit_trait_bounds(&mut self, &TraitBounds) {}
@@ -1688,6 +1714,7 @@ pub trait Visitor {
     fn exit_type_function(&mut self, &TypeFunction) {}
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
+    fn exit_type_generics_angle_member(&mut self, &TypeGenericsAngleMember) {}
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn exit_type_pointer(&mut self, &TypePointer) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
@@ -2207,21 +2234,29 @@ fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBou
     sequence!(pm, pt, {
         spt = point;
         types = zero_or_more_tailed_values("+", trait_bound);
-    }, |_, _| TraitBounds { extent: ex(spt, pt), types })
+    }, |_, pt| TraitBounds { extent: ex(spt, pt), types })
 }
 
 fn trait_bound<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBound> {
     pm.alternate(pt)
+        .one(map(trait_bound_lifetime, TraitBound::Lifetime))
         .one(map(trait_bound_normal, TraitBound::Normal))
         .one(map(trait_bound_relaxed, TraitBound::Relaxed))
         .finish()
+}
+
+fn trait_bound_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundLifetime> {
+    sequence!(pm, pt, {
+        spt      = point;
+        lifetime = lifetime;
+    }, |_, pt| TraitBoundLifetime { extent: ex(spt, pt), lifetime })
 }
 
 fn trait_bound_normal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundNormal> {
     sequence!(pm, pt, {
         spt = point;
         typ = typ;
-    }, |_, _| TraitBoundNormal { extent: ex(spt, pt), typ })
+    }, |_, pt| TraitBoundNormal { extent: ex(spt, pt), typ })
 }
 
 fn trait_bound_relaxed<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundRelaxed> {
@@ -2230,7 +2265,7 @@ fn trait_bound_relaxed<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, T
         _   = literal("?");
         ws  = optional_whitespace(Vec::new());
         typ = typ;
-    }, |_, _| TraitBoundRelaxed { extent: ex(spt, pt), typ, whitespace: ws })
+    }, |_, pt| TraitBoundRelaxed { extent: ex(spt, pt), typ, whitespace: ws })
 }
 
 fn block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Block> {
@@ -4174,13 +4209,37 @@ fn typ_generics_fn<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeG
 
 fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeGenericsAngle> {
     sequence!(pm, pt, {
-        spt       = point;
-        _         = literal("<");
-        ws        = optional_whitespace(Vec::new());
-        lifetimes = zero_or_more_tailed_values(",", lifetime);
-        types     = zero_or_more_tailed_values(",", typ);
-        _         = literal(">");
-    }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types, whitespace: ws })
+        spt     = point;
+        _       = literal("<");
+        ws      = optional_whitespace(Vec::new());
+        members = zero_or_more_tailed_values(",", typ_generics_angle_member);
+        _       = literal(">");
+    }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), members, whitespace: ws })
+}
+
+// Parsing all of these equally is a bit inconsistent with the
+// compler. The compiler *parses* lifetimes after types, but later
+// errors about it. It does *not* parse associated types before types
+// though.
+fn typ_generics_angle_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, TypeGenericsAngleMember>
+{
+    pm.alternate(pt)
+        .one(map(associated_type, TypeGenericsAngleMember::AssociatedType))
+        .one(map(lifetime, TypeGenericsAngleMember::Lifetime))
+        .one(map(typ, TypeGenericsAngleMember::Type))
+        .finish()
+}
+
+fn associated_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, AssociatedType> {
+    sequence!(pm, pt, {
+        spt   = point;
+        name  = ident;
+        ws    = optional_whitespace(Vec::new());
+        _     = literal("=");
+        ws    = optional_whitespace(ws);
+        value = typ;
+    }, |_, pt| AssociatedType { extent: ex(spt, pt), name, value, whitespace: ws })
 }
 
 fn typ_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeFunction> {
@@ -5552,12 +5611,6 @@ mod test {
     }
 
     #[test]
-    fn where_clause_with_relaxed_bounds() {
-        let p = qp(function_where, "P: ?A + ?B");
-        assert_eq!(unwrap_progress(p).extent, (0, 10))
-    }
-
-    #[test]
     fn comment_end_of_line() {
         let p = qp(comment, "// hello");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
@@ -5603,6 +5656,24 @@ mod test {
     fn generic_declarations_allow_bounds() {
         let p = qp(generic_declarations, "<A: Foo>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn trait_bounds_with_lifetime() {
+        let p = qp(trait_bounds, "'a + 'b");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn trait_bounds_with_relaxed() {
+        let p = qp(trait_bounds, "?A + ?B");
+        assert_eq!(unwrap_progress(p).extent, (0, 7))
+    }
+
+    #[test]
+    fn trait_bounds_with_associated_types() {
+        let p = qp(trait_bounds, "A<B, C = D>");
+        assert_eq!(unwrap_progress(p).extent, (0, 11))
     }
 
     #[test]
