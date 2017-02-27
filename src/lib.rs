@@ -539,6 +539,7 @@ pub struct Enum {
 #[derive(Debug, Visit)]
 pub struct EnumVariant {
     extent: Extent,
+    attributes: Vec<Attribute>,
     name: Ident,
     body: Option<EnumVariantBody>,
     whitespace: Vec<Whitespace>,
@@ -3750,10 +3751,11 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
 fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariant> {
     sequence!(pm, pt, {
         spt  = point;
+        attributes = zero_or_more(struct_defn_field_attr);
         name = ident;
         ws   = optional_whitespace(Vec::new());
         body = optional(enum_variant_body);
-    }, |_, pt| EnumVariant { extent: ex(spt, pt), name, body, whitespace: ws })
+    }, |_, pt| EnumVariant { extent: ex(spt, pt), attributes, name, body, whitespace: ws })
 }
 
 fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
@@ -4764,6 +4766,18 @@ mod test {
     fn enum_with_struct_variant() {
         let p = qp(p_enum, "enum A { Foo { a: u8 } }");
         assert_eq!(unwrap_progress(p).extent, (0, 24))
+    }
+
+    #[test]
+    fn enum_with_attribute() {
+        let p = qp(p_enum, "enum Foo { #[attr] A(u8)}");
+        assert_eq!(unwrap_progress(p).extent, (0, 25))
+    }
+
+    #[test]
+    fn enum_with_attribute_on_value() {
+        let p = qp(p_enum, "enum Foo { A(#[attr] u8) }");
+        assert_eq!(unwrap_progress(p).extent, (0, 26))
     }
 
     #[test]
