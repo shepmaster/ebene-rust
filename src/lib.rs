@@ -305,8 +305,8 @@ pub struct MacroRules {
 #[derive(Debug, Visit, Decompose)]
 pub enum Type {
     Array(TypeArray),
-    Core(TypeCore),
     Function(TypeFunction),
+    Named(TypeNamed),
     Pointer(TypePointer),
     Reference(TypeReference),
     Slice(TypeSlice),
@@ -318,8 +318,8 @@ impl Type {
     pub fn extent(&self) -> Extent {
         match *self {
             Type::Array(TypeArray { extent, .. })         |
-            Type::Core(TypeCore { extent, .. })           |
             Type::Function(TypeFunction { extent, .. })   |
+            Type::Named(TypeNamed { extent, .. })         |
             Type::Pointer(TypePointer { extent, .. })     |
             Type::Reference(TypeReference { extent, .. }) |
             Type::Slice(TypeSlice { extent, .. })         |
@@ -367,7 +367,7 @@ pub struct TypeArray {
 }
 
 #[derive(Debug, Visit)]
-pub struct TypeCore {
+pub struct TypeNamed {
     extent: Extent,
     is_impl: Option<Extent>,
     name: PathedIdent,
@@ -1593,12 +1593,12 @@ pub trait Visitor {
     fn visit_type(&mut self, &Type) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_array(&mut self, &TypeArray) {}
-    fn visit_type_core(&mut self, &TypeCore) {}
     fn visit_type_function(&mut self, &TypeFunction) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn visit_type_generics_angle_member(&mut self, &TypeGenericsAngleMember) {}
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
+    fn visit_type_named(&mut self, &TypeNamed) {}
     fn visit_type_pointer(&mut self, &TypePointer) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_type_reference_kind(&mut self, &TypeReferenceKind) {}
@@ -1725,12 +1725,12 @@ pub trait Visitor {
     fn exit_type(&mut self, &Type) {}
     fn exit_type_alias(&mut self, &TypeAlias) {}
     fn exit_type_array(&mut self, &TypeArray) {}
-    fn exit_type_core(&mut self, &TypeCore) {}
     fn exit_type_function(&mut self, &TypeFunction) {}
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
     fn exit_type_generics_angle_member(&mut self, &TypeGenericsAngleMember) {}
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
+    fn exit_type_named(&mut self, &TypeNamed) {}
     fn exit_type_pointer(&mut self, &TypePointer) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
     fn exit_type_reference_kind(&mut self, &TypeReferenceKind) {}
@@ -4210,8 +4210,8 @@ fn module_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Item>
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     pm.alternate(pt)
         .one(map(typ_array, Type::Array))
-        .one(map(typ_core, Type::Core))
         .one(map(typ_function, Type::Function))
+        .one(map(typ_named, Type::Named))
         .one(map(typ_pointer, Type::Pointer))
         .one(map(typ_reference, Type::Reference))
         .one(map(typ_slice, Type::Slice))
@@ -4265,13 +4265,13 @@ fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> 
     }, |_, pt| TypeTuple { extent: ex(spt, pt), types })
 }
 
-fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCore> {
+fn typ_named<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeNamed> {
     sequence!(pm, pt, {
         spt           = point;
         (is_impl, ws) = concat_whitespace(Vec::new(), optional(typ_impl));
         name          = pathed_ident;
         generics      = optional(typ_generics);
-    }, |_, pt| TypeCore { extent: ex(spt, pt), is_impl, name, generics, whitespace: ws })
+    }, |_, pt| TypeNamed { extent: ex(spt, pt), is_impl, name, generics, whitespace: ws })
 }
 
 fn typ_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeArray> {
