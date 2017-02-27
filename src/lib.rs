@@ -440,6 +440,13 @@ pub struct Ident {
 
 // TODO: Can we reuse the path from the `use` statement?
 #[derive(Debug, Visit)]
+pub struct Path {
+    extent: Extent,
+    components: Vec<Ident>,
+}
+
+// TODO: Can we reuse the path from the `use` statement?
+#[derive(Debug, Visit)]
 pub struct PathedIdent {
     extent: Extent,
     components: Vec<PathComponent>,
@@ -1406,6 +1413,7 @@ pub struct Visibility {
 #[derive(Debug)]
 pub enum VisibilityQualifier {
     Crate,
+    Path(Path),
 }
 
 // --------------------------------------------------
@@ -1561,6 +1569,7 @@ pub trait Visitor {
     fn visit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn visit_number_octal(&mut self, &NumberOctal) {}
     fn visit_parenthetical(&mut self, &Parenthetical) {}
+    fn visit_path(&mut self, &Path) {}
     fn visit_path_component(&mut self, &PathComponent) {}
     fn visit_pathed_ident(&mut self, &PathedIdent) {}
     fn visit_pattern(&mut self, &Pattern) {}
@@ -1694,6 +1703,7 @@ pub trait Visitor {
     fn exit_number_hexadecimal(&mut self, &NumberHexadecimal) {}
     fn exit_number_octal(&mut self, &NumberOctal) {}
     fn exit_parenthetical(&mut self, &Parenthetical) {}
+    fn exit_path(&mut self, &Path) {}
     fn exit_path_component(&mut self, &PathComponent) {}
     fn exit_pathed_ident(&mut self, &PathedIdent) {}
     fn exit_pattern(&mut self, &Pattern) {}
@@ -3466,6 +3476,16 @@ fn expr_tail_try_operator<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
     }, |_, _| ExpressionTail::TryOperator)
 }
 
+fn path<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Path> {
+    sequence!(pm, pt, {
+        spt        = point;
+        _x         = optional_whitespace(Vec::new());
+        _          = optional(literal("::"));
+        _x         = optional_whitespace(_x);
+        components = one_or_more_tailed_values("::", ident);
+    }, |_, pt| Path { extent: ex(spt, pt), components })
+}
+
 fn pathed_ident<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, PathedIdent> {
     sequence!(pm, pt, {
         spt        = point;
@@ -3900,6 +3920,7 @@ fn visibility_qualifier_kind<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
 {
     pm.alternate(pt)
         .one(map(literal("crate"), |_| VisibilityQualifier::Crate))
+        .one(map(path, VisibilityQualifier::Path))
         .finish()
 }
 
@@ -6101,9 +6122,27 @@ mod test {
     }
 
     #[test]
+    fn visibility_self() {
+        let p = qp(visibility, "pub(self)");
+        assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn visibility_super() {
+        let p = qp(visibility, "pub(super)");
+        assert_eq!(unwrap_progress(p).extent, (0, 10))
+    }
+
+    #[test]
     fn visibility_crate() {
         let p = qp(visibility, "pub(crate)");
         assert_eq!(unwrap_progress(p).extent, (0, 10))
+    }
+
+    #[test]
+    fn visibility_path() {
+        let p = qp(visibility, "pub(::foo::bar)");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
