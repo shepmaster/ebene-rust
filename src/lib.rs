@@ -563,7 +563,6 @@ pub struct Where {
     pub extent: Extent,
     name: Type,
     bounds: TraitBounds,
-    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1250,16 +1249,25 @@ pub struct Trait {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum TraitMember {
-    Function(TraitImplFunction),
     Attribute(Attribute),
+    Function(TraitMemberFunction),
+    Type(TraitMemberType),
     Whitespace(Vec<Whitespace>),
 }
 
 #[derive(Debug, Visit)]
-pub struct TraitImplFunction {
+pub struct TraitMemberFunction {
     extent: Extent,
     header: TraitImplFunctionHeader,
     body: Option<Block>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TraitMemberType {
+    extent: Extent,
+    name: Ident,
+    bounds: Option<TraitBounds>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1275,8 +1283,9 @@ pub struct Impl {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum ImplMember {
-    Function(ImplFunction),
     Attribute(Attribute),
+    Function(ImplFunction),
+    Type(ImplType),
     Whitespace(Vec<Whitespace>),
 }
 
@@ -1285,6 +1294,14 @@ pub struct ImplFunction {
     extent: Extent,
     header: FunctionHeader,
     body: Block,
+}
+
+#[derive(Debug, Visit)]
+pub struct ImplType {
+    extent: Extent,
+    name: Ident,
+    typ: Type,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1474,6 +1491,7 @@ pub trait Visitor {
     fn visit_impl(&mut self, &Impl) {}
     fn visit_impl_function(&mut self, &ImplFunction) {}
     fn visit_impl_member(&mut self, &ImplMember) {}
+    fn visit_impl_type(&mut self, &ImplType) {}
     fn visit_item(&mut self, &Item) {}
     fn visit_let(&mut self, &Let) {}
     fn visit_lifetime(&mut self, &Lifetime) {}
@@ -1526,9 +1544,10 @@ pub trait Visitor {
     fn visit_trait_bounds(&mut self, &TraitBounds) {}
     fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
-    fn visit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn visit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn visit_trait_member(&mut self, &TraitMember) {}
+    fn visit_trait_member_function(&mut self, &TraitMemberFunction) {}
+    fn visit_trait_member_type(&mut self, &TraitMemberType) {}
     fn visit_try_operator(&mut self, &TryOperator) {}
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_turbofish(&mut self, &Turbofish) {}
@@ -1599,6 +1618,7 @@ pub trait Visitor {
     fn exit_impl(&mut self, &Impl) {}
     fn exit_impl_function(&mut self, &ImplFunction) {}
     fn exit_impl_member(&mut self, &ImplMember) {}
+    fn exit_impl_type(&mut self, &ImplType) {}
     fn exit_item(&mut self, &Item) {}
     fn exit_let(&mut self, &Let) {}
     fn exit_lifetime(&mut self, &Lifetime) {}
@@ -1651,9 +1671,10 @@ pub trait Visitor {
     fn exit_trait_bounds(&mut self, &TraitBounds) {}
     fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
-    fn exit_trait_impl_function(&mut self, &TraitImplFunction) {}
     fn exit_trait_impl_function_header(&mut self, &TraitImplFunctionHeader) {}
     fn exit_trait_member(&mut self, &TraitMember) {}
+    fn exit_trait_member_function(&mut self, &TraitMemberFunction) {}
+    fn exit_trait_member_type(&mut self, &TraitMemberType) {}
     fn exit_try_operator(&mut self, &TryOperator) {}
     fn exit_tuple(&mut self, &Tuple) {}
     fn exit_turbofish(&mut self, &Turbofish) {}
@@ -2114,14 +2135,6 @@ fn generic_declaration<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, G
     }, |_, pt| Generic { extent: ex(spt, pt), name, bounds })
 }
 
-fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
-    sequence!(pm, pt, {
-        _      = literal(":");
-        _x     = optional_whitespace(Vec::new());
-        bounds = trait_bounds;
-    }, |_, _| bounds)
-}
-
 fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Argument>> {
     sequence!(pm, pt, {
         _        = literal("(");
@@ -2175,10 +2188,16 @@ fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where>
     sequence!(pm, pt, {
         spt    = point;
         name   = typ;
+        bounds = generic_declaration_bounds;
+    }, |_, pt| Where { extent: ex(spt, pt), name, bounds  })
+}
+
+fn generic_declaration_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
+    sequence!(pm, pt, {
         _      = literal(":");
-        ws     = optional_whitespace(Vec::new());
+        _x     = optional_whitespace(Vec::new());
         bounds = trait_bounds;
-    }, |_, pt| Where { extent: ex(spt, pt), name, bounds, whitespace: ws })
+    }, |_, _| bounds)
 }
 
 fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
@@ -3633,18 +3652,31 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
 
 fn trait_impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMember> {
     pm.alternate(pt)
-        .one(map(trait_impl_function, TraitMember::Function))
+        .one(map(trait_member_function, TraitMember::Function))
+        .one(map(trait_member_type, TraitMember::Type))
         .one(map(attribute, TraitMember::Attribute))
         .one(map(whitespace, TraitMember::Whitespace))
         .finish()
 }
 
-fn trait_impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitImplFunction> {
+fn trait_member_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMemberFunction> {
     sequence!(pm, pt, {
         spt    = point;
         header = trait_impl_function_header;
         body   = trait_impl_function_body;
-    }, |_, pt| TraitImplFunction { extent: ex(spt, pt), header, body })
+    }, |_, pt| TraitMemberFunction { extent: ex(spt, pt), header, body })
+}
+
+fn trait_member_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitMemberType> {
+    sequence!(pm, pt, {
+        spt    = point;
+        _      = literal("type");
+        ws     = whitespace;
+        name   = ident;
+        bounds = optional(generic_declaration_bounds);
+        ws     = optional_whitespace(ws);
+        _      = literal(";");
+    }, |_, pt| TraitMemberType { extent: ex(spt, pt), name, bounds, whitespace: ws })
 }
 
 fn visibility<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Visibility> {
@@ -3750,8 +3782,9 @@ fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type
 
 fn impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplMember> {
     pm.alternate(pt)
-        .one(map(impl_function, ImplMember::Function))
         .one(map(attribute, ImplMember::Attribute))
+        .one(map(impl_function, ImplMember::Function))
+        .one(map(impl_type, ImplMember::Type))
         .one(map(whitespace, ImplMember::Whitespace))
         .finish()
 }
@@ -3762,6 +3795,21 @@ fn impl_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplFun
         header = function_header;
         body   = block;
     }, |_, pt| ImplFunction { extent: ex(spt, pt), header, body })
+}
+
+fn impl_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplType> {
+    sequence!(pm, pt, {
+        spt  = point;
+        _    = literal("type");
+        ws   = whitespace;
+        name = ident;
+        ws   = optional_whitespace(ws);
+        _    = literal("=");
+        ws   = optional_whitespace(ws);
+        typ  = typ;
+        ws   = optional_whitespace(ws);
+        _    = literal(";");
+    }, |_, pt| ImplType { extent: ex(spt, pt), name, typ, whitespace: ws })
 }
 
 // TODO: optional could take E that is `into`, or just a different one
@@ -4126,13 +4174,12 @@ fn typ_generics_angle<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
     }, |_, pt| TypeGenericsAngle { extent: ex(spt, pt), lifetimes, types, whitespace: ws })
 }
 
-
 fn typ_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeFunction> {
     sequence!(pm, pt, {
         spt               = point;
         _                 = literal("fn");
         ws                = optional_whitespace(Vec::new());
-        arguments         = trait_impl_function_arglist;
+        arguments         = trait_impl_function_arglist; // TODO: shouldn't allow `self`
         ws                = optional_whitespace(ws);
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
     }, |_, pt| TypeFunction {
@@ -4339,6 +4386,18 @@ mod test {
     }
 
     #[test]
+    fn item_trait_with_associated_type() {
+        let p = qp(item, "trait Foo { type Bar; }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 23))
+    }
+
+    #[test]
+    fn item_trait_with_associated_type_with_bounds() {
+        let p = qp(item, "trait Foo { type Bar: Baz; }");
+        assert_eq!(unwrap_progress(p).extent(), (0, 28))
+    }
+
+    #[test]
     fn item_type_alias() {
         let p = qp(item, "type Foo<T> = Bar<T, u8>;");
         assert_eq!(unwrap_progress(p).extent(), (0, 25))
@@ -4438,6 +4497,12 @@ mod test {
     fn impl_with_attributes() {
         let p = qp(p_impl, "impl Foo { #[a] #[b] fn bar() {} }");
         assert_eq!(unwrap_progress(p).extent, (0, 34))
+    }
+
+    #[test]
+    fn impl_with_associated_type() {
+        let p = qp(p_impl, "impl Foo { type A = B; }");
+        assert_eq!(unwrap_progress(p).extent, (0, 24))
     }
 
     #[test]
