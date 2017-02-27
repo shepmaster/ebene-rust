@@ -1398,7 +1398,14 @@ pub struct Module {
 #[derive(Debug, Visit)]
 pub struct Visibility {
     extent: Extent,
+    #[visit(ignore)]
+    qualifier: Option<VisibilityQualifier>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug)]
+pub enum VisibilityQualifier {
+    Crate,
 }
 
 // --------------------------------------------------
@@ -3868,10 +3875,32 @@ fn trait_member_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Tra
 
 fn visibility<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Visibility> {
     sequence!(pm, pt, {
-        spt = point;
-        _   = literal("pub");
-        ws  = optional_whitespace(Vec::new());
-    }, |_, pt| Visibility { extent: ex(spt, pt), whitespace: ws })
+        spt       = point;
+        _         = literal("pub");
+        ws        = optional_whitespace(Vec::new());
+        qualifier = optional(visibility_qualifier);
+        ws        = optional_whitespace(ws);
+    }, |_, pt| Visibility { extent: ex(spt, pt), qualifier, whitespace: ws })
+}
+
+fn visibility_qualifier<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, VisibilityQualifier>
+{
+    sequence!(pm, pt, {
+        _         = literal("(");
+        _x        = optional_whitespace(Vec::new());
+        qualifier = visibility_qualifier_kind;
+        _x        = optional_whitespace(_x);
+        _         = literal(")");
+    }, |_, _| qualifier)
+}
+
+fn visibility_qualifier_kind<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, VisibilityQualifier>
+{
+    pm.alternate(pt)
+        .one(map(literal("crate"), |_| VisibilityQualifier::Crate))
+        .finish()
 }
 
 // TODO: Massively duplicated!!!
@@ -6069,6 +6098,12 @@ mod test {
     fn trait_bounds_with_associated_types() {
         let p = qp(trait_bounds, "A<B, C = D>");
         assert_eq!(unwrap_progress(p).extent, (0, 11))
+    }
+
+    #[test]
+    fn visibility_crate() {
+        let p = qp(visibility, "pub(crate)");
+        assert_eq!(unwrap_progress(p).extent, (0, 10))
     }
 
     #[test]
