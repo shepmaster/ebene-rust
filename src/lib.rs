@@ -1334,6 +1334,7 @@ pub struct ImplType {
 #[derive(Debug, Visit)]
 pub struct Crate {
     extent: Extent,
+    visibility: Option<Visibility>,
     name: Ident,
     rename: Option<Ident>,
     whitespace: Vec<Whitespace>,
@@ -3974,16 +3975,17 @@ fn p_const_static<'s, F, T>
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
     sequence!(pm, pt, {
-        spt    = point;
-        _      = literal("extern");
-        ws     = whitespace;
-        _      = literal("crate");
-        ws     = append_whitespace(ws);
-        name   = ident;
-        rename = optional(extern_crate_rename);
-        ws     = optional_whitespace(ws);
-        _      = literal(";");
-    }, |_, pt| Crate { extent: ex(spt, pt), name, rename, whitespace: ws })
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("extern");
+        ws         = whitespace;
+        _          = literal("crate");
+        ws         = append_whitespace(ws);
+        name       = ident;
+        rename     = optional(extern_crate_rename);
+        ws         = optional_whitespace(ws);
+        _          = literal(";");
+    }, |_, pt| Crate { extent: ex(spt, pt), visibility, name, rename, whitespace: ws })
 }
 
 fn extern_crate_rename<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
@@ -4601,6 +4603,12 @@ mod test {
     fn item_extern_crate() {
         let p = qp(item, "extern crate foo;");
         assert_eq!(unwrap_progress(p).extent(), (0, 17))
+    }
+
+    #[test]
+    fn item_extern_crate_public() {
+        let p = qp(item, "pub extern crate foo;");
+        assert_eq!(unwrap_progress(p).extent(), (0, 21))
     }
 
     #[test]
