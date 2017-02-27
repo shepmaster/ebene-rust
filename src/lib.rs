@@ -2822,7 +2822,9 @@ fn expr_tuple_or_parenthetical<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progre
 fn expr_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Range> {
     sequence!(pm, pt, {
         spt = point;
+        _x  = optional_whitespace(Vec::new());
         _   = literal("..");
+        _x  = optional_whitespace(_x);
         rhs = optional(expression);
     }, |_, pt| Range { extent: ex(spt, pt), lhs: None, rhs: rhs.map(Box::new) } )
 }
@@ -3415,7 +3417,9 @@ fn field_name<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FieldName>
 
 fn expr_tail_range<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
     sequence!(pm, pt, {
+        _x  = optional_whitespace(Vec::new());
         _   = literal("..");
+        _x  = optional_whitespace(_x);
         rhs = optional(expression);
     }, |_, _| ExpressionTail::Range { rhs: rhs.map(Box::new) })
 }
@@ -5272,6 +5276,18 @@ mod test {
     fn expr_range_none() {
         let p = qp(expression, "..");
         assert_eq!(unwrap_progress(p).extent(), (0, 2))
+    }
+
+    #[test]
+    fn expr_range_all_space() {
+        let p = qp(expression, ".. 2");
+        assert_eq!(unwrap_progress(p).extent(), (0, 4))
+    }
+
+    #[test]
+    fn expr_range_tail_all_space() {
+        let p = qp(expression, "1 .. 2");
+        assert_eq!(unwrap_progress(p).extent(), (0, 6))
     }
 
     #[test]
