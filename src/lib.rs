@@ -35,7 +35,6 @@ pub enum Error {
     Literal(&'static str),
     ExpectedIdentifier,
     ExpectedNumber,
-    ExpectedTuple,
     UnterminatedRawString,
 }
 
