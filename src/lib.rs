@@ -282,6 +282,7 @@ pub struct GenericDeclarations {
 #[derive(Debug, Visit)]
 pub struct GenericDeclarationLifetime {
     extent: Extent,
+    attributes: Vec<Attribute>,
     name: Lifetime,
     bounds: Vec<Lifetime>,
 }
@@ -289,6 +290,7 @@ pub struct GenericDeclarationLifetime {
 #[derive(Debug, Visit)]
 pub struct GenericDeclarationType {
     extent: Extent,
+    attributes: Vec<Attribute>,
     name: Ident,
     bounds: Option<TraitBounds>,
 }
@@ -2187,10 +2189,16 @@ fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
 
 fn generic_declaration_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarationLifetime> {
     sequence!(pm, pt, {
-        spt    = point;
-        name   = lifetime;
-        bounds = optional(generic_declaration_lifetime_bounds);
-    }, |_, pt| GenericDeclarationLifetime { extent: ex(spt, pt), name, bounds: bounds.unwrap_or_else(Vec::new) })
+        spt        = point;
+        attributes = zero_or_more(struct_defn_field_attr);
+        name       = lifetime;
+        bounds     = optional(generic_declaration_lifetime_bounds);
+    }, |_, pt| GenericDeclarationLifetime {
+        extent: ex(spt, pt),
+        attributes,
+        name,
+        bounds: bounds.unwrap_or_else(Vec::new),
+    })
 }
 
 fn generic_declaration_lifetime_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Lifetime>> {
@@ -2204,10 +2212,11 @@ fn generic_declaration_lifetime_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -
 
 fn generic_declaration_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarationType> {
     sequence!(pm, pt, {
-        spt    = point;
-        name   = ident;
-        bounds = optional(generic_declaration_type_bounds);
-    }, |_, pt| GenericDeclarationType { extent: ex(spt, pt), name, bounds })
+        spt        = point;
+        attributes = zero_or_more(struct_defn_field_attr);
+        name       = ident;
+        bounds     = optional(generic_declaration_type_bounds);
+    }, |_, pt| GenericDeclarationType { extent: ex(spt, pt), attributes, name, bounds })
 }
 
 fn generic_declaration_type_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
@@ -6030,6 +6039,12 @@ mod test {
     fn generic_declarations_allow_lifetime_bounds() {
         let p = qp(generic_declarations, "<'a: 'b>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn generic_declarations_with_attributes() {
+        let p = qp(generic_declarations, "<#[foo] 'a, #[bar] B>");
+        assert_eq!(unwrap_progress(p).extent, (0, 21))
     }
 
     #[test]
