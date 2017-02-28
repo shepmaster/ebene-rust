@@ -908,6 +908,7 @@ pub struct Call {
 #[derive(Debug, Visit)]
 pub struct ForLoop {
     extent: Extent,
+    label: Option<Lifetime>,
     pattern: Pattern,
     iter: Box<Expression>,
     body: Box<Block>,
@@ -917,6 +918,7 @@ pub struct ForLoop {
 #[derive(Debug, Visit)]
 pub struct Loop {
     extent: Extent,
+    label: Option<Lifetime>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
 }
@@ -933,6 +935,7 @@ pub struct IfLet {
 #[derive(Debug, Visit)]
 pub struct While {
     extent: Extent,
+    label: Option<Lifetime>,
     value: Box<Expression>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
@@ -941,6 +944,7 @@ pub struct While {
 #[derive(Debug, Visit)]
 pub struct WhileLet {
     extent: Extent,
+    label: Option<Lifetime>,
     pattern: Pattern,
     value: Box<Expression>,
     body: Box<Block>,
@@ -2737,6 +2741,7 @@ fn expr_followed_by_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop> {
     sequence!(pm, pt, {
         spt          = point;
+        label        = optional(loop_label);
         _            = literal("for");
         ws           = append_whitespace(Vec::new());
         pattern      = pattern;
@@ -2746,6 +2751,7 @@ fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop
         (iter, body) = expr_followed_by_block;
     }, |_, pt| ForLoop {
         extent: ex(spt, pt),
+        label,
         pattern,
         iter: Box::new(iter),
         body: Box::new(body),
@@ -2753,13 +2759,23 @@ fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop
     })
 }
 
+fn loop_label<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
+    sequence!(pm, pt, {
+        lifetime = lifetime;
+        _x       = optional_whitespace(Vec::new());
+        _        = literal(":");
+        _x       = optional_whitespace(Vec::new());
+    }, |_, _| lifetime)
+}
+
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("loop");
-        ws   = optional_whitespace(Vec::new());
-        body = block;
-    }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
+        spt   = point;
+        label = optional(loop_label);
+        _     = literal("loop");
+        ws    = optional_whitespace(Vec::new());
+        body  = block;
+    }, |_, pt| Loop { extent: ex(spt, pt), label, body: Box::new(body), whitespace: ws })
 }
 
 fn expr_if_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, IfLet> {
@@ -2786,11 +2802,13 @@ fn expr_if_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, IfLet> {
 fn expr_while<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, While> {
     sequence!(pm, pt, {
         spt           = point;
+        label         = optional(loop_label);
         _             = literal("while");
         ws            = whitespace;
         (value, body) = expr_followed_by_block;
     }, |_, pt| While {
         extent: ex(spt, pt),
+        label,
         value: Box::new(value),
         body: Box::new(body),
         whitespace: ws,
@@ -2800,6 +2818,7 @@ fn expr_while<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, While> {
 fn expr_while_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhileLet> {
     sequence!(pm, pt, {
         spt           = point;
+        label         = optional(loop_label);
         _             = literal("while");
         ws            = whitespace;
         _             = literal("let");
@@ -2811,6 +2830,7 @@ fn expr_while_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhileL
         (value, body) = expr_followed_by_block;
     }, |_, pt| WhileLet {
         extent: ex(spt, pt),
+        label,
         pattern,
         value: Box::new(value),
         body: Box::new(body),
@@ -5199,9 +5219,21 @@ mod test {
     }
 
     #[test]
+    fn expr_for_loop_with_label() {
+        let p = qp(expression, "'a: for (a, b) in c {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 22))
+    }
+
+    #[test]
     fn expr_loop() {
         let p = qp(expression, "loop {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn expr_loop_with_label() {
+        let p = qp(expression, "'a: loop {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
@@ -5309,9 +5341,21 @@ mod test {
     }
 
     #[test]
+    fn expr_while_with_label() {
+        let p = qp(expression, "'a: while is_awesome() {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 25))
+    }
+
+    #[test]
     fn expr_while_let() {
         let p = qp(expression, "while let Some(a) = None {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 27))
+    }
+
+    #[test]
+    fn expr_while_let_with_label() {
+        let p = qp(expression, "'a: while let Some(a) = None {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 31))
     }
 
     #[test]
