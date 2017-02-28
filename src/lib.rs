@@ -684,15 +684,16 @@ impl Statement {
 #[derive(Debug, Visit, Decompose)]
 pub enum Expression {
     Array(Array),
-    Box(ExpressionBox),
-    Byte(Byte),
-    ByteString(ByteString),
     AsType(AsType),
     Binary(Binary),
     Block(Box<Block>),
+    Box(ExpressionBox),
+    Byte(Byte),
+    ByteString(ByteString),
     Call(Call),
     Character(Character),
     Closure(Closure),
+    Continue(Continue),
     Dereference(Dereference),
     FieldAccess(FieldAccess),
     ForLoop(ForLoop),
@@ -726,14 +727,15 @@ impl Expression {
             Expression::Array(ref x) => x.extent(),
             Expression::Number(ref x) => x.extent(),
 
-            Expression::Box(ExpressionBox { extent, .. })           |
             Expression::AsType(AsType { extent, .. })               |
             Expression::Binary(Binary { extent, .. })               |
+            Expression::Box(ExpressionBox { extent, .. })           |
             Expression::Byte(Byte { extent, .. })                   |
             Expression::ByteString(ByteString { extent, .. })       |
             Expression::Call(Call { extent, .. })                   |
             Expression::Character(Character { extent, .. })         |
             Expression::Closure(Closure { extent, .. })             |
+            Expression::Continue(Continue { extent, .. })           |
             Expression::Dereference(Dereference { extent, .. })     |
             Expression::FieldAccess(FieldAccess { extent, .. })     |
             Expression::ForLoop(ForLoop { extent, .. })             |
@@ -1151,6 +1153,11 @@ pub struct Return {
     whitespace: Vec<Whitespace>,
 }
 
+#[derive(Debug, Visit)]
+pub struct Continue {
+    extent: Extent,
+}
+
 #[derive(Debug)]
 enum ExpressionTail {
     AsType { typ: Type, whitespace: Vec<Whitespace> },
@@ -1528,6 +1535,7 @@ pub trait Visitor {
     fn visit_closure_arg(&mut self, &ClosureArg) {}
     fn visit_comment(&mut self, &Comment) {}
     fn visit_const(&mut self, &Const) {}
+    fn visit_continue(&mut self, &Continue) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_dereference(&mut self, &Dereference) {}
     fn visit_enum(&mut self, &Enum) {}
@@ -1662,6 +1670,7 @@ pub trait Visitor {
     fn exit_closure_arg(&mut self, &ClosureArg) {}
     fn exit_comment(&mut self, &Comment) {}
     fn exit_const(&mut self, &Const) {}
+    fn exit_continue(&mut self, &Continue) {}
     fn exit_crate(&mut self, &Crate) {}
     fn exit_dereference(&mut self, &Dereference) {}
     fn exit_enum(&mut self, &Enum) {}
@@ -2146,35 +2155,36 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
 // Treat `self` as an identifier though.
 fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
     match s {
-        "as"     |
-        "box"    |
-        "const"  |
-        "crate"  |
-        "else"   |
-        "enum"   |
-        "extern" |
-        "fn"     |
-        "for"    |
-        "if"     |
-        "impl"   |
-        "in"     |
-        "let"    |
-        "loop"   |
-        "match"  |
-        "mod"    |
-        "move"   |
-        "mut"    |
-        "pub"    |
-        "ref"    |
-        "return" |
-        "static" |
-        "struct" |
-        "trait"  |
-        "type"   |
-        "use"    |
-        "unsafe" |
-        "where"  |
-        "while"  => Err(Error::ExpectedIdentifier),
+        "as"       |
+        "box"      |
+        "const"    |
+        "continue" |
+        "crate"    |
+        "else"     |
+        "enum"     |
+        "extern"   |
+        "fn"       |
+        "for"      |
+        "if"       |
+        "impl"     |
+        "in"       |
+        "let"      |
+        "loop"     |
+        "match"    |
+        "mod"      |
+        "move"     |
+        "mut"      |
+        "pub"      |
+        "ref"      |
+        "return"   |
+        "static"   |
+        "struct"   |
+        "trait"    |
+        "type"     |
+        "use"      |
+        "unsafe"   |
+        "where"    |
+        "while"    => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
     }
 }
@@ -2424,6 +2434,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(string_literal, Expression::String))
             .one(map(expr_closure, Expression::Closure))
             .one(map(expr_return, Expression::Return))
+            .one(map(expr_continue, Expression::Continue))
             .one(map(number_literal, Expression::Number))
             .one(map(expr_reference, Expression::Reference))
             .one(map(expr_dereference, Expression::Dereference))
@@ -3090,6 +3101,13 @@ fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
         value: value.map(Box::new),
         whitespace: ws,
     })
+}
+
+fn expr_continue<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Continue> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("continue");
+    }, |_, pt| Continue { extent: ex(spt, pt) })
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
@@ -5460,6 +5478,13 @@ mod test {
     fn expr_return_no_value() {
         let p = qp(expression, "return");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn expr_continue() {
+        let p = unwrap_progress(qp(expression, "continue"));
+        assert!(p.is_continue());
+        assert_eq!(p.extent(), (0, 8))
     }
 
     #[test]
