@@ -688,6 +688,7 @@ pub enum Expression {
     Binary(Binary),
     Block(Box<Block>),
     Box(ExpressionBox),
+    Break(Break),
     Byte(Byte),
     ByteString(ByteString),
     Call(Call),
@@ -730,6 +731,7 @@ impl Expression {
             Expression::AsType(AsType { extent, .. })               |
             Expression::Binary(Binary { extent, .. })               |
             Expression::Box(ExpressionBox { extent, .. })           |
+            Expression::Break(Break { extent, .. })                 |
             Expression::Byte(Byte { extent, .. })                   |
             Expression::ByteString(ByteString { extent, .. })       |
             Expression::Call(Call { extent, .. })                   |
@@ -1160,6 +1162,13 @@ pub struct Continue {
     whitespace: Vec<Whitespace>,
 }
 
+#[derive(Debug, Visit)]
+pub struct Break {
+    extent: Extent,
+    label: Option<Lifetime>,
+    whitespace: Vec<Whitespace>,
+}
+
 #[derive(Debug)]
 enum ExpressionTail {
     AsType { typ: Type, whitespace: Vec<Whitespace> },
@@ -1529,6 +1538,7 @@ pub trait Visitor {
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
+    fn visit_break(&mut self, &Break) {}
     fn visit_byte(&mut self, &Byte) {}
     fn visit_byte_string(&mut self, &ByteString) {}
     fn visit_call(&mut self, &Call) {}
@@ -1664,6 +1674,7 @@ pub trait Visitor {
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
+    fn exit_break(&mut self, &Break) {}
     fn exit_byte(&mut self, &Byte) {}
     fn exit_byte_string(&mut self, &ByteString) {}
     fn exit_call(&mut self, &Call) {}
@@ -2159,6 +2170,7 @@ fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
     match s {
         "as"       |
         "box"      |
+        "break"    |
         "const"    |
         "continue" |
         "crate"    |
@@ -2437,6 +2449,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_closure, Expression::Closure))
             .one(map(expr_return, Expression::Return))
             .one(map(expr_continue, Expression::Continue))
+            .one(map(expr_break, Expression::Break))
             .one(map(number_literal, Expression::Number))
             .one(map(expr_reference, Expression::Reference))
             .one(map(expr_dereference, Expression::Dereference))
@@ -3112,6 +3125,15 @@ fn expr_continue<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Continu
         ws    = optional_whitespace(Vec::new());
         label = optional(lifetime);
     }, |_, pt| Continue { extent: ex(spt, pt), label, whitespace: ws })
+}
+
+fn expr_break<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Break> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("break");
+        ws    = optional_whitespace(Vec::new());
+        label = optional(lifetime);
+    }, |_, pt| Break { extent: ex(spt, pt), label, whitespace: ws })
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
@@ -5496,6 +5518,20 @@ mod test {
         let p = unwrap_progress(qp(expression, "continue 'outer"));
         assert!(p.is_continue());
         assert_eq!(p.extent(), (0, 15))
+    }
+
+    #[test]
+    fn expr_break() {
+        let p = unwrap_progress(qp(expression, "break"));
+        assert!(p.is_break());
+        assert_eq!(p.extent(), (0, 5))
+    }
+
+    #[test]
+    fn expr_break_with_label() {
+        let p = unwrap_progress(qp(expression, "break 'outer"));
+        assert!(p.is_break());
+        assert_eq!(p.extent(), (0, 12))
     }
 
     #[test]
