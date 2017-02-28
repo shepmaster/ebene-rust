@@ -577,9 +577,15 @@ pub enum Argument {
 #[derive(Debug, Visit)]
 pub struct SelfArgument {
     extent: Extent,
-    kind: Option<TypeReferenceKind>,
+    qualifier: Option<SelfArgumentQualifier>,
     name: Ident,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum SelfArgumentQualifier {
+    Reference(TypeReferenceKind),
+    Mut(Extent),
 }
 
 #[derive(Debug, Visit)]
@@ -1614,6 +1620,7 @@ pub trait Visitor {
     fn visit_reference(&mut self, &Reference) {}
     fn visit_return(&mut self, &Return) {}
     fn visit_self_argument(&mut self, &SelfArgument) {}
+    fn visit_self_argument_qualifier(&mut self, &SelfArgumentQualifier) {}
     fn visit_slice(&mut self, &Slice) {}
     fn visit_statement(&mut self, &Statement) {}
     fn visit_static(&mut self, &Static) {}
@@ -1750,6 +1757,7 @@ pub trait Visitor {
     fn exit_reference(&mut self, &Reference) {}
     fn exit_return(&mut self, &Return) {}
     fn exit_self_argument(&mut self, &SelfArgument) {}
+    fn exit_self_argument_qualifier(&mut self, &SelfArgumentQualifier) {}
     fn exit_slice(&mut self, &Slice) {}
     fn exit_statement(&mut self, &Statement) {}
     fn exit_static(&mut self, &Static) {}
@@ -2286,17 +2294,33 @@ fn function_arglist<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<
 
 fn self_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, SelfArgument> {
     sequence!(pm, pt, {
-        spt  = point;
-        kind = optional(typ_reference_kind);
-        name = ext(literal("self"));
-        _    = optional(literal(","));
-        ws   = optional_whitespace(Vec::new());
+        spt       = point;
+        qualifier = optional(self_argument_qualifier);
+        name      = ext(literal("self"));
+        _         = optional(literal(","));
+        ws        = optional_whitespace(Vec::new());
     }, |_, pt| SelfArgument {
         extent: ex(spt, pt),
-        kind,
+        qualifier,
         name: Ident { extent: name },
         whitespace: ws,
     })
+}
+
+fn self_argument_qualifier<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, SelfArgumentQualifier>
+{
+    pm.alternate(pt)
+        .one(map(typ_reference_kind, SelfArgumentQualifier::Reference))
+        .one(map(self_argument_mut, SelfArgumentQualifier::Mut))
+        .finish()
+}
+
+fn self_argument_mut<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        is_mut = ext(literal("mut"));
+        _x     = optional_whitespace(Vec::new());
+    }, |_, _| is_mut)
 }
 
 fn function_argument<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Argument> {
@@ -4944,9 +4968,27 @@ mod test {
     }
 
     #[test]
-    fn fn_with_self_type() {
+    fn fn_with_self_type_reference() {
         let p = qp(function_header, "fn foo(&self)");
         assert_eq!(unwrap_progress(p).extent, (0, 13))
+    }
+
+    #[test]
+    fn fn_with_self_type_value() {
+        let p = qp(function_header, "fn foo(self)");
+        assert_eq!(unwrap_progress(p).extent, (0, 12))
+    }
+
+    #[test]
+    fn fn_with_self_type_value_mut() {
+        let p = qp(function_header, "fn foo(mut self)");
+        assert_eq!(unwrap_progress(p).extent, (0, 16))
+    }
+
+    #[test]
+    fn fn_with_self_type_reference_mut() {
+        let p = qp(function_header, "fn foo(&mut self)");
+        assert_eq!(unwrap_progress(p).extent, (0, 17))
     }
 
     #[test]
