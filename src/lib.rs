@@ -1156,6 +1156,8 @@ pub struct Return {
 #[derive(Debug, Visit)]
 pub struct Continue {
     extent: Extent,
+    label: Option<Lifetime>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug)]
@@ -3107,7 +3109,9 @@ fn expr_continue<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Continu
     sequence!(pm, pt, {
         spt   = point;
         _     = literal("continue");
-    }, |_, pt| Continue { extent: ex(spt, pt) })
+        ws    = optional_whitespace(Vec::new());
+        label = optional(lifetime);
+    }, |_, pt| Continue { extent: ex(spt, pt), label, whitespace: ws })
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
@@ -5485,6 +5489,13 @@ mod test {
         let p = unwrap_progress(qp(expression, "continue"));
         assert!(p.is_continue());
         assert_eq!(p.extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_continue_with_label() {
+        let p = unwrap_progress(qp(expression, "continue 'outer"));
+        assert!(p.is_continue());
+        assert_eq!(p.extent(), (0, 15))
     }
 
     #[test]
