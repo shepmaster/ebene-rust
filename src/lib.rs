@@ -1358,6 +1358,7 @@ pub struct ExternBlock {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum ExternBlockMember {
+    Attribute(Attribute),
     Function(ExternBlockMemberFunction),
     Whitespace(Vec<Whitespace>),
 }
@@ -4054,6 +4055,7 @@ fn extern_block_abi<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Stri
 
 fn extern_block_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExternBlockMember> {
     pm.alternate(pt)
+        .one(map(attribute, ExternBlockMember::Attribute))
         .one(map(extern_block_member_function, ExternBlockMember::Function))
         .one(map(whitespace, ExternBlockMember::Whitespace))
         .finish()
@@ -4669,6 +4671,12 @@ mod test {
     fn item_extern_block_with_fn() {
         let p = qp(item, r#"extern { fn foo(bar: u8) -> bool; }"#);
         assert_eq!(unwrap_progress(p).extent(), (0, 35))
+    }
+
+    #[test]
+    fn item_extern_block_with_attribute() {
+        let p = qp(item, r#"extern { #[wow] }"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 17))
     }
 
     #[test]
