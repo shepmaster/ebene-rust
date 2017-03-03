@@ -1,4 +1,3 @@
-#![feature(field_init_shorthand)]
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 

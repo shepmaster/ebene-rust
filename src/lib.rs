@@ -1,7 +1,4 @@
-#![feature(field_init_shorthand)]
 #![feature(conservative_impl_trait)]
-#![feature(pattern)]
-#![feature(custom_derive)]
 
 #[macro_use]
 extern crate strata_rs_derive;
@@ -1773,12 +1770,10 @@ fn ext<'s, F, T>(f: F) -> impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s
     }
 }
 
-fn parse_until<'s, P>(p: P) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent>
-    where P: std::str::pattern::Pattern<'s> + Clone // TODO: eww clone
-{
+fn parse_until<'s>(p: &'static str) -> impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, Extent> {
     move |_, pt| {
         let spt = pt;
-        let end = pt.s.find(p.clone()).unwrap_or(pt.s.len());
+        let end = pt.s.find(p).unwrap_or(pt.s.len());
         let k = &pt.s[end..];
         let pt = Point { s: k, offset: pt.offset + end };
 
