@@ -491,6 +491,7 @@ pub struct Struct {
     visibility: Option<Visibility>,
     name: Ident,
     generics: Option<GenericDeclarations>,
+    wheres: Vec<Where>,
     body: StructDefinitionBody,
     whitespace: Vec<Whitespace>,
 }
@@ -547,7 +548,7 @@ pub struct EnumVariant {
 #[derive(Debug, Visit, Decompose)]
 pub enum EnumVariantBody {
     Tuple(Vec<Type>),
-    Struct(StructDefinitionBody),
+    Struct(StructDefinitionBodyBrace),
 }
 
 #[derive(Debug, Visit, Decompose)]
@@ -3614,55 +3615,81 @@ fn pattern_range_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'
 
 fn p_struct<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Struct> {
     sequence!(pm, pt, {
-        spt        = point;
-        visibility = optional(visibility);
-        _          = literal("struct");
-        ws         = whitespace;
-        name       = ident;
-        ws         = optional_whitespace(ws);
-        generics   = optional(generic_declarations);
-        ws         = optional_whitespace(ws);
-        body       = struct_defn_body;
+        spt            = point;
+        visibility     = optional(visibility);
+        _              = literal("struct");
+        ws             = whitespace;
+        name           = ident;
+        ws             = optional_whitespace(ws);
+        generics       = optional(generic_declarations);
+        ws             = optional_whitespace(ws);
+        (body, wheres) = struct_defn_body;
     }, |_, pt| Struct {
         extent: ex(spt, pt),
         visibility,
         name,
         generics,
+        wheres: wheres.unwrap_or_else(Vec::new),
         body,
         whitespace: ws,
     })
 }
 
-fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBody> {
+fn struct_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (StructDefinitionBody, Option<Vec<Where>>)>
+{
     pm.alternate(pt)
-        .one(map(struct_defn_body_brace, StructDefinitionBody::Brace))
-        .one(map(struct_defn_body_tuple, StructDefinitionBody::Tuple))
-        .one(map(ext(literal(";")), StructDefinitionBody::Empty))
+        .one(map(struct_defn_body_brace, |(b, w)| (StructDefinitionBody::Brace(b), w)))
+        .one(map(struct_defn_body_tuple, |(b, w)| (StructDefinitionBody::Tuple(b), w)))
+        .one(map(ext(literal(";")), |b| (StructDefinitionBody::Empty(b), None)))
         .finish()
 }
 
-fn struct_defn_body_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBodyBrace> {
+fn struct_defn_body_brace<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (StructDefinitionBodyBrace, Option<Vec<Where>>)>
+{
     sequence!(pm, pt, {
-        spt    = point;
-        _      = literal("{");
-        ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more_tailed_values(",", struct_defn_field);
-        ws     = optional_whitespace(ws);
-        _      = literal("}");
+        _x           = optional_whitespace(Vec::new());
+        (wheres, _x) = concat_whitespace(_x, optional(where_clause));
+        _x           = optional_whitespace(_x);
+        body         = struct_defn_body_brace_only;
+    }, |_, _| (body, wheres))
+}
+
+fn struct_defn_body_brace_only<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, StructDefinitionBodyBrace>
+{
+    sequence!(pm, pt, {
+        spt          = point;
+        _            = literal("{");
+        ws           = optional_whitespace(Vec::new());
+        fields       = zero_or_more_tailed_values(",", struct_defn_field);
+        ws           = optional_whitespace(ws);
+        _            = literal("}");
     }, |_, pt| StructDefinitionBodyBrace { extent: ex(spt, pt), fields, whitespace: ws })
 }
 
-fn struct_defn_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionBodyTuple> {
+fn struct_defn_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (StructDefinitionBodyTuple, Option<Vec<Where>>)>
+{
     sequence!(pm, pt, {
-        spt    = point;
-        _      = literal("(");
-        ws     = optional_whitespace(Vec::new());
-        fields = zero_or_more_tailed_values(",", typ);
-        ws     = optional_whitespace(ws);
-        _      = literal(")");
-        ws     = optional_whitespace(ws);
-        _      = literal(";");
-    }, |_, pt| StructDefinitionBodyTuple { extent: ex(spt, pt), fields, whitespace: ws })
+        spt          = point;
+        fields       = struct_defn_body_tuple_only;
+        ws           = optional_whitespace(Vec::new());
+        (wheres, ws) = concat_whitespace(ws, optional(where_clause));
+        ws           = optional_whitespace(ws);
+        _            = literal(";");
+    }, |_, pt| (StructDefinitionBodyTuple { extent: ex(spt, pt), fields, whitespace: ws }, wheres))
+}
+
+fn struct_defn_body_tuple_only<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
+    sequence!(pm, pt, {
+        _     = literal("(");
+        _x    = optional_whitespace(Vec::new());
+        types = zero_or_more_tailed_values(",", typ);
+        _x    = optional_whitespace(_x);
+        _     = literal(")");
+    }, |_, _| types)
 }
 
 fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
@@ -3728,8 +3755,8 @@ fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVari
 
 fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
     pm.alternate(pt)
-        .one(map(tuple_defn_body, EnumVariantBody::Tuple))
-        .one(map(struct_defn_body, EnumVariantBody::Struct))
+        .one(map(struct_defn_body_tuple_only, EnumVariantBody::Tuple))
+        .one(map(struct_defn_body_brace_only, EnumVariantBody::Struct))
         .finish()
 }
 
@@ -4229,19 +4256,9 @@ fn typ_pointer_kind<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type
 
 fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> {
     sequence!(pm, pt, {
-        spt      = point;
-        types = tuple_defn_body;
+        spt   = point;
+        types = struct_defn_body_tuple_only;
     }, |_, pt| TypeTuple { extent: ex(spt, pt), types })
-}
-
-fn tuple_defn_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
-    sequence!(pm, pt, {
-        _     = literal("(");
-        _x    = optional_whitespace(Vec::new());
-        types = zero_or_more_tailed_values(",", typ);
-        _x    = optional_whitespace(_x);
-        _     = literal(")");
-    }, |_, _| types)
 }
 
 fn typ_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCore> {
@@ -5859,6 +5876,18 @@ mod test {
     fn struct_empty() {
         let p = qp(p_struct, "struct S;");
         assert_eq!(unwrap_progress(p).extent, (0, 9))
+    }
+
+    #[test]
+    fn struct_with_where_clause() {
+        let p = qp(p_struct, "struct S<A> where A: Foo { a: A }");
+        assert_eq!(unwrap_progress(p).extent, (0, 33))
+    }
+
+    #[test]
+    fn struct_with_tuple_and_where_clause() {
+        let p = qp(p_struct, "struct S<A>(A) where A: Foo;");
+        assert_eq!(unwrap_progress(p).extent, (0, 28))
     }
 
     #[test]
