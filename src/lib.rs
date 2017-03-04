@@ -684,15 +684,17 @@ impl Statement {
 #[derive(Debug, Visit, Decompose)]
 pub enum Expression {
     Array(Array),
-    Box(ExpressionBox),
-    Byte(Byte),
-    ByteString(ByteString),
     AsType(AsType),
     Binary(Binary),
     Block(Box<Block>),
+    Box(ExpressionBox),
+    Break(Break),
+    Byte(Byte),
+    ByteString(ByteString),
     Call(Call),
     Character(Character),
     Closure(Closure),
+    Continue(Continue),
     Dereference(Dereference),
     FieldAccess(FieldAccess),
     ForLoop(ForLoop),
@@ -726,14 +728,16 @@ impl Expression {
             Expression::Array(ref x) => x.extent(),
             Expression::Number(ref x) => x.extent(),
 
-            Expression::Box(ExpressionBox { extent, .. })           |
             Expression::AsType(AsType { extent, .. })               |
             Expression::Binary(Binary { extent, .. })               |
+            Expression::Box(ExpressionBox { extent, .. })           |
+            Expression::Break(Break { extent, .. })                 |
             Expression::Byte(Byte { extent, .. })                   |
             Expression::ByteString(ByteString { extent, .. })       |
             Expression::Call(Call { extent, .. })                   |
             Expression::Character(Character { extent, .. })         |
             Expression::Closure(Closure { extent, .. })             |
+            Expression::Continue(Continue { extent, .. })           |
             Expression::Dereference(Dereference { extent, .. })     |
             Expression::FieldAccess(FieldAccess { extent, .. })     |
             Expression::ForLoop(ForLoop { extent, .. })             |
@@ -904,6 +908,7 @@ pub struct Call {
 #[derive(Debug, Visit)]
 pub struct ForLoop {
     extent: Extent,
+    label: Option<Lifetime>,
     pattern: Pattern,
     iter: Box<Expression>,
     body: Box<Block>,
@@ -913,6 +918,7 @@ pub struct ForLoop {
 #[derive(Debug, Visit)]
 pub struct Loop {
     extent: Extent,
+    label: Option<Lifetime>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
 }
@@ -929,6 +935,7 @@ pub struct IfLet {
 #[derive(Debug, Visit)]
 pub struct While {
     extent: Extent,
+    label: Option<Lifetime>,
     value: Box<Expression>,
     body: Box<Block>,
     whitespace: Vec<Whitespace>,
@@ -937,6 +944,7 @@ pub struct While {
 #[derive(Debug, Visit)]
 pub struct WhileLet {
     extent: Extent,
+    label: Option<Lifetime>,
     pattern: Pattern,
     value: Box<Expression>,
     body: Box<Block>,
@@ -1148,6 +1156,20 @@ pub struct Dereference {
 pub struct Return {
     extent: Extent,
     value: Option<Box<Expression>>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct Continue {
+    extent: Extent,
+    label: Option<Lifetime>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct Break {
+    extent: Extent,
+    label: Option<Lifetime>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1520,6 +1542,7 @@ pub trait Visitor {
     fn visit_attribute(&mut self, &Attribute) {}
     fn visit_binary(&mut self, &Binary) {}
     fn visit_block(&mut self, &Block) {}
+    fn visit_break(&mut self, &Break) {}
     fn visit_byte(&mut self, &Byte) {}
     fn visit_byte_string(&mut self, &ByteString) {}
     fn visit_call(&mut self, &Call) {}
@@ -1528,6 +1551,7 @@ pub trait Visitor {
     fn visit_closure_arg(&mut self, &ClosureArg) {}
     fn visit_comment(&mut self, &Comment) {}
     fn visit_const(&mut self, &Const) {}
+    fn visit_continue(&mut self, &Continue) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_dereference(&mut self, &Dereference) {}
     fn visit_enum(&mut self, &Enum) {}
@@ -1654,6 +1678,7 @@ pub trait Visitor {
     fn exit_attribute(&mut self, &Attribute) {}
     fn exit_binary(&mut self, &Binary) {}
     fn exit_block(&mut self, &Block) {}
+    fn exit_break(&mut self, &Break) {}
     fn exit_byte(&mut self, &Byte) {}
     fn exit_byte_string(&mut self, &ByteString) {}
     fn exit_call(&mut self, &Call) {}
@@ -1662,6 +1687,7 @@ pub trait Visitor {
     fn exit_closure_arg(&mut self, &ClosureArg) {}
     fn exit_comment(&mut self, &Comment) {}
     fn exit_const(&mut self, &Const) {}
+    fn exit_continue(&mut self, &Continue) {}
     fn exit_crate(&mut self, &Crate) {}
     fn exit_dereference(&mut self, &Dereference) {}
     fn exit_enum(&mut self, &Enum) {}
@@ -2146,35 +2172,37 @@ fn ident<'s>(_pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ident> {
 // Treat `self` as an identifier though.
 fn reject_keywords((s, ex): (&str, Extent)) -> Result<Extent, Error> {
     match s {
-        "as"     |
-        "box"    |
-        "const"  |
-        "crate"  |
-        "else"   |
-        "enum"   |
-        "extern" |
-        "fn"     |
-        "for"    |
-        "if"     |
-        "impl"   |
-        "in"     |
-        "let"    |
-        "loop"   |
-        "match"  |
-        "mod"    |
-        "move"   |
-        "mut"    |
-        "pub"    |
-        "ref"    |
-        "return" |
-        "static" |
-        "struct" |
-        "trait"  |
-        "type"   |
-        "use"    |
-        "unsafe" |
-        "where"  |
-        "while"  => Err(Error::ExpectedIdentifier),
+        "as"       |
+        "box"      |
+        "break"    |
+        "const"    |
+        "continue" |
+        "crate"    |
+        "else"     |
+        "enum"     |
+        "extern"   |
+        "fn"       |
+        "for"      |
+        "if"       |
+        "impl"     |
+        "in"       |
+        "let"      |
+        "loop"     |
+        "match"    |
+        "mod"      |
+        "move"     |
+        "mut"      |
+        "pub"      |
+        "ref"      |
+        "return"   |
+        "static"   |
+        "struct"   |
+        "trait"    |
+        "type"     |
+        "use"      |
+        "unsafe"   |
+        "where"    |
+        "while"    => Err(Error::ExpectedIdentifier),
         _ => Ok(ex),
     }
 }
@@ -2424,6 +2452,8 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(string_literal, Expression::String))
             .one(map(expr_closure, Expression::Closure))
             .one(map(expr_return, Expression::Return))
+            .one(map(expr_continue, Expression::Continue))
+            .one(map(expr_break, Expression::Break))
             .one(map(number_literal, Expression::Number))
             .one(map(expr_reference, Expression::Reference))
             .one(map(expr_dereference, Expression::Dereference))
@@ -2711,6 +2741,7 @@ fn expr_followed_by_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
 fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop> {
     sequence!(pm, pt, {
         spt          = point;
+        label        = optional(loop_label);
         _            = literal("for");
         ws           = append_whitespace(Vec::new());
         pattern      = pattern;
@@ -2720,6 +2751,7 @@ fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop
         (iter, body) = expr_followed_by_block;
     }, |_, pt| ForLoop {
         extent: ex(spt, pt),
+        label,
         pattern,
         iter: Box::new(iter),
         body: Box::new(body),
@@ -2727,13 +2759,23 @@ fn expr_for_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ForLoop
     })
 }
 
+fn loop_label<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Lifetime> {
+    sequence!(pm, pt, {
+        lifetime = lifetime;
+        _x       = optional_whitespace(Vec::new());
+        _        = literal(":");
+        _x       = optional_whitespace(Vec::new());
+    }, |_, _| lifetime)
+}
+
 fn expr_loop<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Loop> {
     sequence!(pm, pt, {
-        spt  = point;
-        _    = literal("loop");
-        ws   = optional_whitespace(Vec::new());
-        body = block;
-    }, |_, pt| Loop { extent: ex(spt, pt), body: Box::new(body), whitespace: ws })
+        spt   = point;
+        label = optional(loop_label);
+        _     = literal("loop");
+        ws    = optional_whitespace(Vec::new());
+        body  = block;
+    }, |_, pt| Loop { extent: ex(spt, pt), label, body: Box::new(body), whitespace: ws })
 }
 
 fn expr_if_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, IfLet> {
@@ -2760,11 +2802,13 @@ fn expr_if_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, IfLet> {
 fn expr_while<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, While> {
     sequence!(pm, pt, {
         spt           = point;
+        label         = optional(loop_label);
         _             = literal("while");
         ws            = whitespace;
         (value, body) = expr_followed_by_block;
     }, |_, pt| While {
         extent: ex(spt, pt),
+        label,
         value: Box::new(value),
         body: Box::new(body),
         whitespace: ws,
@@ -2774,6 +2818,7 @@ fn expr_while<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, While> {
 fn expr_while_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhileLet> {
     sequence!(pm, pt, {
         spt           = point;
+        label         = optional(loop_label);
         _             = literal("while");
         ws            = whitespace;
         _             = literal("let");
@@ -2785,6 +2830,7 @@ fn expr_while_let<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhileL
         (value, body) = expr_followed_by_block;
     }, |_, pt| WhileLet {
         extent: ex(spt, pt),
+        label,
         pattern,
         value: Box::new(value),
         body: Box::new(body),
@@ -3090,6 +3136,24 @@ fn expr_return<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Return> {
         value: value.map(Box::new),
         whitespace: ws,
     })
+}
+
+fn expr_continue<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Continue> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("continue");
+        ws    = optional_whitespace(Vec::new());
+        label = optional(lifetime);
+    }, |_, pt| Continue { extent: ex(spt, pt), label, whitespace: ws })
+}
+
+fn expr_break<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Break> {
+    sequence!(pm, pt, {
+        spt   = point;
+        _     = literal("break");
+        ws    = optional_whitespace(Vec::new());
+        label = optional(lifetime);
+    }, |_, pt| Break { extent: ex(spt, pt), label, whitespace: ws })
 }
 
 fn expr_block<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Box<Block>> {
@@ -5155,9 +5219,21 @@ mod test {
     }
 
     #[test]
+    fn expr_for_loop_with_label() {
+        let p = qp(expression, "'a: for (a, b) in c {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 22))
+    }
+
+    #[test]
     fn expr_loop() {
         let p = qp(expression, "loop {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 7))
+    }
+
+    #[test]
+    fn expr_loop_with_label() {
+        let p = qp(expression, "'a: loop {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
@@ -5265,9 +5341,21 @@ mod test {
     }
 
     #[test]
+    fn expr_while_with_label() {
+        let p = qp(expression, "'a: while is_awesome() {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 25))
+    }
+
+    #[test]
     fn expr_while_let() {
         let p = qp(expression, "while let Some(a) = None {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 27))
+    }
+
+    #[test]
+    fn expr_while_let_with_label() {
+        let p = qp(expression, "'a: while let Some(a) = None {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 31))
     }
 
     #[test]
@@ -5460,6 +5548,34 @@ mod test {
     fn expr_return_no_value() {
         let p = qp(expression, "return");
         assert_eq!(unwrap_progress(p).extent(), (0, 6))
+    }
+
+    #[test]
+    fn expr_continue() {
+        let p = unwrap_progress(qp(expression, "continue"));
+        assert!(p.is_continue());
+        assert_eq!(p.extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_continue_with_label() {
+        let p = unwrap_progress(qp(expression, "continue 'outer"));
+        assert!(p.is_continue());
+        assert_eq!(p.extent(), (0, 15))
+    }
+
+    #[test]
+    fn expr_break() {
+        let p = unwrap_progress(qp(expression, "break"));
+        assert!(p.is_break());
+        assert_eq!(p.extent(), (0, 5))
+    }
+
+    #[test]
+    fn expr_break_with_label() {
+        let p = unwrap_progress(qp(expression, "break 'outer"));
+        assert!(p.is_break());
+        assert_eq!(p.extent(), (0, 12))
     }
 
     #[test]
