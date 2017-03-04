@@ -2136,6 +2136,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         spt               = point;
         visibility        = optional(visibility);
         is_unsafe         = optional(function_header_unsafe);
+        is_extern         = optional(function_header_extern);
         _                 = literal("fn");
         ws                = whitespace;
         name              = ident;
@@ -2152,6 +2153,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
             extent: ex(spt, pt),
             visibility,
             is_unsafe,
+            is_extern,
             name,
             generics,
             arguments,
@@ -2165,6 +2167,14 @@ fn function_header_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
     sequence!(pm, pt, {
         spt = point;
         _   = literal("unsafe");
+        _x  = whitespace;
+    }, |_, pt| ex(spt, pt))
+}
+
+fn function_header_extern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        spt = point;
+        _   = literal("extern");
         _x  = whitespace;
     }, |_, pt| ex(spt, pt))
 }
@@ -5022,6 +5032,12 @@ mod test {
     fn fn_with_public_modifier() {
         let p = qp(function_header, "pub fn foo()");
         assert_eq!(unwrap_progress(p).extent, (0, 12))
+    }
+
+    #[test]
+    fn fn_with_extern_modifier() {
+        let p = qp(function_header, "extern fn foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
     }
 
     #[test]
