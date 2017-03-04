@@ -272,6 +272,7 @@ pub struct FunctionQualifiers {
 pub struct TraitImplFunctionHeader {
     extent: Extent,
     visibility: Option<Visibility>,
+    qualifiers: FunctionQualifiers,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<TraitImplArgument>,
@@ -4082,6 +4083,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
     sequence!(pm, pt, {
         spt               = point;
         visibility        = optional(visibility);
+        qualifiers        = function_qualifiers;
         _                 = literal("fn");
         ws                = whitespace;
         name              = ident;
@@ -4096,6 +4098,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         TraitImplFunctionHeader {
             extent: ex(spt, pt),
             visibility,
+            qualifiers,
             name,
             generics,
             arguments,
@@ -4862,6 +4865,12 @@ mod test {
     fn item_trait_with_unnamed_parameters() {
         let p = qp(item, "trait Foo { fn bar(&self, u8); }");
         assert_eq!(unwrap_progress(p).extent(), (0, 32))
+    }
+
+    #[test]
+    fn item_trait_with_qualified_function() {
+        let p = qp(item, r#"trait Foo { unsafe extern "C" fn bar(); }"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 41))
     }
 
     #[test]
