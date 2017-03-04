@@ -251,7 +251,7 @@ pub struct Function {
 pub struct FunctionHeader {
     pub extent: Extent,
     visibility: Option<Visibility>,
-    is_unsafe: Option<Extent>,
+    qualifiers: FunctionQualifiers,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
@@ -261,9 +261,19 @@ pub struct FunctionHeader {
 }
 
 #[derive(Debug, Visit)]
+pub struct FunctionQualifiers {
+    pub extent: Extent,
+    is_const: Option<Extent>,
+    is_unsafe: Option<Extent>,
+    is_extern: Option<Extent>,
+    abi: Option<String>,
+}
+
+#[derive(Debug, Visit)]
 pub struct TraitImplFunctionHeader {
     extent: Extent,
     visibility: Option<Visibility>,
+    qualifiers: FunctionQualifiers,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<TraitImplArgument>,
@@ -451,6 +461,7 @@ pub struct AssociatedType {
 #[derive(Debug, Visit)]
 pub struct TypeFunction {
     extent: Extent,
+    qualifiers: FunctionQualifiers,
     arguments: Vec<TraitImplArgument>, // TODO: rename this indicating it doesn't require names
     return_type: Option<Box<Type>>,
     whitespace: Vec<Whitespace>,
@@ -1596,6 +1607,7 @@ pub trait Visitor {
     fn visit_for_loop(&mut self, &ForLoop) {}
     fn visit_function(&mut self, &Function) {}
     fn visit_function_header(&mut self, &FunctionHeader) {}
+    fn visit_function_qualifiers(&mut self, &FunctionQualifiers) {}
     fn visit_generic_declaration_lifetime(&mut self, &GenericDeclarationLifetime) {}
     fn visit_generic_declaration_type(&mut self, &GenericDeclarationType) {}
     fn visit_generic_declarations(&mut self, &GenericDeclarations) {}
@@ -1736,6 +1748,7 @@ pub trait Visitor {
     fn exit_for_loop(&mut self, &ForLoop) {}
     fn exit_function(&mut self, &Function) {}
     fn exit_function_header(&mut self, &FunctionHeader) {}
+    fn exit_function_qualifiers(&mut self, &FunctionQualifiers) {}
     fn exit_generic_declaration_lifetime(&mut self, &GenericDeclarationLifetime) {}
     fn exit_generic_declaration_type(&mut self, &GenericDeclarationType) {}
     fn exit_generic_declarations(&mut self, &GenericDeclarations) {}
@@ -2135,7 +2148,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
     sequence!(pm, pt, {
         spt               = point;
         visibility        = optional(visibility);
-        is_unsafe         = optional(function_header_unsafe);
+        qualifiers        = function_qualifiers;
         _                 = literal("fn");
         ws                = whitespace;
         name              = ident;
@@ -2151,7 +2164,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         FunctionHeader {
             extent: ex(spt, pt),
             visibility,
-            is_unsafe,
+            qualifiers,
             name,
             generics,
             arguments,
@@ -2161,12 +2174,45 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         }})
 }
 
-fn function_header_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn function_qualifiers<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionQualifiers> {
     sequence!(pm, pt, {
-        spt = point;
-        _   = literal("unsafe");
-        _x  = whitespace;
-    }, |_, pt| ex(spt, pt))
+        spt       = point;
+        is_const  = optional(function_qualifier_const);
+        is_unsafe = optional(function_qualifier_unsafe);
+        is_extern = optional(function_qualifier_extern);
+    }, |_, pt| {
+        let is_extern = is_extern;
+        let (is_extern, abi) = match is_extern {
+            Some((ex, abi)) => (Some(ex), abi),
+            None => (None, None),
+        };
+        FunctionQualifiers { extent: ex(spt, pt), is_const, is_unsafe, is_extern, abi }
+    })
+}
+
+fn function_qualifier_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        is_const = ext(literal("const"));
+        _x        = whitespace;
+    }, |_, _| is_const)
+}
+
+fn function_qualifier_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        is_unsafe = ext(literal("unsafe"));
+        _x        = whitespace;
+    }, |_, _| is_unsafe)
+}
+
+fn function_qualifier_extern<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (Extent, Option<String>)>
+{
+    sequence!(pm, pt, {
+        is_extern = ext(literal("extern"));
+        _x        = whitespace;
+        abi       = optional(string_literal);
+        _x        = optional_whitespace(_x);
+    }, |_, _| (is_extern, abi))
 }
 
 // TODO: We should support whitespace before the `!`
@@ -4046,6 +4092,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
     sequence!(pm, pt, {
         spt               = point;
         visibility        = optional(visibility);
+        qualifiers        = function_qualifiers;
         _                 = literal("fn");
         ws                = whitespace;
         name              = ident;
@@ -4060,6 +4107,7 @@ fn trait_impl_function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progres
         TraitImplFunctionHeader {
             extent: ex(spt, pt),
             visibility,
+            qualifiers,
             name,
             generics,
             arguments,
@@ -4606,6 +4654,7 @@ fn associated_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Assoc
 fn typ_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeFunction> {
     sequence!(pm, pt, {
         spt               = point;
+        qualifiers        = function_qualifiers;
         _                 = literal("fn");
         ws                = optional_whitespace(Vec::new());
         arguments         = trait_impl_function_arglist; // TODO: shouldn't allow `self`
@@ -4613,6 +4662,7 @@ fn typ_function<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeFunc
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
     }, |_, pt| TypeFunction {
         extent: ex(spt, pt),
+        qualifiers,
         arguments,
         return_type: return_type.map(Box::new),
         whitespace: ws,
@@ -4827,6 +4877,12 @@ mod test {
     }
 
     #[test]
+    fn item_trait_with_qualified_function() {
+        let p = qp(item, r#"trait Foo { const unsafe extern "C" fn bar(); }"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 47))
+    }
+
+    #[test]
     fn item_trait_with_associated_type() {
         let p = qp(item, "trait Foo { type Bar; }");
         assert_eq!(unwrap_progress(p).extent(), (0, 23))
@@ -5022,6 +5078,24 @@ mod test {
     fn fn_with_public_modifier() {
         let p = qp(function_header, "pub fn foo()");
         assert_eq!(unwrap_progress(p).extent, (0, 12))
+    }
+
+    #[test]
+    fn fn_with_const_modifier() {
+        let p = qp(function_header, "const fn foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
+    }
+
+    #[test]
+    fn fn_with_extern_modifier() {
+        let p = qp(function_header, "extern fn foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn fn_with_extern_modifier_and_abi() {
+        let p = qp(function_header, r#"extern "C" fn foo()"#);
+        assert_eq!(unwrap_progress(p).extent, (0, 19))
     }
 
     #[test]
@@ -6146,6 +6220,30 @@ mod test {
     #[test]
     fn type_fn_with_names() {
         let p = qp(typ, "fn(a: u8) -> u8");
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
+    }
+
+    #[test]
+    fn type_fn_with_const() {
+        let p = qp(typ, "const fn()");
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
+    }
+
+    #[test]
+    fn type_fn_with_unsafe() {
+        let p = qp(typ, "unsafe fn()");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn type_fn_with_extern() {
+        let p = qp(typ, "extern fn()");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
+    fn type_fn_with_extern_and_abi() {
+        let p = qp(typ, r#"extern "C" fn()"#);
         assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
