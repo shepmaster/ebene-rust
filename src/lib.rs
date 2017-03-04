@@ -282,6 +282,7 @@ pub struct GenericDeclarations {
 #[derive(Debug, Visit)]
 pub struct GenericDeclarationLifetime {
     extent: Extent,
+    attributes: Vec<Attribute>,
     name: Lifetime,
     bounds: Vec<Lifetime>,
 }
@@ -289,6 +290,7 @@ pub struct GenericDeclarationLifetime {
 #[derive(Debug, Visit)]
 pub struct GenericDeclarationType {
     extent: Extent,
+    attributes: Vec<Attribute>,
     name: Ident,
     bounds: Option<TraitBounds>,
 }
@@ -505,12 +507,12 @@ pub enum StructDefinitionBody {
 #[derive(Debug, Visit)]
 pub struct StructDefinitionBodyBrace {
     pub extent: Extent,
-    fields: Vec<StructField>,
+    fields: Vec<StructDefinitionFieldNamed>,
     whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
-pub struct StructField {
+pub struct StructDefinitionFieldNamed {
     extent: Extent,
     attributes: Vec<Attribute>,
     visibility: Option<Visibility>,
@@ -522,8 +524,16 @@ pub struct StructField {
 #[derive(Debug, Visit)]
 pub struct StructDefinitionBodyTuple {
     pub extent: Extent,
-    fields: Vec<Type>,
+    fields: Vec<StructDefinitionFieldUnnamed>,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct StructDefinitionFieldUnnamed {
+    extent: Extent,
+    attributes: Vec<Attribute>,
+    visibility: Option<Visibility>,
+    typ: Type,
 }
 
 #[derive(Debug, Visit)]
@@ -539,6 +549,7 @@ pub struct Enum {
 #[derive(Debug, Visit)]
 pub struct EnumVariant {
     extent: Extent,
+    attributes: Vec<Attribute>,
     name: Ident,
     body: Option<EnumVariantBody>,
     whitespace: Vec<Whitespace>,
@@ -546,7 +557,7 @@ pub struct EnumVariant {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum EnumVariantBody {
-    Tuple(Vec<Type>),
+    Tuple(Vec<StructDefinitionFieldUnnamed>),
     Struct(StructDefinitionBodyBrace),
 }
 
@@ -1571,7 +1582,8 @@ pub trait Visitor {
     fn visit_struct_definition_body(&mut self, &StructDefinitionBody) {}
     fn visit_struct_definition_body_brace(&mut self, &StructDefinitionBodyBrace) {}
     fn visit_struct_definition_body_tuple(&mut self, &StructDefinitionBodyTuple) {}
-    fn visit_struct_field(&mut self, &StructField) {}
+    fn visit_struct_definition_field_named(&mut self, &StructDefinitionFieldNamed) {}
+    fn visit_struct_definition_field_unnamed(&mut self, &StructDefinitionFieldUnnamed) {}
     fn visit_struct_literal(&mut self, &StructLiteral) {}
     fn visit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn visit_trait(&mut self, &Trait) {}
@@ -1703,7 +1715,8 @@ pub trait Visitor {
     fn exit_struct_definition_body(&mut self, &StructDefinitionBody) {}
     fn exit_struct_definition_body_brace(&mut self, &StructDefinitionBodyBrace) {}
     fn exit_struct_definition_body_tuple(&mut self, &StructDefinitionBodyTuple) {}
-    fn exit_struct_field(&mut self, &StructField) {}
+    fn exit_struct_definition_field_named(&mut self, &StructDefinitionFieldNamed) {}
+    fn exit_struct_definition_field_unnamed(&mut self, &StructDefinitionFieldUnnamed) {}
     fn exit_struct_literal(&mut self, &StructLiteral) {}
     fn exit_struct_literal_field(&mut self, &StructLiteralField) {}
     fn exit_trait(&mut self, &Trait) {}
@@ -2176,10 +2189,16 @@ fn generic_declarations<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
 
 fn generic_declaration_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarationLifetime> {
     sequence!(pm, pt, {
-        spt    = point;
-        name   = lifetime;
-        bounds = optional(generic_declaration_lifetime_bounds);
-    }, |_, pt| GenericDeclarationLifetime { extent: ex(spt, pt), name, bounds: bounds.unwrap_or_else(Vec::new) })
+        spt        = point;
+        attributes = zero_or_more(struct_defn_field_attr);
+        name       = lifetime;
+        bounds     = optional(generic_declaration_lifetime_bounds);
+    }, |_, pt| GenericDeclarationLifetime {
+        extent: ex(spt, pt),
+        attributes,
+        name,
+        bounds: bounds.unwrap_or_else(Vec::new),
+    })
 }
 
 fn generic_declaration_lifetime_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Lifetime>> {
@@ -2193,10 +2212,11 @@ fn generic_declaration_lifetime_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -
 
 fn generic_declaration_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, GenericDeclarationType> {
     sequence!(pm, pt, {
-        spt    = point;
-        name   = ident;
-        bounds = optional(generic_declaration_type_bounds);
-    }, |_, pt| GenericDeclarationType { extent: ex(spt, pt), name, bounds })
+        spt        = point;
+        attributes = zero_or_more(struct_defn_field_attr);
+        name       = ident;
+        bounds     = optional(generic_declaration_type_bounds);
+    }, |_, pt| GenericDeclarationType { extent: ex(spt, pt), attributes, name, bounds })
 }
 
 fn generic_declaration_type_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
@@ -3685,17 +3705,31 @@ fn struct_defn_body_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
     }, |_, pt| (StructDefinitionBodyTuple { extent: ex(spt, pt), fields, whitespace: ws }, wheres))
 }
 
-fn struct_defn_body_tuple_only<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Type>> {
+fn struct_defn_body_tuple_only<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<StructDefinitionFieldUnnamed>> {
     sequence!(pm, pt, {
         _     = literal("(");
         _x    = optional_whitespace(Vec::new());
-        types = zero_or_more_tailed_values(",", typ);
+        types = zero_or_more_tailed_values(",", tuple_defn_field);
         _x    = optional_whitespace(_x);
         _     = literal(")");
     }, |_, _| types)
 }
 
-fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructField> {
+fn tuple_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionFieldUnnamed> {
+    sequence!(pm, pt, {
+        spt        = point;
+        attributes = zero_or_more(struct_defn_field_attr);
+        visibility = optional(visibility);
+        typ        = typ;
+    }, |_, pt| StructDefinitionFieldUnnamed {
+        extent: ex(spt, pt),
+        attributes,
+        visibility,
+        typ,
+    })
+}
+
+fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, StructDefinitionFieldNamed> {
     sequence!(pm, pt, {
         spt        = point;
         attributes = zero_or_more(struct_defn_field_attr);
@@ -3705,7 +3739,7 @@ fn struct_defn_field<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Str
         _          = literal(":");
         ws         = optional_whitespace(ws);
         typ        = typ;
-    }, |_, pt| StructField {
+    }, |_, pt| StructDefinitionFieldNamed {
         extent: ex(spt, pt),
         visibility,
         attributes,
@@ -3750,10 +3784,11 @@ fn p_enum<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enum> {
 fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariant> {
     sequence!(pm, pt, {
         spt  = point;
+        attributes = zero_or_more(struct_defn_field_attr);
         name = ident;
         ws   = optional_whitespace(Vec::new());
         body = optional(enum_variant_body);
-    }, |_, pt| EnumVariant { extent: ex(spt, pt), name, body, whitespace: ws })
+    }, |_, pt| EnumVariant { extent: ex(spt, pt), attributes, name, body, whitespace: ws })
 }
 
 fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVariantBody> {
@@ -4260,7 +4295,11 @@ fn typ_pointer_kind<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type
 fn typ_tuple<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeTuple> {
     sequence!(pm, pt, {
         spt   = point;
-        types = struct_defn_body_tuple_only;
+        _     = literal("(");
+        _x    = optional_whitespace(Vec::new());
+        types = zero_or_more_tailed_values(",", typ);
+        _x    = optional_whitespace(_x);
+        _     = literal(")");
     }, |_, pt| TypeTuple { extent: ex(spt, pt), types })
 }
 
@@ -4764,6 +4803,18 @@ mod test {
     fn enum_with_struct_variant() {
         let p = qp(p_enum, "enum A { Foo { a: u8 } }");
         assert_eq!(unwrap_progress(p).extent, (0, 24))
+    }
+
+    #[test]
+    fn enum_with_attribute() {
+        let p = qp(p_enum, "enum Foo { #[attr] A(u8)}");
+        assert_eq!(unwrap_progress(p).extent, (0, 25))
+    }
+
+    #[test]
+    fn enum_with_attribute_on_value() {
+        let p = qp(p_enum, "enum Foo { A(#[attr] u8) }");
+        assert_eq!(unwrap_progress(p).extent, (0, 26))
     }
 
     #[test]
@@ -5888,6 +5939,18 @@ mod test {
     }
 
     #[test]
+    fn struct_with_tuple_and_annotation() {
+        let p = qp(p_struct, "struct S(#[foo] u8);");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
+    }
+
+    #[test]
+    fn struct_with_tuple_and_visibility() {
+        let p = qp(p_struct, "struct S(pub u8);");
+        assert_eq!(unwrap_progress(p).extent, (0, 17))
+    }
+
+    #[test]
     fn struct_empty() {
         let p = qp(p_struct, "struct S;");
         assert_eq!(unwrap_progress(p).extent, (0, 9))
@@ -5976,6 +6039,12 @@ mod test {
     fn generic_declarations_allow_lifetime_bounds() {
         let p = qp(generic_declarations, "<'a: 'b>");
         assert_eq!(unwrap_progress(p).extent, (0, 8))
+    }
+
+    #[test]
+    fn generic_declarations_with_attributes() {
+        let p = qp(generic_declarations, "<#[foo] 'a, #[bar] B>");
+        assert_eq!(unwrap_progress(p).extent, (0, 21))
     }
 
     #[test]
