@@ -263,6 +263,7 @@ pub struct FunctionHeader {
 #[derive(Debug, Visit)]
 pub struct FunctionQualifiers {
     pub extent: Extent,
+    is_const: Option<Extent>,
     is_unsafe: Option<Extent>,
     is_extern: Option<Extent>,
     abi: Option<String>,
@@ -2176,6 +2177,7 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
 fn function_qualifiers<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, FunctionQualifiers> {
     sequence!(pm, pt, {
         spt       = point;
+        is_const  = optional(function_qualifier_const);
         is_unsafe = optional(function_qualifier_unsafe);
         is_extern = optional(function_qualifier_extern);
     }, |_, pt| {
@@ -2184,8 +2186,15 @@ fn function_qualifiers<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, F
             Some((ex, abi)) => (Some(ex), abi),
             None => (None, None),
         };
-        FunctionQualifiers { extent: ex(spt, pt), is_unsafe, is_extern, abi }
+        FunctionQualifiers { extent: ex(spt, pt), is_const, is_unsafe, is_extern, abi }
     })
+}
+
+fn function_qualifier_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+    sequence!(pm, pt, {
+        is_const = ext(literal("const"));
+        _x        = whitespace;
+    }, |_, _| is_const)
 }
 
 fn function_qualifier_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
@@ -4869,8 +4878,8 @@ mod test {
 
     #[test]
     fn item_trait_with_qualified_function() {
-        let p = qp(item, r#"trait Foo { unsafe extern "C" fn bar(); }"#);
-        assert_eq!(unwrap_progress(p).extent(), (0, 41))
+        let p = qp(item, r#"trait Foo { const unsafe extern "C" fn bar(); }"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 47))
     }
 
     #[test]
@@ -5069,6 +5078,12 @@ mod test {
     fn fn_with_public_modifier() {
         let p = qp(function_header, "pub fn foo()");
         assert_eq!(unwrap_progress(p).extent, (0, 12))
+    }
+
+    #[test]
+    fn fn_with_const_modifier() {
+        let p = qp(function_header, "const fn foo()");
+        assert_eq!(unwrap_progress(p).extent, (0, 14))
     }
 
     #[test]
@@ -6206,6 +6221,12 @@ mod test {
     fn type_fn_with_names() {
         let p = qp(typ, "fn(a: u8) -> u8");
         assert_eq!(unwrap_progress(p).extent(), (0, 15))
+    }
+
+    #[test]
+    fn type_fn_with_const() {
+        let p = qp(typ, "const fn()");
+        assert_eq!(unwrap_progress(p).extent(), (0, 10))
     }
 
     #[test]
