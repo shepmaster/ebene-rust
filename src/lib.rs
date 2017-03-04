@@ -521,6 +521,7 @@ pub struct Const {
 pub struct Static {
     extent: Extent,
     visibility: Option<Visibility>,
+    is_mut: Option<Extent>,
     name: Ident,
     typ: Type,
     value: Expression,
@@ -4243,32 +4244,10 @@ fn attribute<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Attribute> 
 }
 
 fn p_const<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Const> {
-    p_const_static(
-        pm, pt, "const",
-        |extent, visibility, name, typ, value, whitespace| {
-            Const { extent, visibility, name, typ, value, whitespace }
-        }
-    )
-}
-
-fn p_static<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Static> {
-    p_const_static(
-        pm, pt, "static",
-        |extent, visibility, name, typ, value, whitespace| {
-            Static { extent, visibility, name, typ, value, whitespace }
-        }
-    )
-}
-
-fn p_const_static<'s, F, T>
-    (pm: &mut Master<'s>, pt: Point<'s>, keyword: &'static str, constructor: F)
-     -> Progress<'s, T>
-    where F: FnOnce(Extent, Option<Visibility>, Ident, Type, Expression, Vec<Whitespace>) -> T
-{
     sequence!(pm, pt, {
         spt        = point;
         visibility = optional(visibility);
-        _          = literal(keyword);
+        _          = literal("const");
         ws         = whitespace;
         name       = ident;
         ws         = optional_whitespace(ws);
@@ -4280,9 +4259,28 @@ fn p_const_static<'s, F, T>
         ws         = optional_whitespace(ws);
         value      = expression;
         _          = literal(";");
-    }, |_, pt| {
-        constructor(ex(spt, pt), visibility, name, typ, value, ws)
-    })
+    }, |_, pt| Const { extent: ex(spt, pt), visibility, name, typ, value, whitespace: ws })
+}
+
+fn p_static<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Static> {
+    sequence!(pm, pt, {
+        spt        = point;
+        visibility = optional(visibility);
+        _          = literal("static");
+        ws         = whitespace;
+        is_mut     = optional(ext(literal("mut")));
+        ws         = optional_whitespace(ws);
+        name       = ident;
+        ws         = optional_whitespace(ws);
+        _          = literal(":");
+        ws         = optional_whitespace(ws);
+        typ        = typ;
+        ws         = optional_whitespace(ws);
+        _          = literal("=");
+        ws         = optional_whitespace(ws);
+        value      = expression;
+        _          = literal(";");
+    }, |_, pt| Static { extent: ex(spt, pt), visibility, is_mut, name, typ, value, whitespace: ws })
 }
 
 fn extern_crate<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Crate> {
@@ -4934,6 +4932,12 @@ mod test {
     fn item_static() {
         let p = qp(item, r#"static FOO: &'static str = "hi";"#);
         assert_eq!(unwrap_progress(p).extent(), (0, 32))
+    }
+
+    #[test]
+    fn item_static_mut() {
+        let p = qp(item, r#"static mut FOO: &'static str = "hi";"#);
+        assert_eq!(unwrap_progress(p).extent(), (0, 36))
     }
 
     #[test]
