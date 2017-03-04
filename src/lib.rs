@@ -375,8 +375,14 @@ pub struct TypeArray {
 pub struct TypeHigherRankedTraitBounds {
     extent: Extent,
     lifetimes: Vec<Lifetime>,
-    name: TypeNamed,
+    child: TypeHigherRankedTraitBoundsChild,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TypeHigherRankedTraitBoundsChild {
+    Named(TypeNamed),
+    Function(TypeFunction),
 }
 
 #[derive(Debug, Visit)]
@@ -1674,6 +1680,7 @@ pub trait Visitor {
     fn visit_type_generics_angle_member(&mut self, &TypeGenericsAngleMember) {}
     fn visit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn visit_type_higher_ranked_trait_bounds(&mut self, &TypeHigherRankedTraitBounds) {}
+    fn visit_type_higher_ranked_trait_bounds_child(&mut self, &TypeHigherRankedTraitBoundsChild) {}
     fn visit_type_impl_trait(&mut self, &TypeImplTrait) {}
     fn visit_type_named(&mut self, &TypeNamed) {}
     fn visit_type_pointer(&mut self, &TypePointer) {}
@@ -1813,6 +1820,7 @@ pub trait Visitor {
     fn exit_type_generics_angle_member(&mut self, &TypeGenericsAngleMember) {}
     fn exit_type_generics_function(&mut self, &TypeGenericsFunction) {}
     fn exit_type_higher_ranked_trait_bounds(&mut self, &TypeHigherRankedTraitBounds) {}
+    fn exit_type_higher_ranked_trait_bounds_child(&mut self, &TypeHigherRankedTraitBoundsChild) {}
     fn exit_type_impl_trait(&mut self, &TypeImplTrait) {}
     fn exit_type_named(&mut self, &TypeNamed) {}
     fn exit_type_pointer(&mut self, &TypePointer) {}
@@ -4477,8 +4485,17 @@ fn typ_higher_ranked_trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
         ws        = optional_whitespace(ws);
         _         = literal(">");
         ws        = optional_whitespace(ws);
-        name      = typ_named;
-    }, |_, pt| TypeHigherRankedTraitBounds { extent: ex(spt, pt), lifetimes, name, whitespace: ws })
+        child     = typ_higher_ranked_trait_bounds_child;
+    }, |_, pt| TypeHigherRankedTraitBounds { extent: ex(spt, pt), lifetimes, child, whitespace: ws })
+}
+
+fn typ_higher_ranked_trait_bounds_child<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, TypeHigherRankedTraitBoundsChild>
+{
+    pm.alternate(pt)
+        .one(map(typ_named, TypeHigherRankedTraitBoundsChild::Named))
+        .one(map(typ_function, TypeHigherRankedTraitBoundsChild::Function))
+        .finish()
 }
 
 fn typ_impl_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeImplTrait> {
@@ -6136,6 +6153,12 @@ mod test {
     fn type_higher_ranked_trait_bounds() {
         let p = qp(typ, "for <'a> Foo<'a>");
         assert_eq!(unwrap_progress(p).extent(), (0, 16))
+    }
+
+    #[test]
+    fn type_higher_ranked_trait_bounds_on_functions() {
+        let p = qp(typ, "for <'a> fn(&'a u8)");
+        assert_eq!(unwrap_progress(p).extent(), (0, 19))
     }
 
     #[test]
