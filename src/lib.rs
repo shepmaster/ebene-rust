@@ -252,6 +252,8 @@ pub struct FunctionHeader {
     pub extent: Extent,
     visibility: Option<Visibility>,
     is_unsafe: Option<Extent>,
+    is_extern: Option<Extent>,
+    abi: Option<String>,
     pub name: Ident,
     generics: Option<GenericDeclarations>,
     arguments: Vec<Argument>,
@@ -2148,12 +2150,17 @@ fn function_header<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Funct
         (return_type, ws) = concat_whitespace(ws, optional(function_return_type));
         ws                = optional_whitespace(ws);
         (wheres, ws)      = concat_whitespace(ws, optional(where_clause));
-    }, |_, pt| {
+    }, move |_, pt| {
+        let (is_extern, abi) = match is_extern {
+            Some((ex, abi)) => (Some(ex), abi),
+            None => (None, None),
+        };
         FunctionHeader {
             extent: ex(spt, pt),
             visibility,
             is_unsafe,
             is_extern,
+            abi,
             name,
             generics,
             arguments,
@@ -2171,12 +2178,16 @@ fn function_header_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s
     }, |_, pt| ex(spt, pt))
 }
 
-fn function_header_extern<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Extent> {
+fn function_header_extern<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (Extent, Option<String>)>
+{
     sequence!(pm, pt, {
         spt = point;
         _   = literal("extern");
         _x  = whitespace;
-    }, |_, pt| ex(spt, pt))
+        abi = optional(string_literal);
+        _x  = optional_whitespace(_x);
+    }, |_, pt| (ex(spt, pt), abi))
 }
 
 // TODO: We should support whitespace before the `!`
@@ -5038,6 +5049,12 @@ mod test {
     fn fn_with_extern_modifier() {
         let p = qp(function_header, "extern fn foo()");
         assert_eq!(unwrap_progress(p).extent, (0, 15))
+    }
+
+    #[test]
+    fn fn_with_extern_modifier_and_abi() {
+        let p = qp(function_header, r#"extern "C" fn foo()"#);
+        assert_eq!(unwrap_progress(p).extent, (0, 19))
     }
 
     #[test]
