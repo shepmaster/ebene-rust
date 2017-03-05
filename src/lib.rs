@@ -800,6 +800,7 @@ pub enum Expression {
     Closure(Closure),
     Continue(Continue),
     Dereference(Dereference),
+    Disambiguation(Disambiguation),
     FieldAccess(FieldAccess),
     ForLoop(ForLoop),
     If(If),
@@ -832,38 +833,39 @@ impl Expression {
             Expression::Array(ref x) => x.extent(),
             Expression::Number(ref x) => x.extent(),
 
-            Expression::AsType(AsType { extent, .. })               |
-            Expression::Binary(Binary { extent, .. })               |
-            Expression::Box(ExpressionBox { extent, .. })           |
-            Expression::Break(Break { extent, .. })                 |
-            Expression::Byte(Byte { extent, .. })                   |
-            Expression::ByteString(ByteString { extent, .. })       |
-            Expression::Call(Call { extent, .. })                   |
-            Expression::Character(Character { extent, .. })         |
-            Expression::Closure(Closure { extent, .. })             |
-            Expression::Continue(Continue { extent, .. })           |
-            Expression::Dereference(Dereference { extent, .. })     |
-            Expression::FieldAccess(FieldAccess { extent, .. })     |
-            Expression::ForLoop(ForLoop { extent, .. })             |
-            Expression::If(If { extent, .. })                       |
-            Expression::IfLet(IfLet { extent, .. })                 |
-            Expression::Let(Let { extent, .. })                     |
-            Expression::Loop(Loop { extent, .. })                   |
-            Expression::MacroCall(MacroCall { extent, .. })         |
-            Expression::Match(Match { extent, .. })                 |
-            Expression::Parenthetical(Parenthetical { extent, .. }) |
-            Expression::Range(Range { extent, .. })                 |
-            Expression::Reference(Reference { extent, .. })         |
-            Expression::Return(Return { extent, .. })               |
-            Expression::Slice(Slice { extent, .. })                 |
-            Expression::String(String { extent, .. })               |
-            Expression::TryOperator(TryOperator { extent, .. })     |
-            Expression::Tuple(Tuple { extent, .. })                 |
-            Expression::Unary(Unary { extent, .. })                 |
-            Expression::UnsafeBlock(UnsafeBlock { extent, .. })     |
-            Expression::Value(Value { extent, .. })                 |
-            Expression::While(While { extent, .. })                 |
-            Expression::WhileLet(WhileLet { extent, .. })           => extent,
+            Expression::AsType(AsType { extent, .. })                 |
+            Expression::Binary(Binary { extent, .. })                 |
+            Expression::Box(ExpressionBox { extent, .. })             |
+            Expression::Break(Break { extent, .. })                   |
+            Expression::Byte(Byte { extent, .. })                     |
+            Expression::ByteString(ByteString { extent, .. })         |
+            Expression::Call(Call { extent, .. })                     |
+            Expression::Character(Character { extent, .. })           |
+            Expression::Closure(Closure { extent, .. })               |
+            Expression::Continue(Continue { extent, .. })             |
+            Expression::Dereference(Dereference { extent, .. })       |
+            Expression::Disambiguation(Disambiguation { extent, .. }) |
+            Expression::FieldAccess(FieldAccess { extent, .. })       |
+            Expression::ForLoop(ForLoop { extent, .. })               |
+            Expression::If(If { extent, .. })                         |
+            Expression::IfLet(IfLet { extent, .. })                   |
+            Expression::Let(Let { extent, .. })                       |
+            Expression::Loop(Loop { extent, .. })                     |
+            Expression::MacroCall(MacroCall { extent, .. })           |
+            Expression::Match(Match { extent, .. })                   |
+            Expression::Parenthetical(Parenthetical { extent, .. })   |
+            Expression::Range(Range { extent, .. })                   |
+            Expression::Reference(Reference { extent, .. })           |
+            Expression::Return(Return { extent, .. })                 |
+            Expression::Slice(Slice { extent, .. })                   |
+            Expression::String(String { extent, .. })                 |
+            Expression::TryOperator(TryOperator { extent, .. })       |
+            Expression::Tuple(Tuple { extent, .. })                   |
+            Expression::Unary(Unary { extent, .. })                   |
+            Expression::UnsafeBlock(UnsafeBlock { extent, .. })       |
+            Expression::Value(Value { extent, .. })                   |
+            Expression::While(While { extent, .. })                   |
+            Expression::WhileLet(WhileLet { extent, .. })             => extent,
         }
     }
 }
@@ -1253,6 +1255,15 @@ pub struct Reference {
 pub struct Dereference {
     extent: Extent,
     value: Box<Expression>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct Disambiguation {
+    extent: Extent,
+    from_type: Type,
+    to_type: TypeNamed,
+    components: Vec<PathComponent>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -1659,6 +1670,7 @@ pub trait Visitor {
     fn visit_continue(&mut self, &Continue) {}
     fn visit_crate(&mut self, &Crate) {}
     fn visit_dereference(&mut self, &Dereference) {}
+    fn visit_disambiguation(&mut self, &Disambiguation) {}
     fn visit_enum(&mut self, &Enum) {}
     fn visit_enum_variant(&mut self, &EnumVariant) {}
     fn visit_enum_variant_body(&mut self, &EnumVariantBody) {}
@@ -1808,6 +1820,7 @@ pub trait Visitor {
     fn exit_continue(&mut self, &Continue) {}
     fn exit_crate(&mut self, &Crate) {}
     fn exit_dereference(&mut self, &Dereference) {}
+    fn exit_disambiguation(&mut self, &Disambiguation) {}
     fn exit_enum(&mut self, &Enum) {}
     fn exit_enum_variant(&mut self, &EnumVariant) {}
     fn exit_enum_variant_body(&mut self, &EnumVariantBody) {}
@@ -2694,6 +2707,7 @@ fn expression<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression
             .one(map(expr_box, Expression::Box))
             .one(map(expr_byte, Expression::Byte))
             .one(map(expr_byte_string, Expression::ByteString))
+            .one(map(expr_disambiguation, Expression::Disambiguation))
             .one(map(expr_value, Expression::Value))
             .finish()
     });
@@ -3654,6 +3668,20 @@ fn expr_value_struct_literal_splat<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
         ws    = optional_whitespace(ws);
         value = allow_struct_literals(expression);
     }, |_, _| (value, ws))
+}
+
+fn expr_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Disambiguation> {
+    sequence!(pm, pt, {
+        spt        = point;
+        core       = disambiguation_core;
+        components = zero_or_more_tailed_values_resume("::", path_component);
+    }, move |_, pt| Disambiguation {
+        extent: ex(spt, pt),
+        from_type: core.from_type,
+        to_type: core.to_type,
+        components,
+        whitespace: core.whitespace,
+    })
 }
 
 fn expression_tail<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ExpressionTail> {
@@ -4735,7 +4763,26 @@ fn typ_named_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, T
 
 fn typ_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeDisambiguation> {
     sequence!(pm, pt, {
-        spt       = point;
+        spt  = point;
+        core = disambiguation_core;
+        path = zero_or_more_tailed_values_resume("::", typ_named_component);
+    }, move |_, pt| TypeDisambiguation {
+        extent: ex(spt, pt),
+        from_type: Box::new(core.from_type),
+        to_type: Box::new(core.to_type),
+        path,
+        whitespace: core.whitespace,
+    })
+}
+
+struct DisambiguationCore {
+    from_type: Type,
+    to_type: TypeNamed,
+    whitespace: Vec<Whitespace>,
+}
+
+fn disambiguation_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, DisambiguationCore> {
+    sequence!(pm, pt, {
         _         = literal("<");
         ws        = optional_whitespace(Vec::new());
         from_type = typ;
@@ -4745,14 +4792,7 @@ fn typ_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
         to_type   = typ_named;
         ws        = optional_whitespace(ws);
         _         = literal(">");
-        path      = zero_or_more_tailed_values_resume("::", typ_named_component);
-    }, |_, pt| TypeDisambiguation {
-        extent: ex(spt, pt),
-        from_type: Box::new(from_type),
-        to_type: Box::new(to_type),
-        path,
-        whitespace: ws,
-    })
+    }, |_, _| DisambiguationCore { from_type, to_type, whitespace: ws })
 }
 
 fn typ_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeArray> {
@@ -6105,6 +6145,12 @@ mod test {
     fn expr_byte_escape() {
         let p = qp(expression, r#"b'\''"#);
         assert_eq!(unwrap_progress(p).extent(), (0, 5))
+    }
+
+    #[test]
+    fn expr_disambiguation() {
+        let p = qp(expression, "<Foo as Bar>::quux");
+        assert_eq!(unwrap_progress(p).extent(), (0, 18))
     }
 
     #[test]
