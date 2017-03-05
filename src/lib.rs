@@ -1355,6 +1355,7 @@ pub struct Trait {
     name: Ident,
     generics: Option<GenericDeclarations>,
     bounds: Option<TraitBounds>,
+    wheres: Vec<Where>,
     members: Vec<TraitMember>,
     whitespace: Vec<Whitespace>,
 }
@@ -3991,22 +3992,24 @@ fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enu
 
 fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
     sequence!(pm, pt, {
-        spt        = point;
-        visibility = optional(visibility);
-        is_unsafe  = optional(p_trait_unsafe);
-        _          = literal("trait");
-        ws         = whitespace;
-        name       = ident;
-        ws         = optional_whitespace(ws);
-        generics   = optional(generic_declarations);
-        ws         = optional_whitespace(ws);
-        bounds     = optional(generic_declaration_type_bounds);
-        ws         = optional_whitespace(ws);
-        _          = literal("{");
-        ws         = optional_whitespace(ws);
-        members    = zero_or_more(trait_impl_member);
-        ws         = optional_whitespace(ws);
-        _          = literal("}");
+        spt          = point;
+        visibility   = optional(visibility);
+        is_unsafe    = optional(p_trait_unsafe);
+        _            = literal("trait");
+        ws           = whitespace;
+        name         = ident;
+        ws           = optional_whitespace(ws);
+        generics     = optional(generic_declarations);
+        ws           = optional_whitespace(ws);
+        bounds       = optional(generic_declaration_type_bounds);
+        ws           = optional_whitespace(ws);
+        (wheres, ws) = concat_whitespace(ws, optional(where_clause));
+        ws           = optional_whitespace(ws);
+        _            = literal("{");
+        ws           = optional_whitespace(ws);
+        members      = zero_or_more(trait_impl_member);
+        ws           = optional_whitespace(ws);
+        _            = literal("}");
     }, |_, pt| Trait {
         extent: ex(spt, pt),
         visibility,
@@ -4014,6 +4017,7 @@ fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
         name,
         generics,
         bounds,
+        wheres: wheres.unwrap_or_else(Vec::new),
         members,
         whitespace: ws,
     })
@@ -4895,6 +4899,12 @@ mod test {
     #[test]
     fn item_trait_with_supertraits() {
         let p = qp(item, "trait Foo: Bar + Baz {}");
+        assert_eq!(unwrap_progress(p).extent(), (0, 23))
+    }
+
+    #[test]
+    fn item_trait_with_where_clause() {
+        let p = qp(item, "trait Foo where A: B {}");
         assert_eq!(unwrap_progress(p).extent(), (0, 23))
     }
 
