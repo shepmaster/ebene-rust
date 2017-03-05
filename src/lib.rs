@@ -1985,8 +1985,8 @@ fn optional_leading_whitespace<'s, F, T>(f: F) ->
 
 // TODO: Maybe extract?
 fn rewind_on_error<'s, F, T>(rewind_pt: Point<'s>, f: F) ->
-    impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
-    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
     move |pm, pt| {
         match f(pm, pt) {
@@ -2093,8 +2093,9 @@ fn zero_or_more_tailed_values_resume<'s, F, T>(sep: &'static str, f: F) ->
     impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
-    move |pm, mut pt| {
-        pt = match optional_leading_whitespace(literal(sep))(pm, pt) {
+    move |pm, pt| {
+        let spt = pt;
+        let pt = match optional_leading_whitespace(literal(sep))(pm, pt) {
             Progress { status: peresil::Status::Failure(_), point } => {
                 return Progress::success(point, Vec::new())
             }
@@ -2102,7 +2103,14 @@ fn zero_or_more_tailed_values_resume<'s, F, T>(sep: &'static str, f: F) ->
                 point
             }
         };
-        zero_or_more_tailed_values(sep, f)(pm, pt)
+
+        match one_or_more_tailed_values(sep, f)(pm, pt) {
+            Progress { status: peresil::Status::Failure(_), .. } => {
+                // We parsed the separator, but not another value. Rewind to before the separator
+                Progress::success(spt, Vec::new())
+            }
+            other => other
+        }
     }
 }
 
@@ -5989,6 +5997,14 @@ mod test {
     fn expr_as_type() {
         let p = qp(expression, "42 as u8");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn expr_as_type_followed_by_addition() {
+        let p = unwrap_progress(qp(expression, "42 as u8 + 1"));
+        let p = p.into_binary().unwrap();
+        assert!(p.lhs.is_as_type());
+        assert_eq!(p.extent, (0, 12));
     }
 
     #[test]
