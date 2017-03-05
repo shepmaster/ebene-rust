@@ -438,6 +438,7 @@ pub struct TypeDisambiguation {
     extent: Extent,
     from_type: Box<Type>,
     to_type: Box<TypeNamed>,
+    path: Vec<TypeNamedComponent>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -4744,10 +4745,12 @@ fn typ_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
         to_type   = typ_named;
         ws        = optional_whitespace(ws);
         _         = literal(">");
+        path      = zero_or_more_tailed_values_resume("::", typ_named_component);
     }, |_, pt| TypeDisambiguation {
         extent: ex(spt, pt),
         from_type: Box::new(from_type),
         to_type: Box::new(to_type),
+        path,
         whitespace: ws,
     })
 }
@@ -6502,6 +6505,12 @@ mod test {
     fn type_disambiguation() {
         let p = qp(typ, "<Foo as Bar>");
         assert_eq!(unwrap_progress(p).extent(), (0, 12))
+    }
+
+    #[test]
+    fn type_disambiguation_with_associated_type() {
+        let p = qp(typ, "<Foo as Bar>::Quux");
+        assert_eq!(unwrap_progress(p).extent(), (0, 18))
     }
 
     #[test]
