@@ -408,9 +408,10 @@ pub struct TypeCombination {
 
 #[derive(Debug, Visit, Decompose)]
 pub enum TypeCombinationBase {
-    Named(TypeNamed),
+    Disambiguation(TypeDisambiguation),
     HigherRankedTraitBounds(TypeHigherRankedTraitBounds),
     ImplTrait(TypeImplTrait),
+    Named(TypeNamed),
 }
 
 #[derive(Debug, Visit, Decompose)]
@@ -424,6 +425,14 @@ pub struct TypeNamed {
     extent: Extent,
     name: PathedIdent,
     generics: Option<TypeGenerics>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeDisambiguation {
+    extent: Extent,
+    from_type: Box<Type>,
+    to_type: Box<TypeNamed>,
+    whitespace: Vec<Whitespace>,
 }
 
 #[derive(Debug, Visit)]
@@ -1739,6 +1748,7 @@ pub trait Visitor {
     fn visit_type_combination(&mut self, &TypeCombination) {}
     fn visit_type_combination_additional(&mut self, &TypeCombinationAdditional) {}
     fn visit_type_combination_base(&mut self, &TypeCombinationBase) {}
+    fn visit_type_disambiguation(&mut self, &TypeDisambiguation) {}
     fn visit_type_function(&mut self, &TypeFunction) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -1886,6 +1896,7 @@ pub trait Visitor {
     fn exit_type_combination(&mut self, &TypeCombination) {}
     fn exit_type_combination_additional(&mut self, &TypeCombinationAdditional) {}
     fn exit_type_combination_base(&mut self, &TypeCombinationBase) {}
+    fn exit_type_disambiguation(&mut self, &TypeDisambiguation) {}
     fn exit_type_function(&mut self, &TypeFunction) {}
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -4680,6 +4691,7 @@ fn typ_combination_base<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
     Progress<'s, TypeCombinationBase>
 {
     pm.alternate(pt)
+        .one(map(typ_disambiguation, TypeCombinationBase::Disambiguation))
         .one(map(typ_named, TypeCombinationBase::Named))
         .one(map(typ_higher_ranked_trait_bounds, TypeCombinationBase::HigherRankedTraitBounds))
         .one(map(typ_impl_trait, TypeCombinationBase::ImplTrait))
@@ -4701,6 +4713,26 @@ fn typ_named<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeNamed> 
         name     = pathed_ident;
         generics = optional(typ_generics);
     }, |_, pt| TypeNamed { extent: ex(spt, pt), name, generics })
+}
+
+fn typ_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeDisambiguation> {
+    sequence!(pm, pt, {
+        spt       = point;
+        _         = literal("<");
+        ws        = optional_whitespace(Vec::new());
+        from_type = typ;
+        ws        = append_whitespace(ws);
+        _         = literal("as");
+        ws        = append_whitespace(ws);
+        to_type   = typ_named;
+        ws        = optional_whitespace(ws);
+        _         = literal(">");
+    }, |_, pt| TypeDisambiguation {
+        extent: ex(spt, pt),
+        from_type: Box::new(from_type),
+        to_type: Box::new(to_type),
+        whitespace: ws,
+    })
 }
 
 fn typ_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeArray> {
@@ -6447,6 +6479,12 @@ mod test {
     fn type_combination_of_impl_trait_and_lifetimes() {
         let p = qp(typ, "impl Foo + 'a");
         assert_eq!(unwrap_progress(p).extent(), (0, 13))
+    }
+
+    #[test]
+    fn type_disambiguation() {
+        let p = qp(typ, "<Foo as Bar>");
+        assert_eq!(unwrap_progress(p).extent(), (0, 12))
     }
 
     #[test]
