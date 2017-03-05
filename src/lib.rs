@@ -423,7 +423,13 @@ pub enum TypeCombinationAdditional {
 #[derive(Debug, Visit)]
 pub struct TypeNamed {
     extent: Extent,
-    name: PathedIdent,
+    path: Vec<TypeNamedComponent>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeNamedComponent {
+    extent: Extent,
+    ident: Ident,
     generics: Option<TypeGenerics>,
 }
 
@@ -1758,6 +1764,7 @@ pub trait Visitor {
     fn visit_type_higher_ranked_trait_bounds_child(&mut self, &TypeHigherRankedTraitBoundsChild) {}
     fn visit_type_impl_trait(&mut self, &TypeImplTrait) {}
     fn visit_type_named(&mut self, &TypeNamed) {}
+    fn visit_type_named_component(&mut self, &TypeNamedComponent) {}
     fn visit_type_pointer(&mut self, &TypePointer) {}
     fn visit_type_reference(&mut self, &TypeReference) {}
     fn visit_type_reference_kind(&mut self, &TypeReferenceKind) {}
@@ -1906,6 +1913,7 @@ pub trait Visitor {
     fn exit_type_higher_ranked_trait_bounds_child(&mut self, &TypeHigherRankedTraitBoundsChild) {}
     fn exit_type_impl_trait(&mut self, &TypeImplTrait) {}
     fn exit_type_named(&mut self, &TypeNamed) {}
+    fn exit_type_named_component(&mut self, &TypeNamedComponent) {}
     fn exit_type_pointer(&mut self, &TypePointer) {}
     fn exit_type_reference(&mut self, &TypeReference) {}
     fn exit_type_reference_kind(&mut self, &TypeReferenceKind) {}
@@ -4709,10 +4717,19 @@ fn typ_combination_additional<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
 
 fn typ_named<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeNamed> {
     sequence!(pm, pt, {
+        spt  = point;
+        _    = optional(literal("::"));
+        _x   = optional_whitespace(Vec::new());
+        path = one_or_more_tailed_values("::", typ_named_component);
+    }, |_, pt| TypeNamed { extent: ex(spt, pt), path })
+}
+
+fn typ_named_component<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeNamedComponent> {
+    sequence!(pm, pt, {
         spt      = point;
-        name     = pathed_ident;
+        ident    = ident;
         generics = optional(typ_generics);
-    }, |_, pt| TypeNamed { extent: ex(spt, pt), name, generics })
+    }, |_, pt| TypeNamedComponent { extent: ex(spt, pt), ident, generics })
 }
 
 fn typ_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeDisambiguation> {
