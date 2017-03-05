@@ -643,8 +643,30 @@ pub struct TraitImplArgumentNamed {
     whitespace: Vec<Whitespace>,
 }
 
+#[derive(Debug, Visit, Decompose)]
+pub enum Where {
+    Lifetime(WhereLifetime),
+    Type(WhereType),
+}
+
+impl Where {
+    pub fn extent(&self) -> Extent {
+        match *self {
+            Where::Lifetime(WhereLifetime { extent, .. }) |
+            Where::Type(WhereType { extent, .. })         => extent,
+        }
+    }
+}
+
 #[derive(Debug, Visit)]
-pub struct Where {
+pub struct WhereLifetime {
+    pub extent: Extent,
+    name: Lifetime,
+    bounds: Vec<Lifetime>,
+}
+
+#[derive(Debug, Visit)]
+pub struct WhereType {
     pub extent: Extent,
     name: Type,
     bounds: TraitBounds,
@@ -1712,6 +1734,8 @@ pub trait Visitor {
     fn visit_value(&mut self, &Value) {}
     fn visit_visibility(&mut self, &Visibility) {}
     fn visit_where(&mut self, &Where) {}
+    fn visit_where_lifetime(&mut self, &WhereLifetime) {}
+    fn visit_where_type(&mut self, &WhereType) {}
     fn visit_while(&mut self, &While) {}
     fn visit_while_let(&mut self, &WhileLet) {}
     fn visit_whitespace(&mut self, &Whitespace) {}
@@ -1853,6 +1877,8 @@ pub trait Visitor {
     fn exit_value(&mut self, &Value) {}
     fn exit_visibility(&mut self, &Visibility) {}
     fn exit_where(&mut self, &Where) {}
+    fn exit_where_lifetime(&mut self, &WhereLifetime) {}
+    fn exit_where_type(&mut self, &WhereType) {}
     fn exit_while(&mut self, &While) {}
     fn exit_while_let(&mut self, &WhileLet) {}
     fn exit_whitespace(&mut self, &Whitespace) {}
@@ -2422,16 +2448,31 @@ fn where_clause<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Vec<Whe
     sequence!(pm, pt, {
         _  = literal("where");
         ws = whitespace;
-        w  = one_or_more_tailed_values(",", function_where);
+        w  = one_or_more_tailed_values(",", where_clause_item);
     }, |_, _| (w, ws))
 }
 
-fn function_where<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
+fn where_clause_item<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Where> {
+    pm.alternate(pt)
+        .one(map(where_lifetime, Where::Lifetime))
+        .one(map(where_type, Where::Type))
+        .finish()
+}
+
+fn where_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhereLifetime> {
+    sequence!(pm, pt, {
+        spt    = point;
+        name   = lifetime;
+        bounds = generic_declaration_lifetime_bounds;
+    }, |_, pt| WhereLifetime { extent: ex(spt, pt), name, bounds  })
+}
+
+fn where_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, WhereType> {
     sequence!(pm, pt, {
         spt    = point;
         name   = typ;
         bounds = generic_declaration_type_bounds;
-    }, |_, pt| Where { extent: ex(spt, pt), name, bounds  })
+    }, |_, pt| WhereType { extent: ex(spt, pt), name, bounds  })
 }
 
 fn trait_bounds<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBounds> {
@@ -6359,21 +6400,27 @@ mod test {
 
     #[test]
     fn where_clause_with_path() {
-        let p = qp(function_where, "P: foo::bar::baz::Quux<'a>");
-        assert_eq!(unwrap_progress(p).extent, (0, 26))
+        let p = qp(where_clause_item, "P: foo::bar::baz::Quux<'a>");
+        assert_eq!(unwrap_progress(p).extent(), (0, 26))
     }
 
     #[test]
     fn where_clause_with_multiple_bounds() {
-        let p = qp(function_where, "P: A + B");
-        assert_eq!(unwrap_progress(p).extent, (0, 8))
+        let p = qp(where_clause_item, "P: A + B");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
     fn where_clause_with_multiple_types() {
         let p = qp(where_clause, "where P: A, Q: B");
         let (p, _) = unwrap_progress(p);
-        assert_eq!(p[1].extent, (12, 16))
+        assert_eq!(p[1].extent(), (12, 16))
+    }
+
+    #[test]
+    fn where_clause_with_lifetimes() {
+        let p = qp(where_clause_item, "'a: 'b + 'c");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]

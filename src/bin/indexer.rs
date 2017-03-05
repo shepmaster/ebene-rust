@@ -66,7 +66,7 @@ impl Visitor for Indexing {
     }
 
     fn visit_where(&mut self, w: &strata_rs::Where) {
-        self.layer_where.insert(w.extent);
+        self.layer_where.insert(w.extent());
     }
 
     fn visit_statement(&mut self, s: &strata_rs::Statement) {
