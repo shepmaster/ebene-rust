@@ -318,8 +318,6 @@ pub enum Type {
     Array(TypeArray),
     Combination(TypeCombination),
     Function(TypeFunction),
-    HigherRankedTraitBounds(TypeHigherRankedTraitBounds),
-    ImplTrait(TypeImplTrait),
     Pointer(TypePointer),
     Reference(TypeReference),
     Slice(TypeSlice),
@@ -330,15 +328,13 @@ pub enum Type {
 impl Type {
     pub fn extent(&self) -> Extent {
         match *self {
-            Type::Array(TypeArray { extent, .. })                                     |
-            Type::Combination(TypeCombination { extent, .. })                         |
-            Type::Function(TypeFunction { extent, .. })                               |
-            Type::HigherRankedTraitBounds(TypeHigherRankedTraitBounds { extent, .. }) |
-            Type::ImplTrait(TypeImplTrait { extent, .. })                             |
-            Type::Pointer(TypePointer { extent, .. })                                 |
-            Type::Reference(TypeReference { extent, .. })                             |
-            Type::Slice(TypeSlice { extent, .. })                                     |
-            Type::Tuple(TypeTuple { extent, .. })                                     => extent,
+            Type::Array(TypeArray { extent, .. })             |
+            Type::Combination(TypeCombination { extent, .. }) |
+            Type::Function(TypeFunction { extent, .. })       |
+            Type::Pointer(TypePointer { extent, .. })         |
+            Type::Reference(TypeReference { extent, .. })     |
+            Type::Slice(TypeSlice { extent, .. })             |
+            Type::Tuple(TypeTuple { extent, .. })             => extent,
             Type::Uninhabited(extent) => extent,
         }
     }
@@ -406,12 +402,19 @@ pub struct TypeImplTrait {
 #[derive(Debug, Visit)]
 pub struct TypeCombination {
     extent: Extent,
-    name: TypeNamed,
-    additional: Vec<TypeAdditional>,
+    base: TypeCombinationBase,
+    additional: Vec<TypeCombinationAdditional>,
 }
 
 #[derive(Debug, Visit, Decompose)]
-pub enum TypeAdditional {
+pub enum TypeCombinationBase {
+    Named(TypeNamed),
+    HigherRankedTraitBounds(TypeHigherRankedTraitBounds),
+    ImplTrait(TypeImplTrait),
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TypeCombinationAdditional {
     Named(TypeNamed),
     Lifetime(Lifetime),
 }
@@ -1731,10 +1734,11 @@ pub trait Visitor {
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
-    fn visit_type_additional(&mut self, &TypeAdditional) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_array(&mut self, &TypeArray) {}
     fn visit_type_combination(&mut self, &TypeCombination) {}
+    fn visit_type_combination_additional(&mut self, &TypeCombinationAdditional) {}
+    fn visit_type_combination_base(&mut self, &TypeCombinationBase) {}
     fn visit_type_function(&mut self, &TypeFunction) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -1877,10 +1881,11 @@ pub trait Visitor {
     fn exit_tuple(&mut self, &Tuple) {}
     fn exit_turbofish(&mut self, &Turbofish) {}
     fn exit_type(&mut self, &Type) {}
-    fn exit_type_additional(&mut self, &TypeAdditional) {}
     fn exit_type_alias(&mut self, &TypeAlias) {}
     fn exit_type_array(&mut self, &TypeArray) {}
     fn exit_type_combination(&mut self, &TypeCombination) {}
+    fn exit_type_combination_additional(&mut self, &TypeCombinationAdditional) {}
+    fn exit_type_combination_base(&mut self, &TypeCombinationBase) {}
     fn exit_type_function(&mut self, &TypeFunction) {}
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -4562,8 +4567,6 @@ fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
         .one(map(typ_array, Type::Array))
         .one(map(typ_combination, Type::Combination))
         .one(map(typ_function, Type::Function))
-        .one(map(typ_higher_ranked_trait_bounds, Type::HigherRankedTraitBounds))
-        .one(map(typ_impl_trait, Type::ImplTrait))
         .one(map(typ_pointer, Type::Pointer))
         .one(map(typ_reference, Type::Reference))
         .one(map(typ_slice, Type::Slice))
@@ -4660,15 +4663,27 @@ fn typ_impl_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeIm
 fn typ_combination<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCombination> {
     sequence!(pm, pt, {
         spt        = point;
-        name       = typ_named;
-        additional = zero_or_more_tailed_values_resume("+", typ_additional);
-    }, move |_, pt| TypeCombination { extent: ex(spt, pt), name, additional })
+        base       = typ_combination_base;
+        additional = zero_or_more_tailed_values_resume("+", typ_combination_additional);
+    }, move |_, pt| TypeCombination { extent: ex(spt, pt), base, additional })
 }
 
-fn typ_additional<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAdditional> {
+fn typ_combination_base<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, TypeCombinationBase>
+{
     pm.alternate(pt)
-        .one(map(typ_named, TypeAdditional::Named))
-        .one(map(lifetime, TypeAdditional::Lifetime))
+        .one(map(typ_named, TypeCombinationBase::Named))
+        .one(map(typ_higher_ranked_trait_bounds, TypeCombinationBase::HigherRankedTraitBounds))
+        .one(map(typ_impl_trait, TypeCombinationBase::ImplTrait))
+        .finish()
+}
+
+fn typ_combination_additional<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, TypeCombinationAdditional>
+{
+    pm.alternate(pt)
+        .one(map(typ_named, TypeCombinationAdditional::Named))
+        .one(map(lifetime, TypeCombinationAdditional::Lifetime))
         .finish()
 }
 
@@ -6404,6 +6419,18 @@ mod test {
     fn type_combination_with_lifetimes() {
         let p = qp(typ, "Foo + 'a");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn type_combination_of_higher_ranked_trait_bounds_and_lifetimes() {
+        let p = qp(typ, "for<'a> Foo + 'a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 16))
+    }
+
+    #[test]
+    fn type_combination_of_impl_trait_and_lifetimes() {
+        let p = qp(typ, "impl Foo + 'a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
