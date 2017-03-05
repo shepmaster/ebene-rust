@@ -316,10 +316,8 @@ pub struct MacroRules {
 #[derive(Debug, Visit, Decompose)]
 pub enum Type {
     Array(TypeArray),
+    Combination(TypeCombination),
     Function(TypeFunction),
-    HigherRankedTraitBounds(TypeHigherRankedTraitBounds),
-    ImplTrait(TypeImplTrait),
-    Named(TypeNamed),
     Pointer(TypePointer),
     Reference(TypeReference),
     Slice(TypeSlice),
@@ -330,15 +328,13 @@ pub enum Type {
 impl Type {
     pub fn extent(&self) -> Extent {
         match *self {
-            Type::Array(TypeArray { extent, .. })                                     |
-            Type::Function(TypeFunction { extent, .. })                               |
-            Type::HigherRankedTraitBounds(TypeHigherRankedTraitBounds { extent, .. }) |
-            Type::ImplTrait(TypeImplTrait { extent, .. })                             |
-            Type::Named(TypeNamed { extent, .. })                                     |
-            Type::Pointer(TypePointer { extent, .. })                                 |
-            Type::Reference(TypeReference { extent, .. })                             |
-            Type::Slice(TypeSlice { extent, .. })                                     |
-            Type::Tuple(TypeTuple { extent, .. })                                     => extent,
+            Type::Array(TypeArray { extent, .. })             |
+            Type::Combination(TypeCombination { extent, .. }) |
+            Type::Function(TypeFunction { extent, .. })       |
+            Type::Pointer(TypePointer { extent, .. })         |
+            Type::Reference(TypeReference { extent, .. })     |
+            Type::Slice(TypeSlice { extent, .. })             |
+            Type::Tuple(TypeTuple { extent, .. })             => extent,
             Type::Uninhabited(extent) => extent,
         }
     }
@@ -401,6 +397,26 @@ pub struct TypeImplTrait {
     extent: Extent,
     name: TypeNamed,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct TypeCombination {
+    extent: Extent,
+    base: TypeCombinationBase,
+    additional: Vec<TypeCombinationAdditional>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TypeCombinationBase {
+    Named(TypeNamed),
+    HigherRankedTraitBounds(TypeHigherRankedTraitBounds),
+    ImplTrait(TypeImplTrait),
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TypeCombinationAdditional {
+    Named(TypeNamed),
+    Lifetime(Lifetime),
 }
 
 #[derive(Debug, Visit)]
@@ -1720,6 +1736,9 @@ pub trait Visitor {
     fn visit_type(&mut self, &Type) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_array(&mut self, &TypeArray) {}
+    fn visit_type_combination(&mut self, &TypeCombination) {}
+    fn visit_type_combination_additional(&mut self, &TypeCombinationAdditional) {}
+    fn visit_type_combination_base(&mut self, &TypeCombinationBase) {}
     fn visit_type_function(&mut self, &TypeFunction) {}
     fn visit_type_generics(&mut self, &TypeGenerics) {}
     fn visit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -1864,6 +1883,9 @@ pub trait Visitor {
     fn exit_type(&mut self, &Type) {}
     fn exit_type_alias(&mut self, &TypeAlias) {}
     fn exit_type_array(&mut self, &TypeArray) {}
+    fn exit_type_combination(&mut self, &TypeCombination) {}
+    fn exit_type_combination_additional(&mut self, &TypeCombinationAdditional) {}
+    fn exit_type_combination_base(&mut self, &TypeCombinationBase) {}
     fn exit_type_function(&mut self, &TypeFunction) {}
     fn exit_type_generics(&mut self, &TypeGenerics) {}
     fn exit_type_generics_angle(&mut self, &TypeGenericsAngle) {}
@@ -1949,6 +1971,35 @@ fn parse_nested_until<'s>(open: char, close: char) -> impl Fn(&mut Master<'s>, P
     }
 }
 
+fn optional_leading_whitespace<'s, F, T>(f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        sequence!(pm, pt, {
+            _x    = optional_whitespace(Vec::new());
+            value = rewind_on_error(pt, f);
+        }, |_, _| value)
+    }
+}
+
+// TODO: Maybe extract?
+fn rewind_on_error<'s, F, T>(rewind_pt: Point<'s>, f: F) ->
+    impl Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, pt| {
+        match f(pm, pt) {
+            Progress { status: peresil::Status::Failure(f), .. } => {
+                // TODO: unrecoverable errors
+                Progress::failure(rewind_pt, f)
+                // TODO: This failure does not occur at `pt`, what should we return instead?
+            }
+            other => other,
+        }
+    }
+}
+
 enum TailedState<P, T, E> {
     Nothing(P, E),
     ValueOnly(P, T),
@@ -1959,49 +2010,21 @@ fn parse_tailed<'s, F, T>(sep: &'static str, f: F, pm: &mut Master<'s>, pt: Poin
     TailedState<Point<'s>, T, Error>
     where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
 {
-    let pre_ws = pt;
-    let (pt, _x) = match whitespace(pm, pt) {
-        Progress { status: peresil::Status::Success(v), point } => {
-            (point, v)
+    match optional_leading_whitespace(f)(pm, pt) {
+        Progress { status: peresil::Status::Failure(f), point } => {
+            TailedState::Nothing(point, f)
         }
-        Progress { status: peresil::Status::Failure(_), .. } => {
-            // TODO: unrecoverable errors
-            (pt, Vec::new())
+        Progress { status: peresil::Status::Success(value), point } => {
+            match optional_leading_whitespace(literal(sep))(pm, point) {
+                Progress { status: peresil::Status::Failure(_), point } => {
+                    TailedState::ValueOnly(point, value)
+                }
+                Progress { status: peresil::Status::Success(_), point } => {
+                    TailedState::ValueAndSeparator(point, value)
+                }
+            }
         }
-    };
-
-    let (pt, value) = match f(pm, pt) {
-        Progress { status: peresil::Status::Success(v), point } => {
-            (point, v)
-        }
-        Progress { status: peresil::Status::Failure(f), .. } => {
-            // TODO: unrecoverable errors
-            return TailedState::Nothing(pre_ws, f);
-        }
-    };
-
-    let pre_ws = pt;
-    let (pt, _x) = match whitespace(pm, pt) {
-        Progress { status: peresil::Status::Success(v), point } => {
-            (point, v)
-        }
-        Progress { status: peresil::Status::Failure(_), .. } => {
-            // TODO: unrecoverable errors
-            (pt, Vec::new())
-        }
-    };
-
-    let pt = match literal(sep)(pm, pt) {
-        Progress { status: peresil::Status::Success(_), point } => {
-            point
-        }
-        Progress { status: peresil::Status::Failure(_), .. } => {
-            // TODO: unrecoverable errors
-            return TailedState::ValueOnly(pre_ws, value);
-        }
-    };
-
-    TailedState::ValueAndSeparator(pt, value)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -2061,6 +2084,26 @@ fn zero_or_more_tailed_values_append<'s, A, F, T>(append_to: A, sep: &'static st
     let append_to = append_to.into();
     let tailed = Tailed { values: append_to, separator_count: 0 }; // TODO: separator_count?
     map(zero_or_more_tailed_append(tailed, sep, f), |t| t.values)
+}
+
+// Used after parsing a single value, but not the separator
+// Foo + Bar
+//    ^
+fn zero_or_more_tailed_values_resume<'s, F, T>(sep: &'static str, f: F) ->
+    impl FnOnce(&mut Master<'s>, Point<'s>) -> Progress<'s, Vec<T>>
+    where F: Fn(&mut Master<'s>, Point<'s>) -> Progress<'s, T>
+{
+    move |pm, mut pt| {
+        pt = match optional_leading_whitespace(literal(sep))(pm, pt) {
+            Progress { status: peresil::Status::Failure(_), point } => {
+                return Progress::success(point, Vec::new())
+            }
+            Progress { status: peresil::Status::Success(_), point } => {
+                point
+            }
+        };
+        zero_or_more_tailed_values(sep, f)(pm, pt)
+    }
 }
 
 fn one_or_more_tailed<'s, F, T>(sep: &'static str, f: F) ->
@@ -4522,10 +4565,8 @@ fn module_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Vec<Item>
 fn typ<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Type> {
     pm.alternate(pt)
         .one(map(typ_array, Type::Array))
+        .one(map(typ_combination, Type::Combination))
         .one(map(typ_function, Type::Function))
-        .one(map(typ_higher_ranked_trait_bounds, Type::HigherRankedTraitBounds))
-        .one(map(typ_impl_trait, Type::ImplTrait))
-        .one(map(typ_named, Type::Named))
         .one(map(typ_pointer, Type::Pointer))
         .one(map(typ_reference, Type::Reference))
         .one(map(typ_slice, Type::Slice))
@@ -4617,6 +4658,33 @@ fn typ_impl_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeIm
         ws   = whitespace;
         name = typ_named;
     }, |_, pt| TypeImplTrait { extent: ex(spt, pt), name, whitespace: ws })
+}
+
+fn typ_combination<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeCombination> {
+    sequence!(pm, pt, {
+        spt        = point;
+        base       = typ_combination_base;
+        additional = zero_or_more_tailed_values_resume("+", typ_combination_additional);
+    }, move |_, pt| TypeCombination { extent: ex(spt, pt), base, additional })
+}
+
+fn typ_combination_base<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, TypeCombinationBase>
+{
+    pm.alternate(pt)
+        .one(map(typ_named, TypeCombinationBase::Named))
+        .one(map(typ_higher_ranked_trait_bounds, TypeCombinationBase::HigherRankedTraitBounds))
+        .one(map(typ_impl_trait, TypeCombinationBase::ImplTrait))
+        .finish()
+}
+
+fn typ_combination_additional<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, TypeCombinationAdditional>
+{
+    pm.alternate(pt)
+        .one(map(typ_named, TypeCombinationAdditional::Named))
+        .one(map(lifetime, TypeCombinationAdditional::Lifetime))
+        .finish()
 }
 
 fn typ_named<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeNamed> {
@@ -6339,6 +6407,30 @@ mod test {
     fn type_higher_ranked_trait_bounds_on_references() {
         let p = qp(typ, "for <'a> &'a u8");
         assert_eq!(unwrap_progress(p).extent(), (0, 15))
+    }
+
+    #[test]
+    fn type_combination() {
+        let p = qp(typ, "Foo + Bar");
+        assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn type_combination_with_lifetimes() {
+        let p = qp(typ, "Foo + 'a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn type_combination_of_higher_ranked_trait_bounds_and_lifetimes() {
+        let p = qp(typ, "for<'a> Foo + 'a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 16))
+    }
+
+    #[test]
+    fn type_combination_of_impl_trait_and_lifetimes() {
+        let p = qp(typ, "impl Foo + 'a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 13))
     }
 
     #[test]
