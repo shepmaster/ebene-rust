@@ -393,6 +393,7 @@ pub struct TypeHigherRankedTraitBounds {
 pub enum TypeHigherRankedTraitBoundsChild {
     Named(TypeNamed),
     Function(TypeFunction),
+    Reference(TypeReference),
 }
 
 #[derive(Debug, Visit)]
@@ -4586,6 +4587,7 @@ fn typ_higher_ranked_trait_bounds_child<'s>(pm: &mut Master<'s>, pt: Point<'s>) 
     pm.alternate(pt)
         .one(map(typ_named, TypeHigherRankedTraitBoundsChild::Named))
         .one(map(typ_function, TypeHigherRankedTraitBoundsChild::Function))
+        .one(map(typ_reference, TypeHigherRankedTraitBoundsChild::Reference))
         .finish()
 }
 
@@ -6312,6 +6314,12 @@ mod test {
     fn type_higher_ranked_trait_bounds_on_functions() {
         let p = qp(typ, "for <'a> fn(&'a u8)");
         assert_eq!(unwrap_progress(p).extent(), (0, 19))
+    }
+
+    #[test]
+    fn type_higher_ranked_trait_bounds_on_references() {
+        let p = qp(typ, "for <'a> &'a u8");
+        assert_eq!(unwrap_progress(p).extent(), (0, 15))
     }
 
     #[test]
