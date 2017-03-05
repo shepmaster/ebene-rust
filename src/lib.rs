@@ -695,14 +695,22 @@ pub struct TraitBoundLifetime {
 #[derive(Debug, Visit)]
 pub struct TraitBoundNormal {
     pub extent: Extent,
-    typ: Type,
+    typ: TraitBoundType,
 }
 
 #[derive(Debug, Visit)]
 pub struct TraitBoundRelaxed {
     pub extent: Extent,
-    typ: Type,
+    typ: TraitBoundType,
     whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TraitBoundType {
+    Named(TypeNamed),
+    // TODO: HRTB Trait bounds don't really allow references or fn types, just named
+    // We need to create a smaller enum here
+    HigherRankedTraitBounds(TypeHigherRankedTraitBounds),
 }
 
 #[derive(Debug, Visit)]
@@ -1698,6 +1706,7 @@ pub trait Visitor {
     fn visit_trait_bound_lifetime(&mut self, &TraitBoundLifetime) {}
     fn visit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
     fn visit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
+    fn visit_trait_bound_type(&mut self, &TraitBoundType) {}
     fn visit_trait_bounds(&mut self, &TraitBounds) {}
     fn visit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn visit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
@@ -1841,6 +1850,7 @@ pub trait Visitor {
     fn exit_trait_bound_lifetime(&mut self, &TraitBoundLifetime) {}
     fn exit_trait_bound_normal(&mut self, &TraitBoundNormal) {}
     fn exit_trait_bound_relaxed(&mut self, &TraitBoundRelaxed) {}
+    fn exit_trait_bound_type(&mut self, &TraitBoundType) {}
     fn exit_trait_bounds(&mut self, &TraitBounds) {}
     fn exit_trait_impl_argument(&mut self, &TraitImplArgument) {}
     fn exit_trait_impl_argument_named(&mut self, &TraitImplArgumentNamed) {}
@@ -2501,8 +2511,17 @@ fn trait_bound_lifetime<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, 
 fn trait_bound_normal<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundNormal> {
     sequence!(pm, pt, {
         spt = point;
-        typ = typ;
+        typ = trait_bound_normal_child;
     }, |_, pt| TraitBoundNormal { extent: ex(spt, pt), typ })
+}
+
+fn trait_bound_normal_child<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, TraitBoundType>
+{
+    pm.alternate(pt)
+        .one(map(typ_named, TraitBoundType::Named))
+        .one(map(typ_higher_ranked_trait_bounds, TraitBoundType::HigherRankedTraitBounds))
+        .finish()
 }
 
 fn trait_bound_relaxed<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TraitBoundRelaxed> {
@@ -2510,7 +2529,7 @@ fn trait_bound_relaxed<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, T
         spt = point;
         _   = literal("?");
         ws  = optional_whitespace(Vec::new());
-        typ = typ;
+        typ = trait_bound_normal_child;
     }, |_, pt| TraitBoundRelaxed { extent: ex(spt, pt), typ, whitespace: ws })
 }
 
