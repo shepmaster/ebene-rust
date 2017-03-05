@@ -407,7 +407,13 @@ pub struct TypeImplTrait {
 pub struct TypeCombination {
     extent: Extent,
     name: TypeNamed,
-    additional: Vec<TypeNamed>,
+    additional: Vec<TypeAdditional>,
+}
+
+#[derive(Debug, Visit, Decompose)]
+pub enum TypeAdditional {
+    Named(TypeNamed),
+    Lifetime(Lifetime),
 }
 
 #[derive(Debug, Visit)]
@@ -1725,6 +1731,7 @@ pub trait Visitor {
     fn visit_tuple(&mut self, &Tuple) {}
     fn visit_turbofish(&mut self, &Turbofish) {}
     fn visit_type(&mut self, &Type) {}
+    fn visit_type_additional(&mut self, &TypeAdditional) {}
     fn visit_type_alias(&mut self, &TypeAlias) {}
     fn visit_type_array(&mut self, &TypeArray) {}
     fn visit_type_combination(&mut self, &TypeCombination) {}
@@ -1870,6 +1877,7 @@ pub trait Visitor {
     fn exit_tuple(&mut self, &Tuple) {}
     fn exit_turbofish(&mut self, &Turbofish) {}
     fn exit_type(&mut self, &Type) {}
+    fn exit_type_additional(&mut self, &TypeAdditional) {}
     fn exit_type_alias(&mut self, &TypeAlias) {}
     fn exit_type_array(&mut self, &TypeArray) {}
     fn exit_type_combination(&mut self, &TypeCombination) {}
@@ -4653,8 +4661,15 @@ fn typ_combination<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeC
     sequence!(pm, pt, {
         spt        = point;
         name       = typ_named;
-        additional = zero_or_more_tailed_values_resume("+", typ_named);
+        additional = zero_or_more_tailed_values_resume("+", typ_additional);
     }, move |_, pt| TypeCombination { extent: ex(spt, pt), name, additional })
+}
+
+fn typ_additional<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeAdditional> {
+    pm.alternate(pt)
+        .one(map(typ_named, TypeAdditional::Named))
+        .one(map(lifetime, TypeAdditional::Lifetime))
+        .finish()
 }
 
 fn typ_named<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeNamed> {
@@ -6383,6 +6398,12 @@ mod test {
     fn type_combination() {
         let p = qp(typ, "Foo + Bar");
         assert_eq!(unwrap_progress(p).extent(), (0, 9))
+    }
+
+    #[test]
+    fn type_combination_with_lifetimes() {
+        let p = qp(typ, "Foo + 'a");
+        assert_eq!(unwrap_progress(p).extent(), (0, 8))
     }
 
     #[test]
