@@ -626,7 +626,7 @@ pub struct EnumVariant {
     extent: Extent,
     attributes: Vec<Attribute>,
     name: Ident,
-    body: Option<EnumVariantBody>,
+    body: EnumVariantBody,
     whitespace: Vec<Whitespace>,
 }
 
@@ -634,6 +634,7 @@ pub struct EnumVariant {
 pub enum EnumVariantBody {
     Tuple(Vec<StructDefinitionFieldUnnamed>),
     Struct(StructDefinitionBodyBrace),
+    Unit(Option<Expression>),
 }
 
 #[derive(Debug, Visit, Decompose)]
@@ -4139,7 +4140,7 @@ fn enum_variant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, EnumVari
         attributes = zero_or_more(struct_defn_field_attr);
         name = ident;
         ws   = optional_whitespace(Vec::new());
-        body = optional(enum_variant_body);
+        body = enum_variant_body;
     }, |_, pt| EnumVariant { extent: ex(spt, pt), attributes, name, body, whitespace: ws })
 }
 
@@ -4147,7 +4148,16 @@ fn enum_variant_body<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Enu
     pm.alternate(pt)
         .one(map(struct_defn_body_tuple_only, EnumVariantBody::Tuple))
         .one(map(struct_defn_body_brace_only, EnumVariantBody::Struct))
+        .one(map(optional(enum_discriminant), EnumVariantBody::Unit))
         .finish()
+}
+
+fn enum_discriminant<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Expression> {
+    sequence!(pm, pt, {
+        _     = literal("=");
+        _x    = optional_whitespace(Vec::new());
+        value = expression;
+    }, |_, _| value)
 }
 
 fn p_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Trait> {
@@ -5318,6 +5328,12 @@ mod test {
     fn enum_with_attribute_on_value() {
         let p = qp(p_enum, "enum Foo { A(#[attr] u8) }");
         assert_eq!(unwrap_progress(p).extent, (0, 26))
+    }
+
+    #[test]
+    fn enum_with_discriminant() {
+        let p = qp(p_enum, "enum Foo { A = 1, B = 2 }");
+        assert_eq!(unwrap_progress(p).extent, (0, 25))
     }
 
     #[test]
