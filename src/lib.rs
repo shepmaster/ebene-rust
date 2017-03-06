@@ -1463,10 +1463,18 @@ pub struct Impl {
     extent: Extent,
     is_unsafe: Option<Extent>,
     generics: Option<GenericDeclarations>,
-    trait_name: Option<Type>,
+    of_trait: Option<ImplOfTrait>,
     type_name: Type,
     wheres: Vec<Where>,
     body: Vec<ImplMember>,
+    whitespace: Vec<Whitespace>,
+}
+
+#[derive(Debug, Visit)]
+pub struct ImplOfTrait {
+    extent: Extent,
+    is_negative: Option<Extent>,
+    trait_name: Type, // TODO: namedtype only?
     whitespace: Vec<Whitespace>,
 }
 
@@ -1695,6 +1703,7 @@ pub trait Visitor {
     fn visit_impl(&mut self, &Impl) {}
     fn visit_impl_function(&mut self, &ImplFunction) {}
     fn visit_impl_member(&mut self, &ImplMember) {}
+    fn visit_impl_of_trait(&mut self, &ImplOfTrait) {}
     fn visit_impl_type(&mut self, &ImplType) {}
     fn visit_item(&mut self, &Item) {}
     fn visit_let(&mut self, &Let) {}
@@ -1845,6 +1854,7 @@ pub trait Visitor {
     fn exit_impl(&mut self, &Impl) {}
     fn exit_impl_function(&mut self, &ImplFunction) {}
     fn exit_impl_member(&mut self, &ImplMember) {}
+    fn exit_impl_of_trait(&mut self, &ImplOfTrait) {}
     fn exit_impl_type(&mut self, &ImplType) {}
     fn exit_item(&mut self, &Item) {}
     fn exit_let(&mut self, &Let) {}
@@ -4333,7 +4343,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         _                = literal("impl");
         generics         = optional(generic_declarations);
         ws               = append_whitespace(ws);
-        (trait_name, ws) = concat_whitespace(ws, optional(p_impl_of_trait));
+        of_trait         = optional(p_impl_of_trait);
         type_name        = typ;
         ws               = optional_whitespace(ws);
         (wheres, ws)     = concat_whitespace(ws, optional(where_clause));
@@ -4347,7 +4357,7 @@ fn p_impl<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Impl> {
         extent: ex(spt, pt),
         is_unsafe,
         generics,
-        trait_name,
+        of_trait,
         type_name,
         wheres: wheres.unwrap_or_else(Vec::new),
         body,
@@ -4362,13 +4372,16 @@ fn p_impl_unsafe<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Extent
     }, |_, _| (us, ws))
 }
 
-fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, (Type, Vec<Whitespace>)> {
+fn p_impl_of_trait<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplOfTrait> {
     sequence!(pm, pt, {
-        trait_name = typ;
-        ws         = whitespace;
-        _          = literal("for");
-        ws         = append_whitespace(ws);
-    }, |_, _| (trait_name, ws))
+        spt         = point;
+        is_negative = optional(ext(literal("!")));
+        ws          = optional_whitespace(Vec::new());
+        trait_name  = typ;
+        ws          = append_whitespace(ws);
+        _           = literal("for");
+        ws          = append_whitespace(ws);
+    }, |_, pt| ImplOfTrait { extent: ex(spt, pt), is_negative, trait_name, whitespace: ws })
 }
 
 fn impl_member<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, ImplMember> {
@@ -5256,6 +5269,12 @@ mod test {
     fn impl_with_trait() {
         let p = qp(p_impl, "impl Foo for Bar {}");
         assert_eq!(unwrap_progress(p).extent, (0, 19))
+    }
+
+    #[test]
+    fn impl_with_negative_trait() {
+        let p = qp(p_impl, "impl !Foo for Bar {}");
+        assert_eq!(unwrap_progress(p).extent, (0, 20))
     }
 
     #[test]
