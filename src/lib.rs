@@ -437,7 +437,7 @@ pub struct TypeNamedComponent {
 pub struct TypeDisambiguation {
     extent: Extent,
     from_type: Box<Type>,
-    to_type: Box<TypeNamed>,
+    to_type: Option<Box<TypeNamed>>,
     path: Vec<TypeNamedComponent>,
     whitespace: Vec<Whitespace>,
 }
@@ -1262,7 +1262,7 @@ pub struct Dereference {
 pub struct Disambiguation {
     extent: Extent,
     from_type: Type,
-    to_type: TypeNamed,
+    to_type: Option<TypeNamed>,
     components: Vec<PathComponent>,
     whitespace: Vec<Whitespace>,
 }
@@ -4769,7 +4769,7 @@ fn typ_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
     }, move |_, pt| TypeDisambiguation {
         extent: ex(spt, pt),
         from_type: Box::new(core.from_type),
-        to_type: Box::new(core.to_type),
+        to_type: core.to_type.map(Box::new),
         path,
         whitespace: core.whitespace,
     })
@@ -4777,22 +4777,30 @@ fn typ_disambiguation<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, Ty
 
 struct DisambiguationCore {
     from_type: Type,
-    to_type: TypeNamed,
+    to_type: Option<TypeNamed>,
     whitespace: Vec<Whitespace>,
 }
 
 fn disambiguation_core<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, DisambiguationCore> {
     sequence!(pm, pt, {
-        _         = literal("<");
-        ws        = optional_whitespace(Vec::new());
-        from_type = typ;
-        ws        = append_whitespace(ws);
+        _             = literal("<");
+        ws            = optional_whitespace(Vec::new());
+        from_type     = typ;
+        (to_type, ws) = concat_whitespace(ws, optional(disambiguation_core_to_type));
+        ws            = optional_whitespace(ws);
+        _             = literal(">");
+    }, |_, _| DisambiguationCore { from_type, to_type, whitespace: ws })
+}
+
+fn disambiguation_core_to_type<'s>(pm: &mut Master<'s>, pt: Point<'s>) ->
+    Progress<'s, (TypeNamed, Vec<Whitespace>)>
+{
+    sequence!(pm, pt, {
+        ws        = whitespace;
         _         = literal("as");
         ws        = append_whitespace(ws);
         to_type   = typ_named;
-        ws        = optional_whitespace(ws);
-        _         = literal(">");
-    }, |_, _| DisambiguationCore { from_type, to_type, whitespace: ws })
+    }, |_, _| (to_type, ws))
 }
 
 fn typ_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeArray> {
@@ -6154,6 +6162,12 @@ mod test {
     }
 
     #[test]
+    fn expr_disambiguation_without_disambiguation() {
+        let p = qp(expression, "<Foo>::quux");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
+    }
+
+    #[test]
     fn expr_followed_by_block_disallows_struct_literal() {
         let p = qp(expr_followed_by_block, "a {}");
         let (e, b) = unwrap_progress(p);
@@ -6557,6 +6571,12 @@ mod test {
     fn type_disambiguation_with_associated_type() {
         let p = qp(typ, "<Foo as Bar>::Quux");
         assert_eq!(unwrap_progress(p).extent(), (0, 18))
+    }
+
+    #[test]
+    fn type_disambiguation_without_disambiguation() {
+        let p = qp(typ, "<Foo>");
+        assert_eq!(unwrap_progress(p).extent(), (0, 5))
     }
 
     #[test]
