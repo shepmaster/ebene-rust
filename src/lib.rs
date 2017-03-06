@@ -373,7 +373,7 @@ pub enum TypePointerKind {
 pub struct TypeArray {
     extent: Extent,
     typ: Box<Type>,
-    count: Number,
+    count: Box<Expression>,
     whitespace: Vec<Whitespace>,
 }
 
@@ -4835,10 +4835,15 @@ fn typ_array<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeArray> 
         ws    = optional_whitespace(ws);
         _     = literal(";");
         ws    = optional_whitespace(ws);
-        count = number_literal;
+        count = expression;
         ws    = optional_whitespace(ws);
         _     = literal("]");
-    }, |_, pt| TypeArray { extent: ex(spt, pt), typ: Box::new(typ), count, whitespace: ws })
+    }, |_, pt| TypeArray {
+        extent: ex(spt, pt),
+        typ: Box::new(typ),
+        count: Box::new(count),
+        whitespace: ws,
+    })
 }
 
 fn typ_slice<'s>(pm: &mut Master<'s>, pt: Point<'s>) -> Progress<'s, TypeSlice> {
@@ -6516,6 +6521,12 @@ mod test {
     fn type_array() {
         let p = qp(typ, "[u8; 42]");
         assert_eq!(unwrap_progress(p).extent(), (0, 8))
+    }
+
+    #[test]
+    fn type_array_allows_expressions() {
+        let p = qp(typ, "[u8; 1 + 1]");
+        assert_eq!(unwrap_progress(p).extent(), (0, 11))
     }
 
     #[test]
