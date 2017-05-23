@@ -2,7 +2,6 @@
 #![plugin(rocket_codegen)]
 
 extern crate strata;
-extern crate strata_rs;
 
 extern crate serde;
 extern crate serde_json;
@@ -141,7 +140,7 @@ fn dev_layer(layer: &str) -> Option<JSON<Vec<ValidExtent>>> {
     INDEX.layers.get(layer).map(|l| JSON(l.to_owned()))
 }
 
-#[get("/dev/terms/")]
+#[get("/dev/terms")]
 fn dev_terms() -> JSON<Vec<String>> {
     JSON(INDEX.terms.keys().map(Clone::clone).collect())
 }

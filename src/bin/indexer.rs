@@ -1,4 +1,4 @@
-extern crate strata_rs;
+extern crate fuzzy_pickles;
 extern crate serde;
 extern crate serde_json;
 #[macro_use]
@@ -9,67 +9,67 @@ use std::env;
 use std::io::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-use strata_rs::{Visit, Visitor};
+use fuzzy_pickles::{Visit, Visitor};
 
 #[derive(Debug, Default)]
 struct Indexing {
     source: String,
 
-    term_ident: BTreeMap<String, BTreeSet<strata_rs::Extent>>,
+    term_ident: BTreeMap<String, BTreeSet<fuzzy_pickles::Extent>>,
 
-    layer_enum: BTreeSet<strata_rs::Extent>,
-    layer_function: BTreeSet<strata_rs::Extent>,
-    layer_function_header: BTreeSet<strata_rs::Extent>,
-    layer_struct: BTreeSet<strata_rs::Extent>,
-    layer_generic_declarations: BTreeSet<strata_rs::Extent>,
-    layer_where: BTreeSet<strata_rs::Extent>,
+    layer_enum: BTreeSet<fuzzy_pickles::Extent>,
+    layer_function: BTreeSet<fuzzy_pickles::Extent>,
+    layer_function_header: BTreeSet<fuzzy_pickles::Extent>,
+    layer_struct: BTreeSet<fuzzy_pickles::Extent>,
+    layer_generic_declarations: BTreeSet<fuzzy_pickles::Extent>,
+    layer_where: BTreeSet<fuzzy_pickles::Extent>,
 
-    layers_expression: Vec<BTreeSet<strata_rs::Extent>>,
-    layers_statement: Vec<BTreeSet<strata_rs::Extent>>,
+    layers_expression: Vec<BTreeSet<fuzzy_pickles::Extent>>,
+    layers_statement: Vec<BTreeSet<fuzzy_pickles::Extent>>,
 
     stmt_depth: usize,
     expr_depth: usize,
 }
 
-impl std::ops::Index<strata_rs::Extent> for Indexing {
+impl std::ops::Index<fuzzy_pickles::Extent> for Indexing {
     type Output = str;
 
-    fn index(&self, extent: strata_rs::Extent) -> &str {
+    fn index(&self, extent: fuzzy_pickles::Extent) -> &str {
         &self.source[extent.0..extent.1]
     }
 }
 
 impl Visitor for Indexing {
-    fn visit_ident(&mut self, ident: &strata_rs::Ident) {
+    fn visit_ident(&mut self, ident: &fuzzy_pickles::Ident) {
         let s = self[ident.extent].to_owned();
         self.term_ident.entry(s).or_insert_with(BTreeSet::new).insert(ident.extent);
     }
 
-    fn visit_function(&mut self, function: &strata_rs::Function) {
+    fn visit_function(&mut self, function: &fuzzy_pickles::Function) {
         self.layer_function.insert(function.extent);
     }
 
-    fn visit_function_header(&mut self, header: &strata_rs::FunctionHeader) {
+    fn visit_function_header(&mut self, header: &fuzzy_pickles::FunctionHeader) {
         self.layer_function_header.insert(header.extent);
     }
 
-    fn visit_enum(&mut self, e: &strata_rs::Enum) {
+    fn visit_enum(&mut self, e: &fuzzy_pickles::Enum) {
         self.layer_enum.insert(e.extent);
     }
 
-    fn visit_struct(&mut self, s: &strata_rs::Struct) {
+    fn visit_struct(&mut self, s: &fuzzy_pickles::Struct) {
         self.layer_struct.insert(s.extent);
     }
 
-    fn visit_generic_declarations(&mut self, gd: &strata_rs::GenericDeclarations) {
+    fn visit_generic_declarations(&mut self, gd: &fuzzy_pickles::GenericDeclarations) {
         self.layer_generic_declarations.insert(gd.extent);
     }
 
-    fn visit_where(&mut self, w: &strata_rs::Where) {
+    fn visit_where(&mut self, w: &fuzzy_pickles::Where) {
         self.layer_where.insert(w.extent());
     }
 
-    fn visit_statement(&mut self, s: &strata_rs::Statement) {
+    fn visit_statement(&mut self, s: &fuzzy_pickles::Statement) {
         while self.layers_statement.len() <= self.stmt_depth {
             self.layers_statement.push(BTreeSet::new());
         }
@@ -78,11 +78,11 @@ impl Visitor for Indexing {
         self.stmt_depth +=1
     }
 
-    fn exit_statement(&mut self, _: &strata_rs::Statement) {
+    fn exit_statement(&mut self, _: &fuzzy_pickles::Statement) {
         self.stmt_depth -= 1;
     }
 
-    fn visit_expression(&mut self, e: &strata_rs::Expression) {
+    fn visit_expression(&mut self, e: &fuzzy_pickles::Expression) {
         while self.layers_expression.len() <= self.expr_depth {
             self.layers_expression.push(BTreeSet::new());
         }
@@ -91,7 +91,7 @@ impl Visitor for Indexing {
         self.expr_depth += 1;
     }
 
-    fn exit_expression(&mut self, _: &strata_rs::Expression) {
+    fn exit_expression(&mut self, _: &fuzzy_pickles::Expression) {
         self.expr_depth -= 1;
     }
 }
@@ -99,12 +99,12 @@ impl Visitor for Indexing {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct IndexedFile {
     source: String,
-    layers: BTreeMap<String, BTreeSet<strata_rs::Extent>>,
-    terms: BTreeMap<String, BTreeMap<String, BTreeSet<strata_rs::Extent>>>,
+    layers: BTreeMap<String, BTreeSet<fuzzy_pickles::Extent>>,
+    terms: BTreeMap<String, BTreeMap<String, BTreeSet<fuzzy_pickles::Extent>>>,
 }
 
 // TODO: This was extracted from `strata`; should be made public
-fn find_invalid_gc_list_pair(extents: &[strata_rs::Extent]) -> Option<(strata_rs::Extent, strata_rs::Extent)> {
+fn find_invalid_gc_list_pair(extents: &[fuzzy_pickles::Extent]) -> Option<(fuzzy_pickles::Extent, fuzzy_pickles::Extent)> {
     extents
         .windows(2)
         .map(|window| (window[0], window[1]))
@@ -170,7 +170,7 @@ fn main() {
     let mut s = String::new();
     f.read_to_string(&mut s).expect("Can't read");
 
-    let file = match strata_rs::parse_rust_file(&s) {
+    let file = match fuzzy_pickles::parse_rust_file(&s) {
         Ok(file) => file,
         Err(detail) => {
             panic!("{}", detail.with_text(&s));
