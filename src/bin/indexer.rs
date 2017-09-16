@@ -1,5 +1,4 @@
 extern crate fuzzy_pickles;
-extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
@@ -9,7 +8,7 @@ use std::env;
 use std::io::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-use fuzzy_pickles::{Visit, Visitor};
+use fuzzy_pickles::{Visit, Visitor, HasExtent};
 
 #[derive(Debug, Default)]
 struct Indexing {

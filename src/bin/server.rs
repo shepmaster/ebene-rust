@@ -18,11 +18,13 @@ extern crate rocket_contrib;
 extern crate quick_error;
 
 use std::fs::File;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use strata::{Algebra, ValidExtent};
 
-use rocket_contrib::JSON;
+use rocket::http::RawStr;
+use rocket_contrib::Json;
 
 use quick_error::ResultExt;
 
@@ -126,36 +128,36 @@ fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
 }
 
 #[get("/dev/source")]
-fn dev_source() -> JSON<String> {
-    JSON(INDEX.source.clone())
+fn dev_source() -> Json<String> {
+    Json(INDEX.source.clone())
 }
 
 #[get("/dev/layers")]
-fn dev_layers() -> JSON<Vec<String>> {
-    JSON(INDEX.layers.keys().map(Clone::clone).collect())
+fn dev_layers() -> Json<Vec<String>> {
+    Json(INDEX.layers.keys().map(Clone::clone).collect())
 }
 
 #[get("/dev/layers/<layer>")]
-fn dev_layer(layer: &str) -> Option<JSON<Vec<ValidExtent>>> {
-    INDEX.layers.get(layer).map(|l| JSON(l.to_owned()))
+fn dev_layer(layer: String) -> Option<Json<Vec<ValidExtent>>> {
+    INDEX.layers.get(&layer).map(|l| Json(l.to_owned()))
 }
 
 #[get("/dev/terms")]
-fn dev_terms() -> JSON<Vec<String>> {
-    JSON(INDEX.terms.keys().map(Clone::clone).collect())
+fn dev_terms() -> Json<Vec<String>> {
+    Json(INDEX.terms.keys().map(Clone::clone).collect())
 }
 
 #[get("/dev/terms/<kind>")]
-fn dev_terms_kinds(kind: &str) -> Option<JSON<Vec<String>>> {
-    INDEX.terms.get(kind)
-        .map(|k| JSON(k.keys().map(Clone::clone).collect()))
+fn dev_terms_kinds(kind: String) -> Option<Json<Vec<String>>> {
+    INDEX.terms.get(&kind)
+        .map(|k| Json(k.keys().map(Clone::clone).collect()))
 }
 
 #[get("/dev/terms/<kind>/<term>")]
-fn dev_terms_kind(kind: &str, term: &str) -> Option<JSON<Vec<ValidExtent>>> {
-    INDEX.terms.get(kind)
-        .and_then(|k| k.get(term))
-        .map(|t| JSON(t.to_owned()))
+fn dev_terms_kind(kind: String, term: String) -> Option<Json<Vec<ValidExtent>>> {
+    INDEX.terms.get(&kind)
+        .and_then(|k| k.get(&term))
+        .map(|t| Json(t.to_owned()))
 }
 
 #[derive(Debug, FromForm)]
@@ -169,10 +171,10 @@ quick_error! {
     #[derive(Debug)]
     enum JsonStringError {
         NotUtf8(err: std::str::Utf8Error, val: String) {
-            context(val: &'a str, err: std::str::Utf8Error) -> (err, val.to_owned())
+            context(val: &'a RawStr, err: std::str::Utf8Error) -> (err, val.as_str().into())
         }
         NotDecodable(err: serde_json::Error, val: String) {
-            context(val: String, err: serde_json::Error) -> (err, val)
+            context(val: Cow<'a, str>, err: serde_json::Error) -> (err, val.into())
         }
     }
 }
@@ -181,14 +183,13 @@ quick_error! {
 struct JsonString<T>(T);
 
 impl<'v, T> rocket::request::FromFormValue<'v> for JsonString<T>
-    where T: serde::Deserialize,
+    where T: serde::de::DeserializeOwned,
 {
     type Error = JsonStringError;
 
-    fn from_form_value(form_value: &'v str) -> Result<Self, Self::Error> {
-        use rocket::http::uri::URI;
-        let form_value = URI::percent_decode(form_value.as_bytes()).context(form_value)?;
-        let form_value = serde_json::from_str(&form_value).context(form_value.into_owned())?;
+    fn from_form_value(form_value: &'v RawStr) -> Result<Self, Self::Error> {
+        let form_value = form_value.percent_decode().context(form_value)?;
+        let form_value = serde_json::from_str(&form_value).context(form_value)?;
         Ok(JsonString(form_value))
     }
 }
@@ -223,13 +224,13 @@ fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
 }
 
 #[get("/search?<query>")]
-fn search(query: Query) -> JSON<SearchResults> {
+fn search(query: Query) -> Json<SearchResults> {
     println!("Query: {:?}", query.q);
     println!("Highlight: {:?}", query.h);
 
     let q = match query.q {
         Some(q) => q.0,
-        None => return JSON(SearchResults::default()),
+        None => return Json(SearchResults::default()),
     };
 
     let container_query = compile(q).expect("can't compile query");
@@ -253,7 +254,7 @@ fn search(query: Query) -> JSON<SearchResults> {
         SearchResult { text: container_text.to_owned(), highlights: highlights_extents }
     }).collect();
 
-    JSON(SearchResults { results })
+    Json(SearchResults { results })
 }
 
 fn main() {
