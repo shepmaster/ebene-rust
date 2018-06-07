@@ -56,3 +56,6 @@ export function selectTreeQuery(queryList) {
 
     return treeify(0);
 }
+
+export const selectAvailableTerms = (state) => state.available.terms;
+export const selectAvailableLayers = (state) => state.available.layers;

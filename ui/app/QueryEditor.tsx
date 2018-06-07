@@ -1,38 +1,13 @@
 import * as React from 'react';
 
 import { Kind } from './types';
-
-const SelectKind = ({ id, kind, onKindChange }) => {
-    const options = Object.values(Kind).map((name, i) => (
-        <option key={i} value={name}>{name}</option>
-    ));
-
-    return (
-        <select value={kind} onChange={e => onKindChange(id, e.target.value)}>
-            {options}
-        </select>
-    );
-};
+import SelectKind from './QueryEditor/SelectKind';
+import Term from './QueryEditor/Term';
+import Layer from './QueryEditor/Layer';
 
 const Nothing = ({ id, kind, handlers: { onKindChange } }) => (
     <div>
         <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-    </div>
-);
-
-const Layer = ({ id, kind, name, handlers: { onKindChange, onLayerChange } }) => (
-    <div>
-        <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-        <input value={name} onChange={e => onLayerChange(id, e.target.value)}></input>
-    </div>
-);
-
-const Term = ({ id, kind, name, value, handlers: { onKindChange, onTermNameChange, onTermValueChange } }) => (
-    <div>
-        <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-        <input value={name} onChange={e => onTermNameChange(id, e.target.value)}></input>
-        :
-    <input value={value} onChange={e => onTermValueChange(id, e.target.value)}></input>
     </div>
 );
 

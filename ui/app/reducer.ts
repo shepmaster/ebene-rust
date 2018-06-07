@@ -166,8 +166,27 @@ function structuredHighlightsReducer(state = initialStructuredHighlight, action:
     }
 }
 
+const initialAvailable = {
+    layers: [],
+    terms: [],
+};
+
+function availableReducer(state = initialAvailable, action: Action) {
+    switch (action.type) {
+        case ActionType.AvailableLayersUpdate: {
+            return { ...state, layers: action.payload.layers };
+        }
+        case ActionType.AvailableTermsUpdate: {
+            return { ...state, terms: action.payload.terms };
+        }
+        default:
+            return state;
+    }
+}
+
 export default combineReducers({
     advanced: advancedReducer,
+    available: availableReducer,
     structuredQuery: initial(forTarget(structuredQueryReducer, 'query'), initialStructuredQuery),
     structuredHighlights: structuredHighlightsReducer,
     isAdvanced: isAdvancedReducer,

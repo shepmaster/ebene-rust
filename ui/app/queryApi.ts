@@ -1,13 +1,21 @@
 import * as url from 'url';
 
-export default function primaryQuery({ q, h }) {
-  const apiUrl = url.format({
-    hostname: '127.0.0.1',
-    port: '8080',
-    pathname: '/api/search',
-    query: { q, h },
-  });
+export async function fetchLayers() {
+    let resp = await fetch('/api/dev/layers');
+    return resp.json();
+}
 
-  return fetch(apiUrl)
-    .then(r => r.json());
+export async function fetchTerms() {
+    let resp = await fetch('/api/dev/terms');
+    return resp.json();
+}
+
+export default async function primaryQuery({ q, h }) {
+    const apiUrl = url.format({
+        pathname: '/api/search',
+        query: { q, h },
+    });
+
+    let resp = await fetch(apiUrl);
+    return resp.json();
 }

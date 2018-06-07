@@ -2,6 +2,8 @@ import { Kind } from './types';
 
 export enum ActionType {
     AdvancedHighlightUpdate = 'ADVANCED_HIGHLIGHT_UPDATE',
+    AvailableLayersUpdate = 'AVAILABLE_LAYERS_UPDATE',
+    AvailableTermsUpdate = 'AVAILABLE_TERMS_UPDATE',
     AdvancedQueryUpdate = 'ADVANCED_QUERY_UPDATE',
     HighlightAdd = 'HIGHLIGHT_ADD',
     LayerNameUpdate = 'LAYER_NAME_UPDATE',
@@ -59,12 +61,20 @@ export const updateTermValue = (id: number, value: string) =>
 export const highlightAdd = (index: number) =>
     createAction(ActionType.HighlightAdd, { index });
 
+export const updateAvailableLayers = (layers) =>
+    createAction(ActionType.AvailableLayersUpdate, { layers });
+
+export const updateAvailableTerms = (terms) =>
+    createAction(ActionType.AvailableTermsUpdate, { terms });
+
 export type Action =
     | ReturnType<typeof highlightAdd>
     | ReturnType<typeof queryFailed>
     | ReturnType<typeof toggleAdvanced>
     | ReturnType<typeof updateAdvancedHighlight>
     | ReturnType<typeof updateAdvancedQuery>
+    | ReturnType<typeof updateAvailableLayers>
+    | ReturnType<typeof updateAvailableTerms>
     | ReturnType<typeof updateKind>
     | ReturnType<typeof updateLayerName>
     | ReturnType<typeof updateQueryResults>
