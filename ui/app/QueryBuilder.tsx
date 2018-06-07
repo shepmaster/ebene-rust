@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
 
@@ -11,15 +11,15 @@ const mapStateToProps = (state) => selectTreeQuery(state.structuredQuery);
 const targetMe = (action) => retarget(action, 'query');
 
 const mapDispatchToProps = (dispatch) => ({
-  handlers: bindActionCreators({
-    onKindChange: targetMe(updateKind),
-    onLayerChange: targetMe(updateLayerName),
-    onTermNameChange: targetMe(updateTermName),
-    onTermValueChange: targetMe(updateTermValue),
-  }, dispatch)
+    handlers: bindActionCreators({
+        onKindChange: targetMe(updateKind),
+        onLayerChange: targetMe(updateLayerName),
+        onTermNameChange: targetMe(updateTermName),
+        onTermValueChange: targetMe(updateTermValue),
+    }, dispatch)
 });
 
 export default connect(
-  mapStateToProps,
-  mapDispatchToProps
+    mapStateToProps,
+    mapDispatchToProps
 )(QueryEditor);

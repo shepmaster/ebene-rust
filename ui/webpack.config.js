@@ -14,13 +14,21 @@ module.exports = {
     }),
   ],
   resolve: {
-    extensions: ['.js', '.jsx'],
+    extensions: ['.js', '.jsx', '.ts', '.tsx'],
   },
   module: {
     rules: [
       {
+        test: /\.tsx?$/,
+        loader: "awesome-typescript-loader",
+      },
+      {
+        enforce: "pre",
+        test: /\.js$/,
+        loader: "source-map-loader",
+      },
+      {
         test: /\.jsx?$/,
-        //      include: paths,
         loader: 'babel-loader',
         options: {
           // Improved performance during development.
@@ -37,7 +45,7 @@ module.exports = {
       },
     ],
   },
-  entry: ['babel-polyfill', './app/index.jsx'],
+  entry: ['babel-polyfill', './app/index.tsx'],
   output: {
     filename: 'bundle.js',
     path: path.resolve(__dirname, './dist'),
