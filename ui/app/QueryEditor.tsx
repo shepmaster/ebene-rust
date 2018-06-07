@@ -1,7 +1,9 @@
 import * as React from 'react';
 
+import { Kind } from './types';
+
 const SelectKind = ({ id, kind, onKindChange }) => {
-    const options = componentKinds.map((name, i) => (
+    const options = Object.values(Kind).map((name, i) => (
         <option key={i} value={name}>{name}</option>
     ));
 
@@ -49,19 +51,17 @@ const BinaryComponent = ({ id, kind, lhs, rhs, handlers }) => {
 };
 
 const mapKindToComponent = {
-    'Nothing': Nothing,
-    'Layer': Layer,
-    'Term': Term,
-    'Containing': BinaryComponent,
-    'ContainedIn': BinaryComponent,
-    'NotContaining': BinaryComponent,
-    'NotContainedIn': BinaryComponent,
-    'OneOf': BinaryComponent,
-    'BothOf': BinaryComponent,
-    'FollowedBy': BinaryComponent,
+    [Kind.Nothing]: Nothing,
+    [Kind.Layer]: Layer,
+    [Kind.Term]: Term,
+    [Kind.Containing]: BinaryComponent,
+    [Kind.ContainedIn]: BinaryComponent,
+    [Kind.NotContaining]: BinaryComponent,
+    [Kind.NotContainedIn]: BinaryComponent,
+    [Kind.OneOf]: BinaryComponent,
+    [Kind.BothOf]: BinaryComponent,
+    [Kind.FollowedBy]: BinaryComponent,
 };
-
-const componentKinds = Object.keys(mapKindToComponent);
 
 const QueryEditor = (props) => {
     const Component = mapKindToComponent[props.kind];

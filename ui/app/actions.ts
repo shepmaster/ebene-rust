@@ -1,3 +1,5 @@
+import { Kind } from './types';
+
 export enum ActionType {
     QueryToggle = 'QUERY_TOGGLE',
     AdvancedQueryUpdate = 'ADVANCED_QUERY_UPDATE',
@@ -8,19 +10,6 @@ export enum ActionType {
     TermNameUpdate = 'TERM_NAME_UPDATE',
     TermValueUpdate = 'TERM_VALUE_UPDATE',
     HighlightAdd = 'HIGHLIGHT_ADD',
-}
-
-export enum Kind {
-    Nothing = 'Nothing',
-    Layer = 'Layer',
-    Term = 'Term',
-    Containing = 'Containing',
-    ContainedIn = 'ContainedIn',
-    NotContaining = 'NotContaining',
-    NotContainedIn = 'NotContainedIn',
-    OneOf = 'OneOf',
-    BothOf = 'BothOf',
-    FollowedBy = 'FollowedBy',
 }
 
 interface SuccessAction<T extends string> { type: T, error: undefined }

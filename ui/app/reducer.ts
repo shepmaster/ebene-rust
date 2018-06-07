@@ -1,6 +1,7 @@
 import { combineReducers } from 'redux';
 
-import { ActionType, Action, Kind } from './actions';
+import { Kind } from './types';
+import { ActionType, Action } from './actions';
 
 // --- Higher order reducers
 
