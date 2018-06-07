@@ -1,7 +1,6 @@
 import { call, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
 
-import constants from './constants';
-import { updateQueryResults, queryFailed } from './actions';
+import { ActionType, updateQueryResults, queryFailed } from './actions';
 import { selectQuery } from './selectors';
 import api from './queryApi';
 
@@ -16,10 +15,10 @@ function* performSearch(action) {
 }
 
 export default function* mySaga() {
-    yield takeEvery(constants.ADVANCED_QUERY_UPDATE, performSearch);
-    yield takeEvery(constants.ADVANCED_HIGHLIGHT_UPDATE, performSearch);
-    yield takeEvery(constants.STRUCTURED_QUERY_KIND_UPDATE, performSearch);
-    yield takeEvery(constants.LAYER_NAME_UPDATE, performSearch);
-    yield takeEvery(constants.TERM_NAME_UPDATE, performSearch);
-    yield takeEvery(constants.TERM_VALUE_UPDATE, performSearch);
+    yield takeEvery(ActionType.AdvancedQueryUpdate, performSearch);
+    yield takeEvery(ActionType.AdvancedHighlightUpdate, performSearch);
+    yield takeEvery(ActionType.StructuredQueryKindUpdate, performSearch);
+    yield takeEvery(ActionType.LayerNameUpdate, performSearch);
+    yield takeEvery(ActionType.TermNameUpdate, performSearch);
+    yield takeEvery(ActionType.TermValueUpdate, performSearch);
 }
