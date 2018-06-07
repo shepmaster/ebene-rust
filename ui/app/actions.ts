@@ -1,15 +1,15 @@
 import { Kind } from './types';
 
 export enum ActionType {
-    QueryToggle = 'QUERY_TOGGLE',
-    AdvancedQueryUpdate = 'ADVANCED_QUERY_UPDATE',
     AdvancedHighlightUpdate = 'ADVANCED_HIGHLIGHT_UPDATE',
-    QueryResults = 'QUERY_RESULTS',
-    StructuredQueryKindUpdate = 'STRUCTURED_QUERY_KIND_UPDATE',
+    AdvancedQueryUpdate = 'ADVANCED_QUERY_UPDATE',
+    HighlightAdd = 'HIGHLIGHT_ADD',
     LayerNameUpdate = 'LAYER_NAME_UPDATE',
+    QueryResults = 'QUERY_RESULTS',
+    QueryToggle = 'QUERY_TOGGLE',
+    StructuredQueryKindUpdate = 'STRUCTURED_QUERY_KIND_UPDATE',
     TermNameUpdate = 'TERM_NAME_UPDATE',
     TermValueUpdate = 'TERM_VALUE_UPDATE',
-    HighlightAdd = 'HIGHLIGHT_ADD',
 }
 
 interface SuccessAction<T extends string> { type: T, error: undefined }
@@ -60,16 +60,16 @@ export const highlightAdd = (index: number) =>
     createAction(ActionType.HighlightAdd, { index });
 
 export type Action =
-    | ReturnType<typeof toggleAdvanced>
-    | ReturnType<typeof updateAdvancedQuery>
-    | ReturnType<typeof updateAdvancedHighlight>
-    | ReturnType<typeof updateQueryResults>
+    | ReturnType<typeof highlightAdd>
     | ReturnType<typeof queryFailed>
+    | ReturnType<typeof toggleAdvanced>
+    | ReturnType<typeof updateAdvancedHighlight>
+    | ReturnType<typeof updateAdvancedQuery>
     | ReturnType<typeof updateKind>
     | ReturnType<typeof updateLayerName>
+    | ReturnType<typeof updateQueryResults>
     | ReturnType<typeof updateTermName>
     | ReturnType<typeof updateTermValue>
-    | ReturnType<typeof highlightAdd>
     ;
 
 export const retarget = (action, target: string) => (...args) => {
