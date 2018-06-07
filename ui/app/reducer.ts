@@ -1,6 +1,6 @@
 import { combineReducers } from 'redux';
-import constants from './constants';
 
+import { ActionType, Action, Kind } from './actions';
 
 // --- Higher order reducers
 
@@ -8,8 +8,8 @@ const initial = (reducer, initialState) => (state = initialState, action) => (
     reducer(state, action)
 );
 
-const forTarget = (reducer, expectedTarget) => (state, action) => {
-    if (action.target == expectedTarget) {
+const forTarget = (reducer, expectedTarget: string) => (state, action) => {
+    if (action.payload && action.payload.target === expectedTarget) {
         return reducer(state, action);
     } else {
         return state;
@@ -17,7 +17,7 @@ const forTarget = (reducer, expectedTarget) => (state, action) => {
 };
 
 const forTargetIndex = (reducer) => (state, action) => {
-    const index = action.targetIndex;
+    const index = action.payload.targetIndex;
     const result = reducer(state[index], action);
     const newState = state.slice();
     newState.splice(index, 1, result);
@@ -31,14 +31,14 @@ const initialAdvState = {
     highlight: '[{"Term": {"name": "ident", "value": "pm"}}]',
 };
 
-function advancedReducer(state = initialAdvState, action) {
+function advancedReducer(state = initialAdvState, action: Action) {
     switch (action.type) {
-        case constants.ADVANCED_QUERY_UPDATE: {
-            const { query } = action;
+        case ActionType.AdvancedQueryUpdate: {
+            const { query } = action.payload;
             return { ...state, query };
         }
-        case constants.ADVANCED_HIGHLIGHT_UPDATE: {
-            const { highlight } = action;
+        case ActionType.AdvancedHighlightUpdate: {
+            const { highlight } = action.payload;
             return { ...state, highlight };
         }
         default:
@@ -46,39 +46,43 @@ function advancedReducer(state = initialAdvState, action) {
     }
 };
 
-function isAdvancedReducer(state = false, action) {
+function isAdvancedReducer(state = false, action: Action) {
     switch (action.type) {
-        case constants.QUERY_TOGGLE:
+        case ActionType.QueryToggle:
             return !state;
         default:
             return state;
     }
 }
 
-function resultsReducer(state = [], action) {
+function resultsReducer(state = [], action: Action) {
     switch (action.type) {
-        case constants.QUERY_RESULTS_SUCCESS:
-            return action.results;
+        case ActionType.QueryResults:
+            if (!action.error) {
+                return action.payload.results;
+            } else {
+                return state;
+            }
         default:
             return state;
     }
 }
 
 const initialStructuredQuery = {
-    0: { kind: 'Containing', lhs: 1, rhs: 2 },
-    1: { kind: 'Layer', name: 'function' },
-    2: { kind: 'Term', name: 'ident', value: 'pm' },
+    0: { kind: Kind.Containing, lhs: 1, rhs: 2 },
+    1: { kind: Kind.Layer, name: 'function' },
+    2: { kind: Kind.Term, name: 'ident', value: 'pm' },
 };
 
-const makeNothing: () => Nothing = () => ({ kind: 'Nothing' });
+const makeNothing: () => Nothing = () => ({ kind: Kind.Nothing });
 
-function structuredQueryReducer(state, action) {
-    const { id, target } = action;
-    const old = state[id];
+function structuredQueryReducer(state, action: Action) {
 
     switch (action.type) {
-        case constants.STRUCTURED_QUERY_KIND_UPDATE: {
-            const { kind } = action;
+        case ActionType.StructuredQueryKindUpdate: {
+            const { kind, id } = action.payload;
+            const old = state[id];
+
             if (old.lhs === undefined || old.rhs === undefined) {
                 const lhs = Object.keys(state).length;
                 const rhs = lhs + 1;
@@ -92,16 +96,22 @@ function structuredQueryReducer(state, action) {
                 return { ...state, [id]: { ...old, kind } };
             }
         }
-        case constants.LAYER_NAME_UPDATE: {
-            const { name } = action;
+        case ActionType.LayerNameUpdate: {
+            const { name, id } = action.payload;
+            const old = state[id];
+
             return { ...state, [id]: { ...old, name } };
         }
-        case constants.TERM_NAME_UPDATE: {
-            const { name } = action;
+        case ActionType.TermNameUpdate: {
+            const { name, id } = action.payload;
+            const old = state[id];
+
             return { ...state, [id]: { ...old, name } };
         }
-        case constants.TERM_VALUE_UPDATE: {
-            const { value } = action;
+        case ActionType.TermValueUpdate: {
+            const { value, id } = action.payload;
+            const old = state[id];
+
             return { ...state, [id]: { ...old, value } };
         }
         default:
@@ -112,25 +122,25 @@ function structuredQueryReducer(state, action) {
 type QueryItem = Term | Containing | Layer | Nothing;
 
 interface Term {
-    kind: 'Term',
+    kind: Kind.Term,
     name: string,
     value: string,
 }
 
 // Probably too specific
 interface Containing {
-    kind: 'Containing',
+    kind: Kind.Containing,
     lhs: QueryItem,
     rhs: QueryItem,
 }
 
 interface Layer {
-    kind: 'Layer',
+    kind: Kind.Layer,
     name: string,
 }
 
 interface Nothing {
-    kind: 'Nothing',
+    kind: Kind.Nothing,
 }
 
 interface QueryItems {
@@ -138,14 +148,14 @@ interface QueryItems {
 }
 
 const initialStructuredHighlight: QueryItems[] = [{
-    0: { kind: 'Term', name: 'ident', value: 'pm' },
+    0: { kind: Kind.Term, name: 'ident', value: 'pm' },
 }];
 
 const structuredHighlightReducer = forTarget(forTargetIndex(structuredQueryReducer), 'highlight');
-function structuredHighlightsReducer(state = initialStructuredHighlight, action) {
+function structuredHighlightsReducer(state = initialStructuredHighlight, action: Action) {
     switch (action.type) {
-        case constants.HIGHLIGHT_ADD: {
-            const { index } = action;
+        case ActionType.HighlightAdd: {
+            const { index } = action.payload;
             const newState = state.slice();
             newState.splice(index + 1, 0, { 0: makeNothing() });
             return newState;
