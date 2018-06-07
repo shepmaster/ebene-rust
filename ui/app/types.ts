@@ -10,3 +10,13 @@ export enum Kind {
     BothOf = 'BothOf',
     FollowedBy = 'FollowedBy',
 }
+
+export type BinaryKind =
+    | Kind.BothOf
+    | Kind.ContainedIn
+    | Kind.Containing
+    | Kind.FollowedBy
+    | Kind.NotContainedIn
+    | Kind.NotContaining
+    | Kind.OneOf
+    ;

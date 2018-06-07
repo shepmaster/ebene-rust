@@ -1,3 +1,17 @@
+import { Kind, BinaryKind } from './types';
+
+type QueryTerm = BinaryQueryTerm | OtherQueryTerm;
+
+interface BinaryQueryTerm {
+    kind: BinaryKind,
+    lhs: number;
+    rhs: number;
+}
+
+interface OtherQueryTerm {
+    kind: Kind.Layer | Kind.Nothing | Kind.Term,
+}
+
 export function selectQuery(state) {
     if (state.isAdvanced) {
         const { query, highlight } = state.advanced;
@@ -16,38 +30,45 @@ export function selectQuery(state) {
     };
 }
 
-function selectTreeQueryForApi(queryList) {
-    function treeify(id) {
-        let { kind, ...rest } = queryList[id];
-        switch (kind) {
-            case 'Containing':
-            case 'ContainedIn':
-            case 'NotContaining':
-            case 'NotContainedIn':
-            case 'OneOf':
-            case 'BothOf':
-            case 'FollowedBy':
-                return { [kind]: [treeify(rest.lhs), treeify(rest.rhs)] };
-            default:
-                return { [kind]: rest };
+function selectTreeQueryForApi(queryList: QueryTerm[]) {
+    function treeify(id: number) {
+        let thisQuery = queryList[id];
+
+        switch (thisQuery.kind) {
+            case Kind.Containing:
+            case Kind.ContainedIn:
+            case Kind.NotContaining:
+            case Kind.NotContainedIn:
+            case Kind.OneOf:
+            case Kind.BothOf:
+            case Kind.FollowedBy: {
+                let { lhs, rhs } = thisQuery;
+                return { [thisQuery.kind]: [treeify(lhs), treeify(rhs)] };
+            }
+            case Kind.Nothing:
+                return "Nothing";
+            default: {
+                const { kind, ...rest } = thisQuery;
+                return { [thisQuery.kind]: rest };
+            }
         };
     }
 
     return treeify(0);
 }
 
-export function selectTreeQuery(queryList) {
-    function treeify(id) {
+export function selectTreeQuery(queryList: QueryTerm[]) {
+    function treeify(id: number) {
         const thisQuery = queryList[id];
 
         switch (thisQuery.kind) {
-            case 'Containing':
-            case 'ContainedIn':
-            case 'NotContaining':
-            case 'NotContainedIn':
-            case 'OneOf':
-            case 'BothOf':
-            case 'FollowedBy':
+            case Kind.Containing:
+            case Kind.ContainedIn:
+            case Kind.NotContaining:
+            case Kind.NotContainedIn:
+            case Kind.OneOf:
+            case Kind.BothOf:
+            case Kind.FollowedBy:
                 return { ...thisQuery, id, lhs: treeify(thisQuery.lhs), rhs: treeify(thisQuery.rhs) };
             default:
                 return { ...thisQuery, id };
