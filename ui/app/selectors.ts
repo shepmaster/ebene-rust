@@ -59,3 +59,6 @@ export function selectTreeQuery(queryList) {
 
 export const selectAvailableTerms = (state) => state.available.terms;
 export const selectAvailableLayers = (state) => state.available.layers;
+
+export const selectTermValid = (state, term) => selectAvailableTerms(state).includes(term);
+export const selectLayerValid = (state, layer) => selectAvailableLayers(state).includes(layer);

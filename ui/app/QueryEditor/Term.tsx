@@ -1,13 +1,14 @@
 import * as React from 'react';
 import { connect } from 'react-redux';
 
-import { selectAvailableTerms } from '../selectors';
+import { selectTermValid, selectAvailableTerms } from '../selectors';
 import SelectKind from './SelectKind';
 
-const Term = ({ id, kind, name, value, terms, handlers: { onKindChange, onTermNameChange, onTermValueChange } }) => (
+const Term = ({ id, kind, name, value, terms, isValid, handlers: { onKindChange, onTermNameChange, onTermValueChange, } }) => (
     <div>
         <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-        <select value={value} onChange={e => onTermNameChange(id, e.target.value)}>
+        <select value={name} onChange={e => onTermNameChange(id, e.target.value)}>
+            {!isValid && <option value="">Select...</option>}
             {terms.map((term) => (<option key={term}>{term}</option>))}
         </select>
         :
@@ -15,7 +16,8 @@ const Term = ({ id, kind, name, value, terms, handlers: { onKindChange, onTermNa
     </div >
 );
 
-const mapStateToProps = (state) => ({
+const mapStateToProps = (state, props) => ({
+    isValid: selectTermValid(state, props.name),
     terms: selectAvailableTerms(state),
 });
 
