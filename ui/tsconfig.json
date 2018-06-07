@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "outDir": "./dist/",
+    "baseUrl": "./",
+    "paths": {
+      "app": ["app"]
+    },
     "sourceMap": true,
     "noImplicitAny": false,
     "module": "commonjs",
