@@ -1,18 +1,30 @@
 import * as React from 'react';
 import { connect } from 'react-redux';
 
+import { QueryResult } from 'app/types';
+import { State } from 'app/reducer';
+import { toggleAdvanced } from 'app/actions';
+
 import AdvancedInput from './AdvancedInput';
+import HighlightBuilder from './HighlightBuilder';
 import QueryBuilder from './QueryBuilder';
 import ResultList from './ResultList';
-import { toggleAdvanced } from './actions';
 
-import HighlightBuilder from './HighlightBuilder';
+interface InputProps {
+    isAdvanced: boolean;
+}
 
-const Input = ({ isAdvanced }) => (
+const Input: React.SFC<InputProps> = ({ isAdvanced }) => (
     isAdvanced ? <AdvancedInput /> : <div><QueryBuilder /><HighlightBuilder /></div>
 );
 
-const Page = ({ isAdvanced, results, toggleAdvanced }) => (
+interface PageProps {
+    isAdvanced: boolean;
+    results: QueryResult[];
+    toggleAdvanced: () => any;
+}
+
+const Page: React.SFC<PageProps> = ({ isAdvanced, results, toggleAdvanced }) => (
     <div>
         <button onClick={toggleAdvanced}>Mode</button>
         <Input isAdvanced={isAdvanced} />
@@ -20,16 +32,16 @@ const Page = ({ isAdvanced, results, toggleAdvanced }) => (
     </div>
 );
 
-const mapStateToProps = ({ isAdvanced, results }) => ({
+const mapStateToProps = ({ isAdvanced, results }: State) => ({
     isAdvanced,
     results,
 });
 
-const mapDispatchToProps = (dispatch) => ({
-    toggleAdvanced: () => dispatch(toggleAdvanced()),
-});
+const mapDispatchToProps = {
+    toggleAdvanced,
+};
 
 export default connect(
     mapStateToProps,
-    mapDispatchToProps
+    mapDispatchToProps,
 )(Page);
