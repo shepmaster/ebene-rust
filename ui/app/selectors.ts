@@ -1,18 +1,7 @@
-import { Kind, BinaryKind } from './types';
+import { Kind, BinaryKind, FlatQueryItems } from './types';
+import { State } from './reducer';
 
-type QueryTerm = BinaryQueryTerm | OtherQueryTerm;
-
-interface BinaryQueryTerm {
-    kind: BinaryKind,
-    lhs: number;
-    rhs: number;
-}
-
-interface OtherQueryTerm {
-    kind: Kind.Layer | Kind.Nothing | Kind.Term,
-}
-
-export function selectQuery(state) {
+export function selectQuery(state: State) {
     if (state.isAdvanced) {
         const { query, highlight } = state.advanced;
         return {
@@ -30,7 +19,7 @@ export function selectQuery(state) {
     };
 }
 
-function selectTreeQueryForApi(queryList: QueryTerm[]) {
+function selectTreeQueryForApi(queryList: FlatQueryItems) {
     function treeify(id: number) {
         let thisQuery = queryList[id];
 
@@ -57,7 +46,7 @@ function selectTreeQueryForApi(queryList: QueryTerm[]) {
     return treeify(0);
 }
 
-export function selectTreeQuery(queryList: QueryTerm[]) {
+export function selectTreeQuery(queryList: FlatQueryItems) {
     function treeify(id: number) {
         const thisQuery = queryList[id];
 
@@ -78,8 +67,10 @@ export function selectTreeQuery(queryList: QueryTerm[]) {
     return treeify(0);
 }
 
-export const selectAvailableTerms = (state) => state.available.terms;
-export const selectAvailableLayers = (state) => state.available.layers;
+export const selectAvailableTerms = (state: State) => state.available.terms;
+export const selectAvailableLayers = (state: State) => state.available.layers;
 
-export const selectTermValid = (state, term) => selectAvailableTerms(state).includes(term);
-export const selectLayerValid = (state, layer) => selectAvailableLayers(state).includes(layer);
+export const selectTermValid = (state: State, term: string) =>
+    selectAvailableTerms(state).includes(term);
+export const selectLayerValid = (state: State, layer: string) =>
+    selectAvailableLayers(state).includes(layer);

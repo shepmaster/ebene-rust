@@ -23,7 +23,17 @@ export type BinaryKind =
 
 export const makeNothing: () => FlatNothing = () => ({ kind: Kind.Nothing });
 
-export type FlatQueryItem = FlatTerm | FlatBinary | FlatLayer | FlatNothing;
+export type FlatQueryItem =
+    | FlatTerm
+    | FlatBinary<Kind.Containing>
+    | FlatBinary<Kind.ContainedIn>
+    | FlatBinary<Kind.NotContaining>
+    | FlatBinary<Kind.NotContainedIn>
+    | FlatBinary<Kind.OneOf>
+    | FlatBinary<Kind.BothOf>
+    | FlatBinary<Kind.FollowedBy>
+    | FlatLayer
+    | FlatNothing;
 
 export interface FlatTerm {
     kind: Kind.Term,
@@ -31,8 +41,8 @@ export interface FlatTerm {
     value: string,
 }
 
-export interface FlatBinary {
-    kind: Kind.Containing,
+export interface FlatBinary<T extends Kind> {
+    kind: T,
     lhs: number,
     rhs: number,
 }
