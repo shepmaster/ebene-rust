@@ -1,4 +1,4 @@
-import { Kind } from './types';
+import { Kind, QueryResult } from './types';
 
 export enum ActionType {
     AdvancedHighlightUpdate = 'ADVANCED_HIGHLIGHT_UPDATE',
@@ -40,7 +40,7 @@ export const updateAdvancedQuery = (query: string) =>
 export const updateAdvancedHighlight = (highlight: string) =>
     createAction(ActionType.AdvancedHighlightUpdate, { highlight });
 
-export const updateQueryResults = (results) =>
+export const updateQueryResults = (results: QueryResult[]) =>
     createAction(ActionType.QueryResults, { results });
 
 export const queryFailed = (message: string) =>
@@ -61,10 +61,10 @@ export const updateTermValue = (id: number, value: string) =>
 export const highlightAdd = (index: number) =>
     createAction(ActionType.HighlightAdd, { index });
 
-export const updateAvailableLayers = (layers) =>
+export const updateAvailableLayers = (layers: string[]) =>
     createAction(ActionType.AvailableLayersUpdate, { layers });
 
-export const updateAvailableTerms = (terms) =>
+export const updateAvailableTerms = (terms: string[]) =>
     createAction(ActionType.AvailableTermsUpdate, { terms });
 
 export type Action =
