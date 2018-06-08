@@ -60,4 +60,9 @@ export interface FlatQueryItems {
     [index: number]: FlatQueryItem;
 }
 
-export interface QueryResult { }
+export type Extents = [number, number][];
+
+export interface QueryResult {
+    text: string;
+    highlights: Extents[];
+}
