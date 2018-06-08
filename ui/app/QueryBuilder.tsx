@@ -2,11 +2,13 @@ import * as React from 'react';
 import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
 
-import QueryEditor from './QueryEditor';
-import { selectTreeQuery } from './selectors';
-import { updateKind, updateLayerName, updateTermName, updateTermValue, retarget } from './actions';
+import { selectTreeQuery } from 'app/selectors';
+import { updateKind, updateLayerName, updateTermName, updateTermValue, retarget } from 'app/actions';
 
-const mapStateToProps = (state) => selectTreeQuery(state.structuredQuery);
+import QueryEditor from './QueryEditor';
+import { State } from './reducer';
+
+const mapStateToProps = (state: State) => selectTreeQuery(state.structuredQuery);
 
 const targetMe = (action) => retarget(action, 'query');
 
