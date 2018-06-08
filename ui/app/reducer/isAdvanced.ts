@@ -1,6 +1,8 @@
 import { ActionType, Action } from 'app/actions';
 
-export default function isAdvanced(state = false, action: Action) {
+export type State = boolean;
+
+export default function isAdvanced(state = false, action: Action): State {
     switch (action.type) {
         case ActionType.QueryToggle:
             return !state;

@@ -1,4 +1,4 @@
-import { Kind, makeNothing } from 'app/types';
+import { Kind, makeNothing, FlatQueryItems } from 'app/types';
 import { ActionType, Action } from 'app/actions';
 
 import { initial, forTarget, forTargetIndex } from './higherOrder';
@@ -45,7 +45,9 @@ export function rawReducer(state, action: Action) {
     }
 }
 
-const initialStructuredQuery = {
+export type State = FlatQueryItems;
+
+const initialStructuredQuery: State = {
     0: { kind: Kind.Containing, lhs: 1, rhs: 2 },
     1: { kind: Kind.Layer, name: 'function' },
     2: { kind: Kind.Term, name: 'ident', value: 'pm' },

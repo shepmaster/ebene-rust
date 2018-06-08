@@ -49,3 +49,5 @@ export interface FlatNothing {
 export interface FlatQueryItems {
     [index: number]: FlatQueryItem;
 }
+
+export interface QueryResult { }

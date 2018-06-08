@@ -6,11 +6,13 @@ import { rawReducer } from './structuredQuery';
 
 const structuredHighlightReducer = forTarget(forTargetIndex(rawReducer), 'highlight');
 
-const initialStructuredHighlight: FlatQueryItems[] = [{
+export type State = FlatQueryItems[];
+
+const initialStructuredHighlight: State = [{
     0: { kind: Kind.Term, name: 'ident', value: 'pm' },
 }];
 
-export default function structuredHighlightsReducer(state = initialStructuredHighlight, action: Action) {
+export default function structuredHighlightsReducer(state = initialStructuredHighlight, action: Action): State {
     switch (action.type) {
         case ActionType.HighlightAdd: {
             const { index } = action.payload;

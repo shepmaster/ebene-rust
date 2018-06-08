@@ -1,6 +1,11 @@
 import { ActionType, Action } from 'app/actions';
+import { QueryResult } from 'app/types';
 
-export default function results(state = [], action: Action) {
+export type State = QueryResult[];
+
+const initialState: State = []
+
+export default function results(state = initialState, action: Action): State {
     switch (action.type) {
         case ActionType.QueryResults:
             if (!action.error) {

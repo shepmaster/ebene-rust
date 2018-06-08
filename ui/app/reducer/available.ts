@@ -1,11 +1,16 @@
 import { ActionType, Action } from 'app/actions';
 
-const initialState = {
+export interface State {
+    layers: string[];
+    terms: string[];
+}
+
+const initialState: State = {
     layers: [],
     terms: [],
 };
 
-export default function available(state = initialState, action: Action) {
+export default function available(state = initialState, action: Action): State {
     switch (action.type) {
         case ActionType.AvailableLayersUpdate: {
             return { ...state, layers: action.payload.layers };

@@ -1,11 +1,16 @@
 import { ActionType, Action } from 'app/actions';
 
-const initialState = {
+export interface State {
+    query: string;
+    highlight: string;
+}
+
+const initialState: State = {
     query: '{"Layer": {"name": "function"}}',
     highlight: '[{"Term": {"name": "ident", "value": "pm"}}]',
 };
 
-export default function advanced(state = initialState, action: Action) {
+export default function advanced(state = initialState, action: Action): State {
     switch (action.type) {
         case ActionType.AdvancedQueryUpdate: {
             const { query } = action.payload;
