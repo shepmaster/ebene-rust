@@ -1,29 +1,13 @@
 import * as React from 'react';
 
-import { Kind } from './types';
+import { Kind, TreeQueryItem } from 'app/types';
+
+import { QueryEventHandlers } from './QueryEditor/types';
+import BinaryComponent from './QueryEditor/BinaryComponent';
+import Layer from './QueryEditor/Layer';
+import Nothing from './QueryEditor/Nothing';
 import SelectKind from './QueryEditor/SelectKind';
 import Term from './QueryEditor/Term';
-import Layer from './QueryEditor/Layer';
-
-const Nothing = ({ id, kind, handlers: { onKindChange } }) => (
-    <div>
-        <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-    </div>
-);
-
-const BinaryComponent = ({ id, kind, lhs, rhs, handlers }) => {
-    const { onKindChange } = handlers;
-
-    return (
-        <div>
-            <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-            <div className="structured-query__child">
-                <QueryEditor handlers={handlers} {...lhs} />
-                <QueryEditor handlers={handlers} {...rhs} />
-            </div>
-        </div>
-    );
-};
 
 const mapKindToComponent = {
     [Kind.Nothing]: Nothing,
@@ -38,7 +22,11 @@ const mapKindToComponent = {
     [Kind.FollowedBy]: BinaryComponent,
 };
 
-const QueryEditor = (props) => {
+interface QueryEditorProps {
+    handlers: QueryEventHandlers,
+}
+
+const QueryEditor: React.SFC<QueryEditorProps & TreeQueryItem> = (props) => {
     const Component = mapKindToComponent[props.kind];
     return (
         <div className="structured-query">

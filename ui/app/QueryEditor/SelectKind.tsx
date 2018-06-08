@@ -1,17 +1,20 @@
 import * as React from 'react';
 
 import { Kind } from '../types';
+import { QueryEventHandlers } from './types';
 
-const SelectKind = ({ id, kind, onKindChange }) => {
-    const options = Object.values(Kind).map((name, i) => (
-        <option key={i} value={name}>{name}</option>
-    ));
+interface SelectKindProps {
+    id: number,
+    kind: Kind,
+    onKindChange: QueryEventHandlers['onKindChange'];
+}
 
-    return (
-        <select value={kind} onChange={e => onKindChange(id, e.target.value)}>
-            {options}
-        </select>
-    );
-};
+const SelectKind: React.SFC<SelectKindProps> = ({ id, kind, onKindChange }) => (
+    <select value={kind} onChange={e => onKindChange(id, e.target.value as Kind)}>
+        {Object.values(Kind).map(name => (
+            <option key={name} value={name}>{name}</option>
+        ))}
+    </select>
+);
 
 export default SelectKind;

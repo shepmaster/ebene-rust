@@ -21,7 +21,7 @@ export type BinaryKind =
     | Kind.OneOf
     ;
 
-export const makeNothing: () => FlatNothing = () => ({ kind: Kind.Nothing });
+// The flat query is stored in the state and is a flat mapping of ID number to data
 
 export type FlatQueryItem =
     | FlatTerm
@@ -52,12 +52,53 @@ export interface FlatLayer {
     name: string,
 }
 
+export const makeNothing: () => FlatNothing = () => ({ kind: Kind.Nothing });
+
 export interface FlatNothing {
     kind: Kind.Nothing,
 }
 
 export interface FlatQueryItems {
     [index: number]: FlatQueryItem;
+}
+
+// The tree query is used by the UI and reflects the recursive structure
+
+export type TreeQueryItem =
+    | TreeTerm
+    | TreeBinary<Kind.Containing>
+    | TreeBinary<Kind.ContainedIn>
+    | TreeBinary<Kind.NotContaining>
+    | TreeBinary<Kind.NotContainedIn>
+    | TreeBinary<Kind.OneOf>
+    | TreeBinary<Kind.BothOf>
+    | TreeBinary<Kind.FollowedBy>
+    | TreeLayer
+    | TreeNothing;
+
+export interface TreeTerm {
+    id: number,
+    kind: Kind.Term,
+    name: string,
+    value: string,
+}
+
+export interface TreeBinary<T extends Kind> {
+    id: number,
+    kind: T,
+    lhs: TreeQueryItem,
+    rhs: TreeQueryItem,
+}
+
+export interface TreeLayer {
+    id: number,
+    kind: Kind.Layer,
+    name: string,
+}
+
+export interface TreeNothing {
+    id: number,
+    kind: Kind.Nothing,
 }
 
 export type Extents = [number, number][];

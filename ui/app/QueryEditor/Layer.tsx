@@ -1,20 +1,33 @@
 import * as React from 'react';
 import { connect } from 'react-redux';
 
-import { selectAvailableLayers, selectLayerValid } from '../selectors';
-import SelectKind from './SelectKind';
+import { Kind } from 'app/types';
+import { selectAvailableLayers, selectLayerValid } from 'app/selectors';
+import { State } from 'app/reducer';
 
-const Layer = ({ id, kind, name, layers, isValid, handlers: { onKindChange, onLayerChange } }) => (
+import SelectKind from './SelectKind';
+import { QueryEventHandlers } from './types';
+
+interface LayerProps {
+    id: number,
+    kind: Kind,
+    name: string,
+    layers: string[],
+    isValid: boolean,
+    handlers: QueryEventHandlers,
+}
+
+const Layer: React.SFC<LayerProps> = ({ id, kind, name, layers, isValid, handlers }) => (
     <div>
-        <SelectKind id={id} kind={kind} onKindChange={onKindChange} />
-        <select value={name} onChange={e => onLayerChange(id, e.target.value)}>
+        <SelectKind id={id} kind={kind} onKindChange={handlers.onKindChange} />
+        <select value={name} onChange={e => handlers.onLayerChange(id, e.target.value)}>
             {!isValid && <option value="">Select...</option>}
             {layers.map((layer) => (<option key={layer}>{layer}</option>))}
         </select>
     </div>
 );
 
-const mapStateToProps = (state, props) => ({
+const mapStateToProps = (state: State, props) => ({
     isValid: selectLayerValid(state, props.name),
     layers: selectAvailableLayers(state),
 });
