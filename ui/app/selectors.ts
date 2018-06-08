@@ -1,4 +1,4 @@
-import { Kind, BinaryKind, FlatQueryItems } from './types';
+import { Kind, BinaryKind, FlatQueryItems, TreeQueryItem } from './types';
 import { State } from './reducer';
 
 export function selectQuery(state: State) {
@@ -47,7 +47,7 @@ function selectTreeQueryForApi(queryList: FlatQueryItems) {
 }
 
 export function selectTreeQuery(queryList: FlatQueryItems) {
-    function treeify(id: number) {
+    function treeify(id: number): TreeQueryItem {
         const thisQuery = queryList[id];
 
         switch (thisQuery.kind) {
