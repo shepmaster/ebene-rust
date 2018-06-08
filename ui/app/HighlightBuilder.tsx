@@ -1,26 +1,43 @@
 import * as React from 'react';
 import { connect } from 'react-redux';
-import { bindActionCreators } from 'redux';
+import { bindActionCreators, Dispatch } from 'redux';
+
+import { selectTreeQuery } from 'app/selectors';
+import {
+    highlightAdd,
+    retarget,
+    retargetIndex,
+    updateKind,
+    updateLayerName,
+    updateTermName,
+    updateTermValue,
+} from 'app/actions';
+import { State } from 'app/reducer';
+import { TreeQueryItem } from 'app/types';
 
 import QueryEditor from './QueryEditor';
-import { selectTreeQuery } from './selectors';
-import {
-    updateKind, updateLayerName, updateTermName, updateTermValue,
-    highlightAdd,
-    retarget, retargetIndex
-} from './actions';
+import { QueryEventHandlers } from './QueryEditor/types';
+
+type HighlightOneUnconnectedProps = TreeQueryItem & HighlightOwnProps & {
+    onAddHighlight: () => any,
+    handlers: QueryEventHandlers,
+}
 
 // Extracting `index` to prevent passing it down further
-const HighlightOneUnconnected = ({ index, onAddHighlight, ...props }) => (
+const HighlightOneUnconnected: React.SFC<HighlightOneUnconnectedProps> = ({ index, onAddHighlight, ...props }) => (
     <div>
         <button onClick={onAddHighlight} />
         <QueryEditor {...props} />
     </div>
 );
 
-const targetMe = (action, index) => retarget(retargetIndex(action, index), 'highlight');
+const targetMe = (action, index: number) => retarget(retargetIndex(action, index), 'highlight');
 
-const mapDispatchToProps = (dispatch, { index }) => ({
+interface HighlightOwnProps {
+    index: number;
+}
+
+const mapDispatchToProps = (dispatch: Dispatch, { index }: HighlightOwnProps) => ({
     handlers: bindActionCreators({
         onKindChange: targetMe(updateKind, index),
         onLayerChange: targetMe(updateLayerName, index),
@@ -36,13 +53,17 @@ const HighlightOne = connect(
 )(HighlightOneUnconnected);
 
 
+interface HighlightsProps {
+    highlights: TreeQueryItem[];
+}
 
-const Highlights = ({ highlights }) => {
-    const rendered = highlights.map((h, i) => <HighlightOne key={i} index={i} {...h} />);
-    return <div>{rendered}</div>;
-};
+const Highlights: React.SFC<HighlightsProps> = ({ highlights }) => (
+    <div>
+        {highlights.map((h, i) => <HighlightOne key={i} index={i} {...h} />)}
+    </div>
+);
 
-const mapStateToProps = (state) => ({
+const mapStateToProps = (state: State) => ({
     highlights: state.structuredHighlights.map(selectTreeQuery),
 });
 
