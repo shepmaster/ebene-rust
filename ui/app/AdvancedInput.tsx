@@ -7,8 +7,8 @@ import { State } from 'app/reducer';
 interface AdvancedInputProps {
     query: string;
     highlight: string;
-    onQueryChange: (string) => any;
-    onHighlightChange: (string) => any;
+    onQueryChange: (_: string) => any;
+    onHighlightChange: (_: string) => any;
 }
 
 const AdvancedInput: React.SFC<AdvancedInputProps> = ({ query, highlight, onQueryChange, onHighlightChange }) => (

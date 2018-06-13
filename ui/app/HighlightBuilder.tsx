@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { connect } from 'react-redux';
-import { bindActionCreators, Dispatch } from 'redux';
+import { bindActionCreators, Dispatch, ActionCreator } from 'redux';
 
 import { selectTreeQuery } from 'app/selectors';
 import {
@@ -11,6 +11,7 @@ import {
     updateLayerName,
     updateTermName,
     updateTermValue,
+    Action,
 } from 'app/actions';
 import { State } from 'app/reducer';
 import { TreeQueryItem } from 'app/types';
@@ -31,7 +32,7 @@ const HighlightOneUnconnected: React.SFC<HighlightOneUnconnectedProps> = ({ inde
     </div>
 );
 
-const targetMe = (action, index: number) => withTarget(withTargetIndex(action, index), 'highlight');
+const targetMe = (action: ActionCreator<Action>, index: number) => withTarget(withTargetIndex(action, index), 'highlight');
 
 interface HighlightOwnProps {
     index: number;

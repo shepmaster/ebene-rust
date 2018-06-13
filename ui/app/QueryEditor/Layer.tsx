@@ -8,10 +8,9 @@ import { State } from 'app/reducer';
 import SelectKind from './SelectKind';
 import { QueryEventHandlers } from './types';
 
-interface LayerProps {
+interface LayerProps extends LayerOwnProps {
     id: number,
     kind: Kind,
-    name: string,
     layers: string[],
     isValid: boolean,
     handlers: QueryEventHandlers,
@@ -27,7 +26,11 @@ const Layer: React.SFC<LayerProps> = ({ id, kind, name, layers, isValid, handler
     </div>
 );
 
-const mapStateToProps = (state: State, props) => ({
+interface LayerOwnProps {
+    name: string;
+}
+
+const mapStateToProps = (state: State, props: LayerOwnProps) => ({
     isValid: selectLayerValid(state, props.name),
     layers: selectAvailableLayers(state),
 });

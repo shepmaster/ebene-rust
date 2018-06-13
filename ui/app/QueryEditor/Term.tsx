@@ -6,11 +6,11 @@ import { Kind } from 'app/types';
 
 import SelectKind from './SelectKind';
 import { QueryEventHandlers } from './types';
+import { State } from '../reducer';
 
-interface TermProps {
+interface TermProps extends TermOwnProps {
     id: number,
     kind: Kind,
-    name: string,
     value: string,
     terms: string[],
     isValid: boolean,
@@ -29,7 +29,11 @@ const Term: React.SFC<TermProps> = ({ id, kind, name, value, terms, isValid, han
     </div >
 );
 
-const mapStateToProps = (state, props) => ({
+interface TermOwnProps {
+    name: string,
+}
+
+const mapStateToProps = (state: State, props: TermOwnProps) => ({
     isValid: selectTermValid(state, props.name),
     terms: selectAvailableTerms(state),
 });
