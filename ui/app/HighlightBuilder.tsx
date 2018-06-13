@@ -5,8 +5,8 @@ import { bindActionCreators, Dispatch } from 'redux';
 import { selectTreeQuery } from 'app/selectors';
 import {
     highlightAdd,
-    retarget,
-    retargetIndex,
+    withTarget,
+    withTargetIndex,
     updateKind,
     updateLayerName,
     updateTermName,
@@ -31,7 +31,7 @@ const HighlightOneUnconnected: React.SFC<HighlightOneUnconnectedProps> = ({ inde
     </div>
 );
 
-const targetMe = (action, index: number) => retarget(retargetIndex(action, index), 'highlight');
+const targetMe = (action, index: number) => withTarget(withTargetIndex(action, index), 'highlight');
 
 interface HighlightOwnProps {
     index: number;

@@ -14,21 +14,37 @@ export enum ActionType {
     TermValueUpdate = 'TERM_VALUE_UPDATE',
 }
 
-interface SuccessAction<T extends string> { type: T, error: undefined }
-interface SuccessActionPayload<T extends string, P> { type: T, payload: P, error: undefined }
-interface ErrorAction<T extends string> { type: T, error: true }
-interface ErrorActionPayload<T extends string, P> { type: T, payload: P, error: true }
+// The general shape of any possible Redux action. More complicated
+// than the upstream version to allow a specific type for the type
+// property.
+export interface FluxStandardAction<T extends string, Payload, Meta = undefined> {
+    type: T;
+    payload?: Payload;
+    error?: boolean;
+    meta?: Meta;
+}
 
-function createAction<T extends string, P>(type: T): SuccessAction<T>
-function createAction<T extends string, P>(type: T, payload: P): SuccessActionPayload<T, P>
-function createAction<T extends string, P>(type: T, payload?: P) {
+// Common variants of the action
+interface SuccessAction<T extends ActionType> extends FluxStandardAction<T, undefined> {
+    error: undefined;
+}
+interface SuccessActionPayload<T extends ActionType, P> extends FluxStandardAction<T, P> {
+    payload: P;
+    error: undefined;
+}
+interface ErrorActionPayload<T extends ActionType, P extends Error> extends FluxStandardAction<T, P> {
+    payload: P;
+    error: true;
+}
+
+function createAction<T extends ActionType>(type: T): SuccessAction<T>
+function createAction<T extends ActionType, P>(type: T, payload: P): SuccessActionPayload<T, P>
+function createAction<T extends ActionType, P>(type: T, payload?: P) {
     return payload === undefined ? { type } : { type, payload };
 }
 
-function createActionError<T extends string, P>(type: T): ErrorAction<T>
-function createActionError<T extends string, P>(type: T, payload: P): ErrorActionPayload<T, P>
-function createActionError<T extends string, P>(type: T, payload?: P) {
-    return payload === undefined ? { type, error: true } : { type, payload, error: true };
+function createActionError<T extends ActionType, P extends Error>(type: T, payload: P): ErrorActionPayload<T, P> {
+    return { type, payload, error: true };
 }
 
 export const toggleAdvanced = () =>
@@ -44,7 +60,7 @@ export const updateQueryResults = (results: QueryResult[]) =>
     createAction(ActionType.QueryResults, { results });
 
 export const queryFailed = (message: string) =>
-    createActionError(ActionType.QueryResults, { message });
+    createActionError(ActionType.QueryResults, new Error(message));
 
 export const updateKind = (id: number, kind: Kind) =>
     createAction(ActionType.StructuredQueryKindUpdate, { id, kind });
@@ -82,14 +98,40 @@ export type Action =
     | ReturnType<typeof updateTermValue>
     ;
 
-export const retarget = (action, target: string) => (...args) => {
-    let createdAction = action(...args);
-    createdAction.payload.target = target;
-    return createdAction;
-};
+// Higher order action creator modifiers
 
-export const retargetIndex = (action, index: number) => (...args) => {
-    let createdAction = action(...args);
-    createdAction.payload.targetIndex = index;
-    return createdAction;
-};
+export interface WithTarget {
+    meta: {
+        target: string;
+    }
+}
+
+export function withTarget<T extends string, M extends {}, A extends FluxStandardAction<T, M>>(action: (...args: any[]) => A, target: string) {
+    return function(...args: any[]): A & WithTarget {
+        let act = action(...args);
+        let meta = Object.assign({}, act.meta, { target });
+        return Object.assign(act, { meta });
+    }
+}
+
+export function isWithTarget(a: any): a is WithTarget {
+    return !!a['meta'] && typeof a['meta']['target'] == "string";
+}
+
+export interface WithTargetIndex {
+    meta: {
+        targetIndex: number;
+    }
+}
+
+export function withTargetIndex<T extends string, M extends {}, A extends FluxStandardAction<T, M>>(action: (...args: any[]) => A, index: number) {
+    return function(...args: any[]): A & WithTargetIndex {
+        let act = action(...args);
+        let meta = Object.assign({}, act.meta, { targetIndex: index });
+        return Object.assign(act, { meta });
+    }
+}
+
+export function isWithTargetIndex(a: any): a is WithTargetIndex {
+    return !!a['meta'] && typeof a['meta']['targetIndex'] == "number";
+}

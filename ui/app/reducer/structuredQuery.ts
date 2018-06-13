@@ -1,7 +1,7 @@
 import { Kind, makeNothing, FlatQueryItems } from 'app/types';
 import { ActionType, Action } from 'app/actions';
 
-import { initial, forTarget, forTargetIndex } from './higherOrder';
+import { initial, forTarget } from './higherOrder';
 
 export function rawReducer(state, action: Action) {
     switch (action.type) {
@@ -53,4 +53,5 @@ const initialStructuredQuery: State = {
     2: { kind: Kind.Term, name: 'ident', value: 'pm' },
 };
 
-export default initial(forTarget(rawReducer, 'query'), initialStructuredQuery);
+const targetedReducer = forTarget(rawReducer, 'query');
+export default initial(targetedReducer, initialStructuredQuery);
