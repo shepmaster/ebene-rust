@@ -19,11 +19,11 @@ import {
 import { selectQuery } from './selectors';
 import search, { fetchLayers, fetchTerms } from './queryApi';
 
-function* performSearch(action) {
+function* performSearch() {
     try {
         const q = yield select(selectQuery);
-        const results = yield call(search, q);
-        yield put(updateQueryResults(results.results));
+        const { results } = yield call(search, q);
+        yield put(updateQueryResults(results));
     } catch (e) {
         yield put(queryFailed(e.message));
     }
