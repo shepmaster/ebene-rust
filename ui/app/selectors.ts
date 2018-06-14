@@ -1,4 +1,4 @@
-import { Kind, BinaryKind, FlatQueryItems, TreeQueryItem } from './types';
+import { Kind, BinaryKind, FlatQueryItems, TreeQueryItem, ApiQueryItem, ApiBinary } from './types';
 import { State } from './reducer';
 
 export function selectQuery(state: State) {
@@ -20,7 +20,7 @@ export function selectQuery(state: State) {
 }
 
 function selectTreeQueryForApi(queryList: FlatQueryItems) {
-    function treeify(id: number) {
+    function treeify(id: number): ApiQueryItem {
         let thisQuery = queryList[id];
 
         switch (thisQuery.kind) {
@@ -32,14 +32,18 @@ function selectTreeQueryForApi(queryList: FlatQueryItems) {
             case Kind.BothOf:
             case Kind.FollowedBy: {
                 let { lhs, rhs } = thisQuery;
-                return { [thisQuery.kind]: [treeify(lhs), treeify(rhs)] };
+                return { [thisQuery.kind]: [treeify(lhs), treeify(rhs)] } as ApiBinary<BinaryKind>;
+            }
+            case Kind.Layer: {
+                const { kind, name } = thisQuery;
+                return { [thisQuery.kind]: { name } };
+            }
+            case Kind.Term: {
+                const { kind, name, value } = thisQuery;
+                return { [thisQuery.kind]: { name, value } };
             }
             case Kind.Nothing:
-                return "Nothing";
-            default: {
-                const { kind, ...rest } = thisQuery;
-                return { [thisQuery.kind]: rest };
-            }
+                return thisQuery.kind;
         };
     }
 

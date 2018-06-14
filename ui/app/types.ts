@@ -125,6 +125,40 @@ export interface TreeNothing {
     kind: Kind.Nothing,
 }
 
+// The api query is used by the backend and reflects the recursive structure
+
+export type ApiQueryItem =
+    | ApiTerm
+    | ApiBinary<Kind.Containing>
+    | ApiBinary<Kind.ContainedIn>
+    | ApiBinary<Kind.NotContaining>
+    | ApiBinary<Kind.NotContainedIn>
+    | ApiBinary<Kind.OneOf>
+    | ApiBinary<Kind.BothOf>
+    | ApiBinary<Kind.FollowedBy>
+    | ApiLayer
+    | ApiNothing;
+
+export interface ApiTerm {
+    [Kind.Term]: {
+        name: string,
+        value: string,
+    }
+}
+
+// https://stackoverflow.com/a/50849477/155423
+export type ApiBinary<K extends BinaryKind> = {
+    [k in K]: ApiQueryItem[];
+}
+
+export interface ApiLayer {
+    [Kind.Layer]: {
+        name: string,
+    }
+}
+
+export type ApiNothing = Kind.Nothing;
+
 export type Extents = [number, number][];
 
 export interface QueryResult {
