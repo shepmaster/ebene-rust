@@ -6,10 +6,11 @@
       "app": ["app"]
     },
     "sourceMap": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "module": "commonjs",
     "target": "es2017",
     "strict": true,
+    "noErrorTruncation": true,
     "jsx": "react"
   },
   "include": [
