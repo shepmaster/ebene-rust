@@ -6,6 +6,7 @@ questions like:
 - Which methods take a generic argument that implements the trait `Foo`?
 - Do any structs contain a field called `data`?
 - What statements come after a "TODO" comment?
+- Are weird statements like `let Single { y }: Single<&'static u32>;` ever used?
 
 ## How do I use it?
 
