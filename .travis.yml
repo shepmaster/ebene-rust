@@ -3,6 +3,6 @@ rust: nightly
 cache: cargo
 sudo: false
 script: |
-  cargo build --verbose
-  cargo test --verbose
-  cargo run --bin=indexer src/lib.rs > /dev/null
+  cargo build
+  cargo test
+  cargo run --bin=indexer examples/data/hello_world.rs > /dev/null
