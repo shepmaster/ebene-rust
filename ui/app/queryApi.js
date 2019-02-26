@@ -1,14 +1,13 @@
+import url from 'url';
+
 export default function primaryQuery({ q, h }) {
-  var url = `http://127.0.0.1:8080/api/search?`;
+  const apiUrl = url.format({
+    hostname: '127.0.0.1',
+    port: '8080',
+    pathname: '/api/search',
+    query: { q, h },
+  });
 
-  if (q) {
-    url += `q=${q}`;
-  }
-
-  if (h) {
-    url += `&h=${h}`;
-  }
-
-  return fetch(url)
+  return fetch(apiUrl)
     .then(r => r.json());
 }
