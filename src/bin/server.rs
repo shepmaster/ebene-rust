@@ -1,5 +1,4 @@
-#![feature(plugin, custom_derive)]
-#![plugin(rocket_codegen)]
+#![feature(proc_macro_hygiene, decl_macro)]
 
 extern crate strata;
 
@@ -11,6 +10,7 @@ extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
 extern crate rocket;
 extern crate rocket_contrib;
 
@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use strata::{Algebra, ValidExtent};
 
 use rocket::http::RawStr;
-use rocket_contrib::Json;
+use rocket_contrib::json::Json;
 
 use quick_error::ResultExt;
 
@@ -160,13 +160,6 @@ fn dev_terms_kind(kind: String, term: String) -> Option<Json<Vec<ValidExtent>>> 
         .map(|t| Json(t.to_owned()))
 }
 
-#[derive(Debug, FromForm)]
-struct Query {
-    // renaming attributes?
-    q: Option<JsonString<StructuredQuery>>,
-    h: Option<JsonString<Vec<StructuredQuery>>>,
-}
-
 quick_error! {
     #[derive(Debug)]
     enum JsonStringError {
@@ -223,18 +216,18 @@ fn offset_backwards(extent: ValidExtent, offset: u64) -> ValidExtent {
     (extent.0 - offset, extent.1 - offset)
 }
 
-#[get("/search?<query>")]
-fn search(query: Query) -> Json<SearchResults> {
-    println!("Query: {:?}", query.q);
-    println!("Highlight: {:?}", query.h);
+#[get("/search?<q>&<h>")]
+fn search(q: Option<JsonString<StructuredQuery>>, h: Option<JsonString<Vec<StructuredQuery>>>) -> Json<SearchResults> {
+    println!("Query: {:?}", q);
+    println!("Highlight: {:?}", h);
 
-    let q = match query.q {
+    let q = match q {
         Some(q) => q.0,
         None => return Json(SearchResults::default()),
     };
 
     let container_query = compile(q).expect("can't compile query");
-    let highlights = query.h.map_or_else(Vec::new, |h| h.0);
+    let highlights = h.map_or_else(Vec::new, |h| h.0);
     let highlight_queries: Result<Vec<_>, _> = highlights.into_iter().map(compile).collect();
     let highlight_queries = highlight_queries.expect("Can't compile highlights");
 

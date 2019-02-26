@@ -8,23 +8,32 @@ use std::env;
 use std::io::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-use fuzzy_pickles::{Visit, Visitor, HasExtent};
+use fuzzy_pickles::{ast, visit::{Visit, Visitor, Control}, HasExtent};
+
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
+struct Extent(usize, usize);
+
+impl From<fuzzy_pickles::Extent> for Extent {
+    fn from(other: fuzzy_pickles::Extent) -> Self {
+        Extent(other.0, other.1)
+    }
+}
 
 #[derive(Debug, Default)]
 struct Indexing {
     source: String,
 
-    term_ident: BTreeMap<String, BTreeSet<fuzzy_pickles::Extent>>,
+    term_ident: BTreeMap<String, BTreeSet<Extent>>,
 
-    layer_enum: BTreeSet<fuzzy_pickles::Extent>,
-    layer_function: BTreeSet<fuzzy_pickles::Extent>,
-    layer_function_header: BTreeSet<fuzzy_pickles::Extent>,
-    layer_struct: BTreeSet<fuzzy_pickles::Extent>,
-    layer_generic_declarations: BTreeSet<fuzzy_pickles::Extent>,
-    layer_where: BTreeSet<fuzzy_pickles::Extent>,
+    layer_enum: BTreeSet<Extent>,
+    layer_function: BTreeSet<Extent>,
+    layer_function_header: BTreeSet<Extent>,
+    layer_struct: BTreeSet<Extent>,
+    layer_generic_declarations: BTreeSet<Extent>,
+    layer_where: BTreeSet<Extent>,
 
-    layers_expression: Vec<BTreeSet<fuzzy_pickles::Extent>>,
-    layers_statement: Vec<BTreeSet<fuzzy_pickles::Extent>>,
+    layers_expression: Vec<BTreeSet<Extent>>,
+    layers_statement: Vec<BTreeSet<Extent>>,
 
     stmt_depth: usize,
     expr_depth: usize,
@@ -38,59 +47,68 @@ impl std::ops::Index<fuzzy_pickles::Extent> for Indexing {
     }
 }
 
-impl Visitor for Indexing {
-    fn visit_ident(&mut self, ident: &fuzzy_pickles::Ident) {
+impl Visitor<'_> for Indexing {
+    fn visit_ident(&mut self, ident: &ast::Ident) -> Control {
         let s = self[ident.extent].to_owned();
-        self.term_ident.entry(s).or_insert_with(BTreeSet::new).insert(ident.extent);
+        self.term_ident.entry(s).or_insert_with(BTreeSet::new).insert(ident.extent.into());
+        Control::Continue
     }
 
-    fn visit_function(&mut self, function: &fuzzy_pickles::Function) {
-        self.layer_function.insert(function.extent);
+    fn visit_function(&mut self, function: &ast::Function) -> Control {
+        self.layer_function.insert(function.extent.into());
+        Control::Continue
     }
 
-    fn visit_function_header(&mut self, header: &fuzzy_pickles::FunctionHeader) {
-        self.layer_function_header.insert(header.extent);
+    fn visit_function_header(&mut self, header: &ast::FunctionHeader) -> Control {
+        self.layer_function_header.insert(header.extent.into());
+        Control::Continue
     }
 
-    fn visit_enum(&mut self, e: &fuzzy_pickles::Enum) {
-        self.layer_enum.insert(e.extent);
+    fn visit_enum(&mut self, e: &ast::Enum) -> Control {
+        self.layer_enum.insert(e.extent.into());
+        Control::Continue
     }
 
-    fn visit_struct(&mut self, s: &fuzzy_pickles::Struct) {
-        self.layer_struct.insert(s.extent);
+    fn visit_struct(&mut self, s: &ast::Struct) -> Control {
+        self.layer_struct.insert(s.extent.into());
+        Control::Continue
     }
 
-    fn visit_generic_declarations(&mut self, gd: &fuzzy_pickles::GenericDeclarations) {
-        self.layer_generic_declarations.insert(gd.extent);
+    fn visit_generic_declarations(&mut self, gd: &ast::GenericDeclarations) -> Control {
+        self.layer_generic_declarations.insert(gd.extent.into());
+        Control::Continue
     }
 
-    fn visit_where(&mut self, w: &fuzzy_pickles::Where) {
-        self.layer_where.insert(w.extent());
+    fn visit_where(&mut self, w: &ast::Where) -> Control {
+        self.layer_where.insert(w.extent().into());
+        Control::Continue
     }
 
-    fn visit_statement(&mut self, s: &fuzzy_pickles::Statement) {
+    fn visit_statement(&mut self, s: &ast::Statement) -> Control {
         while self.layers_statement.len() <= self.stmt_depth {
             self.layers_statement.push(BTreeSet::new());
         }
-        self.layers_statement[self.stmt_depth].insert(s.extent());
+        self.layers_statement[self.stmt_depth].insert(s.extent().into());
 
-        self.stmt_depth +=1
+        self.stmt_depth +=1;
+        Control::Continue
     }
 
-    fn exit_statement(&mut self, _: &fuzzy_pickles::Statement) {
+    fn exit_statement(&mut self, _: &ast::Statement) {
         self.stmt_depth -= 1;
     }
 
-    fn visit_expression(&mut self, e: &fuzzy_pickles::Expression) {
+    fn visit_expression(&mut self, e: &ast::Expression) -> Control {
         while self.layers_expression.len() <= self.expr_depth {
             self.layers_expression.push(BTreeSet::new());
         }
-        self.layers_expression[self.expr_depth].insert(e.extent());
+        self.layers_expression[self.expr_depth].insert(e.extent().into());
 
         self.expr_depth += 1;
+        Control::Continue
     }
 
-    fn exit_expression(&mut self, _: &fuzzy_pickles::Expression) {
+    fn exit_expression(&mut self, _: &ast::Expression) {
         self.expr_depth -= 1;
     }
 }
@@ -98,12 +116,12 @@ impl Visitor for Indexing {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct IndexedFile {
     source: String,
-    layers: BTreeMap<String, BTreeSet<fuzzy_pickles::Extent>>,
-    terms: BTreeMap<String, BTreeMap<String, BTreeSet<fuzzy_pickles::Extent>>>,
+    layers: BTreeMap<String, BTreeSet<Extent>>,
+    terms: BTreeMap<String, BTreeMap<String, BTreeSet<Extent>>>,
 }
 
 // TODO: This was extracted from `strata`; should be made public
-fn find_invalid_gc_list_pair(extents: &[fuzzy_pickles::Extent]) -> Option<(fuzzy_pickles::Extent, fuzzy_pickles::Extent)> {
+fn find_invalid_gc_list_pair(extents: &[Extent]) -> Option<(Extent, Extent)> {
     extents
         .windows(2)
         .map(|window| (window[0], window[1]))
