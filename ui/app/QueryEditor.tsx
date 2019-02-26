@@ -30,6 +30,8 @@ const QueryEditor: React.SFC<QueryEditorProps & TreeQueryItem> = (props) => {
     const Component = mapKindToComponent[props.kind];
     return (
         <div className="structured-query">
+            { /* My TypeScript foo is not good enough
+                 // @ts-ignore */ }
             <Component {...props} />
         </div>
     );
