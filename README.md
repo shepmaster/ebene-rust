@@ -38,7 +38,7 @@ The Strata crate works well on stable Rust.
 the goal of expressing the level of detail needed to power the
 underlying search technology.
 
-Fuzzy Pickles requires **nightly** Rust.
+Fuzzy Pickles works well on stable Rust.
 
 [Fuzzy Pickles]: https://github.com/shepmaster/fuzzy-pickles
 
