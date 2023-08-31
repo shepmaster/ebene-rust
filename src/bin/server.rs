@@ -74,7 +74,7 @@ impl std::ops::Index<strata::ValidExtent> for Indexed {
     }
 }
 
-fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
+fn compile(q: StructuredQuery) -> Result<Box<dyn Algebra>, Error> {
     match q {
         StructuredQuery::Nothing => {
             Ok(Box::new(strata::Empty))
@@ -116,12 +116,12 @@ fn compile(q: StructuredQuery) -> Result<Box<Algebra>, Error> {
         }
         StructuredQuery::Layer { name } => {
             INDEX.layer_for(&name)
-                .map(|e| Box::new(e) as Box<Algebra>)
+                .map(|e| Box::new(e) as Box<dyn Algebra>)
                 .ok_or_else(|| Error::UnknownLayer(name))
         }
         StructuredQuery::Term { name, value } => {
             INDEX.term_for(&name, &value)
-                .map(|e| Box::new(e) as Box<Algebra>)
+                .map(|e| Box::new(e) as Box<dyn Algebra>)
                 .ok_or_else(|| Error::UnknownTerm(name))
         }
     }
