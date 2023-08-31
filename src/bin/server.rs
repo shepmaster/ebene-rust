@@ -1,6 +1,6 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
-extern crate strata;
+extern crate ebene;
 
 extern crate serde;
 extern crate serde_json;
@@ -21,7 +21,7 @@ use std::fs::File;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use strata::{Algebra, ValidExtent};
+use ebene::{Algebra, ValidExtent};
 
 use rocket::http::RawStr;
 use rocket_contrib::json::Json;
@@ -49,16 +49,16 @@ const IDENT_TERM_NAME: &'static str = "ident";
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Indexed {
     source: String,
-    layers: BTreeMap<String, Vec<strata::ValidExtent>>,
-    terms: BTreeMap<String, BTreeMap<String, Vec<strata::ValidExtent>>>,
+    layers: BTreeMap<String, Vec<ebene::ValidExtent>>,
+    terms: BTreeMap<String, BTreeMap<String, Vec<ebene::ValidExtent>>>,
 }
 
 impl Indexed {
-    fn layer_for(&self, name: &str) -> Option<&[strata::ValidExtent]> {
+    fn layer_for(&self, name: &str) -> Option<&[ebene::ValidExtent]> {
         self.layers.get(name).map(Vec::as_slice)
     }
 
-    fn term_for(&self, name: &str, value: &str) -> Option<&[strata::ValidExtent]> {
+    fn term_for(&self, name: &str, value: &str) -> Option<&[ebene::ValidExtent]> {
         self.terms.get(name)
             .map(|x| {
                 x.get(value).map_or(&[][..], Vec::as_slice)
@@ -66,7 +66,7 @@ impl Indexed {
     }
 }
 
-impl std::ops::Index<strata::ValidExtent> for Indexed {
+impl std::ops::Index<ebene::ValidExtent> for Indexed {
     type Output = str;
 
     fn index(&self, extent: ValidExtent) -> &str {
@@ -77,42 +77,42 @@ impl std::ops::Index<strata::ValidExtent> for Indexed {
 fn compile(q: StructuredQuery) -> Result<Box<dyn Algebra>, Error> {
     match q {
         StructuredQuery::Nothing => {
-            Ok(Box::new(strata::Empty))
+            Ok(Box::new(ebene::Empty))
         }
         StructuredQuery::Containing(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
-            Ok(Box::new(strata::Containing::new(lhs, rhs)))
+            Ok(Box::new(ebene::Containing::new(lhs, rhs)))
         }
         StructuredQuery::ContainedIn(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
-            Ok(Box::new(strata::ContainedIn::new(lhs, rhs)))
+            Ok(Box::new(ebene::ContainedIn::new(lhs, rhs)))
         }
         StructuredQuery::NotContaining(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
-            Ok(Box::new(strata::NotContaining::new(lhs, rhs)))
+            Ok(Box::new(ebene::NotContaining::new(lhs, rhs)))
         }
         StructuredQuery::NotContainedIn(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
-            Ok(Box::new(strata::NotContainedIn::new(lhs, rhs)))
+            Ok(Box::new(ebene::NotContainedIn::new(lhs, rhs)))
         }
         StructuredQuery::BothOf(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
-            Ok(Box::new(strata::BothOf::new(lhs, rhs)))
+            Ok(Box::new(ebene::BothOf::new(lhs, rhs)))
         }
         StructuredQuery::OneOf(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
-            Ok(Box::new(strata::OneOf::new(lhs, rhs)))
+            Ok(Box::new(ebene::OneOf::new(lhs, rhs)))
         }
         StructuredQuery::FollowedBy(lhs, rhs) => {
             let lhs = compile(*lhs)?;
             let rhs = compile(*rhs)?;
-            Ok(Box::new(strata::FollowedBy::new(lhs, rhs)))
+            Ok(Box::new(ebene::FollowedBy::new(lhs, rhs)))
         }
         StructuredQuery::Layer { name } => {
             INDEX.layer_for(&name)
@@ -237,7 +237,7 @@ fn search(q: Option<JsonString<StructuredQuery>>, h: Option<JsonString<Vec<Struc
         let highlights_extents = highlight_queries.iter().map(|highlight_query| {
             let container_extent_range = &[container_extent][..]; // TODO: impl Algebra for (u64, u64)?;
 
-            let this_result_highlights = strata::ContainedIn::new(highlight_query, container_extent_range);
+            let this_result_highlights = ebene::ContainedIn::new(highlight_query, container_extent_range);
 
             this_result_highlights.iter_tau().map(|ex| {
                 offset_backwards(ex, container_extent.0)

@@ -120,7 +120,7 @@ struct IndexedFile {
     terms: BTreeMap<String, BTreeMap<String, BTreeSet<Extent>>>,
 }
 
-// TODO: This was extracted from `strata`; should be made public
+// TODO: This was extracted from `ebene`; should be made public
 fn find_invalid_gc_list_pair(extents: &[Extent]) -> Option<(Extent, Extent)> {
     extents
         .windows(2)

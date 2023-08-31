@@ -7,7 +7,7 @@ module.exports = {
   plugins: [
     new HtmlWebpackPlugin({
       template: HtmlWebpackTemplate,
-      title: 'Strata Rust',
+      title: 'Ebene Rust',
       appMountId: 'app',
       mobile: true,
       inject: false,

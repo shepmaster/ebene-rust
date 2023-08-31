@@ -1,6 +1,6 @@
-# Strata-Rust
+# Ebene-Rust
 
-Strata-Rust is a unique way of exploring Rust code, aiming to answer
+Ebene-Rust is a unique way of exploring Rust code, aiming to answer
 questions like:
 
 - Which methods take a generic argument that implements the trait `Foo`?
@@ -17,20 +17,20 @@ in CI soon.
 
 ## Components
 
-Strata-Rust is a combination of many pieces of open source
+Ebene-Rust is a combination of many pieces of open source
 technology. Some selected pieces include:
 
-### Strata
+### Ebene
 
-[Strata][] is the underlying search technology that powers the ability
+[Ebene][] is the underlying search technology that powers the ability
 to perform queries based on the structure of the data. These queries
 are different from the traditional search engine inverted index and
 are based around manipulating ranges of the indexed text known as
 "extents".
 
-The Strata crate works well on stable Rust.
+The Ebene crate works well on stable Rust.
 
-[Strata]: https://github.com/shepmaster/strata
+[Ebene]: https://github.com/shepmaster/ebene
 
 ### Fuzzy Pickles
 
@@ -87,7 +87,7 @@ beginning.
 
 ## License
 
-strata-rust is distributed under the terms of both the MIT license and
+ebene-rust is distributed under the terms of both the MIT license and
 the Apache License (Version 2.0).
 
 ## Authors

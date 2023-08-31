@@ -223,6 +223,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ebene"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "897a0b00c2041b378d5d1f58bc4fcf77c7f4196956f859c42dc72e830b66e00b"
+
+[[package]]
+name = "ebene_rs"
+version = "0.1.0"
+dependencies = [
+ "ebene",
+ "fuzzy-pickles",
+ "lazy_static",
+ "quick-error",
+ "rocket",
+ "rocket_codegen",
+ "rocket_contrib",
+ "serde",
+ "serde_derive",
+ "serde_json",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -897,28 +919,6 @@ name = "state"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3015a7d0a5fd5105c91c3710d42f9ccf0abfb287d62206484dcc67f9569a6483"
-
-[[package]]
-name = "strata"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae2576f31eff26053d27232adc839ab119588bb713584a1fe293a553b7c3c24a"
-
-[[package]]
-name = "strata_rs"
-version = "0.1.0"
-dependencies = [
- "fuzzy-pickles",
- "lazy_static",
- "quick-error",
- "rocket",
- "rocket_codegen",
- "rocket_contrib",
- "serde",
- "serde_derive",
- "serde_json",
- "strata",
-]
 
 [[package]]
 name = "subtle"
